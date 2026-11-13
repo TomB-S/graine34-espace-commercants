@@ -1,0 +1,20 @@
+node_modules/
+
+# Environment files (read by `npm start` only; copy .env.example to .env)
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Consignes de travail (données proches de données réelles)
+consignes-code-notification-paiement.md

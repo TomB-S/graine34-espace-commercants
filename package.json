@@ -1,0 +1,18 @@
+{
+  "name": "graine34-notif-caisse",
+  "version": "1.0.0",
+  "description": "Mission 2B : notification de paiement pour le caissier (La Graine 34)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22.9"
+  },
+  "keywords": [],
+  "type": "module",
+  "dependencies": {
+    "luxon": "^3.7.2"
+  }
+}
