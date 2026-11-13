@@ -12,9 +12,9 @@ import { dateLine } from "./date-line.js";
 
 const LIVE = new Set(["live", "fallback"]);
 
-export function createCaisseView(document, { pollSeconds, nowMs }) {
+export function createCaisseView(document, { pollSeconds, nowMs, onSoundToggle = () => {} }) {
   const zone = (name) => document.getElementById(`caisse-zone-${name}`);
-  const zones = { direct: zone("direct"), state: zone("etat"), content: zone("contenu") };
+  const zones = { direct: zone("direct"), state: zone("etat"), content: zone("contenu"), sound: zone("son") };
   const footer = document.getElementById("caisse-actualisation");
 
   const make = (tag, className, text) => {
@@ -24,6 +24,8 @@ export function createCaisseView(document, { pollSeconds, nowMs }) {
     return node;
   };
 
+  let soundBox = null; // { button, status } built at the first updateSound()
+  let soundSignature = null;
   let last = null; // last data shown
   let offline = false;
   const signatures = { state: null, direct: null, list: null, empty: null };
@@ -159,7 +161,33 @@ export function createCaisseView(document, { pollSeconds, nowMs }) {
     holders.empty.replaceChildren(box);
   }
 
+  // The sound line: the button and, always visible, the state in words. `label` comes from soundLabel() (sound-logic.js).
+  // No script, no button: the zone stays empty in the page rendered by the server.
+  function renderSound(label) {
+    if (!zones.sound) return;
+    const signature = JSON.stringify(label);
+    if (signature === soundSignature) return;
+    soundSignature = signature;
+    if (!soundBox) {
+      const line = make("p", "caisse-son");
+      const button = make("button");
+      button.setAttribute("type", "button");
+      button.addEventListener("click", () => onSoundToggle());
+      const status = make("span", "caisse-son-etat");
+      status.setAttribute("role", "status");
+      line.append(button, status);
+      zones.sound.replaceChildren(line);
+      soundBox = { line, button, status };
+    }
+    soundBox.status.textContent = label.text;
+    soundBox.button.hidden = label.buttonText === null;
+    soundBox.button.textContent = label.buttonText ?? "";
+    soundBox.line.className = label.active ? "caisse-son caisse-son-actif" : "caisse-son";
+  }
+
   return {
+    updateSound: renderSound,
+
     // New data. `freshTickets`: the tickets the detector found new in this very update (they get the fading background).
     update(data, freshTickets = []) {
       last = data;

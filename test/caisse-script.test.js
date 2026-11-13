@@ -27,6 +27,9 @@ class Node {
   setAttribute(name, value) {
     this.attributes[name] = value;
   }
+  addEventListener(type, fn) {
+    this.listeners = { ...this.listeners, [type]: fn };
+  }
   append(...items) {
     this.children.push(...items);
   }
@@ -36,9 +39,9 @@ class Node {
   }
 }
 
-async function run(responses) {
+async function run(responses, audio = null) {
   const nodes = new Map();
-  for (const id of ["caisse-zone-direct", "caisse-zone-etat", "caisse-zone-contenu", "caisse-actualisation"]) nodes.set(id, new Node());
+  for (const id of ["caisse-zone-direct", "caisse-zone-etat", "caisse-zone-contenu", "caisse-zone-son", "caisse-actualisation"]) nodes.set(id, new Node());
   const root = new Node();
   root.dataset = { pollSeconds: "3", dataUrl: "/caisse/data", loginUrl: "/" };
   nodes.set("caisse", root);
@@ -58,7 +61,7 @@ async function run(responses) {
     addEventListener: (type, fn) => (listeners[type] = fn),
   };
   set("document", document);
-  set("window", { addEventListener: (type, fn) => (listeners[`window:${type}`] = fn) });
+  set("window", { addEventListener: (type, fn) => (listeners[`window:${type}`] = fn), AudioContext: audio?.AudioContext });
   set("location", { assign: (url) => seen.assigned.push(url), reload: () => (seen.reloaded += 1) });
   set("setTimeout", (fn, ms) => timers.push({ fn, ms }) - 1);
   set("clearTimeout", () => {});
@@ -172,6 +175,155 @@ test("script : le premier chargement n'affiche pas le fond « nouveau », un pai
     page.timers.filter((t) => !t.every && t.ms === 3000).at(-1).fn();
     await flush();
     assert.equal(bigClass(), "caisse-gros caisse-gros-neuf");
+  } finally {
+    page.restore();
+  }
+});
+
+// ---- the sound ----
+
+// A stand-in for the AudioContext: counts the notes played. `behaviour.state` is what resume() leaves the context in.
+function fakeAudio(behaviour = { state: "running" }) {
+  const audio = { created: 0, notes: 0, contexts: [] };
+  audio.AudioContext = class {
+    constructor() {
+      this.state = "suspended";
+      this.currentTime = 0;
+      this.destination = {};
+      audio.created += 1;
+      audio.contexts.push(this);
+    }
+    async resume() {
+      this.state = behaviour.state;
+    }
+    createGain() {
+      return { gain: { setValueAtTime() {}, linearRampToValueAtTime() {} }, connect() {} };
+    }
+    createOscillator() {
+      return { frequency: {}, connect() {}, start: () => (audio.notes += 1), stop() {} };
+    }
+  };
+  return audio;
+}
+
+const soundLine = (page) => page.nodes.get("caisse-zone-son").children[0].children[1].textContent;
+const soundButton = (page) => page.nodes.get("caisse-zone-son").children[0].children[0];
+const nextRead = (page) => page.timers.filter((t) => !t.every && t.ms === 3000).at(-1).fn();
+
+test("son : démarre désactivé à chaque chargement, aucun AudioContext créé avant un clic, aucun bip", async () => {
+  const audio = fakeAudio();
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2, { isNew: true }), ticket(1)]))], audio);
+  try {
+    assert.match(soundLine(page), /Son désactivé : cliquer pour activer/);
+    assert.equal(soundButton(page).textContent, "Activer le son");
+    nextRead(page);
+    await flush();
+    assert.equal(audio.created, 0, "no audio context without a click");
+    assert.equal(audio.notes, 0, "a new payment with the sound off rings nothing");
+  } finally {
+    page.restore();
+  }
+});
+
+test("son : le clic active (bip d'essai), puis un seul bip par lot de nouveaux paiements, jamais au premier chargement", async () => {
+  const audio = fakeAudio();
+  const page = await run(
+    [ok(data([ticket(1, { isNew: true })])), ok(data([ticket(1)])), ok(data([ticket(4), ticket(3), ticket(2), ticket(1)])), ok(data([ticket(4), ticket(3), ticket(2), ticket(1)]))],
+    audio,
+  );
+  try {
+    soundButton(page).listeners.click();
+    await flush();
+    assert.equal(audio.created, 1);
+    assert.equal(audio.notes, 2, "the test bip: two notes");
+    assert.match(soundLine(page), /^Son activé/);
+    assert.equal(soundButton(page).textContent, "Couper le son");
+    const afterTest = audio.notes;
+    nextRead(page); // same payments: nothing new
+    await flush();
+    assert.equal(audio.notes, afterTest);
+    nextRead(page); // three payments at once: one bip
+    await flush();
+    assert.equal(audio.notes, afterTest + 2, "one bip (two notes) for a batch of three");
+    nextRead(page); // nothing new
+    await flush();
+    assert.equal(audio.notes, afterTest + 2);
+  } finally {
+    page.restore();
+  }
+});
+
+test("son : le premier chargement ne sonne pas même si le son a été activé avant la réponse", async () => {
+  const audio = fakeAudio();
+  const page = await run([ok(data([ticket(1, { isNew: true })]))], audio);
+  try {
+    soundButton(page).listeners.click();
+    await flush();
+    assert.equal(audio.notes, 2, "only the test bip");
+  } finally {
+    page.restore();
+  }
+});
+
+test("son : audio suspendu par le navigateur = jamais « Son activé », pas de bip", async () => {
+  const audio = fakeAudio({ state: "suspended" });
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)]))], audio);
+  try {
+    soundButton(page).listeners.click();
+    await flush();
+    assert.match(soundLine(page), /Son désactivé : cliquer pour activer/);
+    assert.ok(!/Son activé/.test(soundLine(page)));
+    nextRead(page);
+    await flush();
+    assert.equal(audio.notes, 0);
+  } finally {
+    page.restore();
+  }
+});
+
+test("son : si le navigateur suspend l'audio après l'activation, l'état le dit et le bip est évité", async () => {
+  const audio = fakeAudio();
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)]))], audio);
+  try {
+    soundButton(page).listeners.click();
+    await flush();
+    assert.match(soundLine(page), /^Son activé/);
+    audio.contexts[0].state = "suspended";
+    audio.contexts[0].onstatechange();
+    assert.match(soundLine(page), /Son désactivé : cliquer pour activer/);
+    const notes = audio.notes;
+    nextRead(page);
+    await flush();
+    assert.equal(audio.notes, notes, "no bip while the audio is suspended");
+  } finally {
+    page.restore();
+  }
+});
+
+test("son : le bouton coupe le son", async () => {
+  const audio = fakeAudio();
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)]))], audio);
+  try {
+    soundButton(page).listeners.click();
+    await flush();
+    soundButton(page).listeners.click();
+    await flush();
+    assert.match(soundLine(page), /Son désactivé/);
+    const notes = audio.notes;
+    nextRead(page);
+    await flush();
+    assert.equal(audio.notes, notes);
+  } finally {
+    page.restore();
+  }
+});
+
+test("son : navigateur sans Web Audio = message clair, pas de bouton, la page fonctionne", async () => {
+  const page = await run([ok(data([ticket(1)]))]);
+  try {
+    assert.match(soundLine(page), /Son non disponible sur ce navigateur/);
+    assert.equal(soundButton(page).hidden, true);
+    assert.match(page.nodes.get("caisse-zone-contenu").textContent, /P1/);
   } finally {
     page.restore();
   }

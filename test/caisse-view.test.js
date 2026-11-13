@@ -34,6 +34,9 @@ class Node {
   setAttribute(name, value) {
     this.attributes[name] = value;
   }
+  addEventListener(type, fn) {
+    this.listeners = { ...this.listeners, [type]: fn };
+  }
   append(...items) {
     this.children.push(...items);
   }
@@ -45,7 +48,7 @@ class Node {
 
 function fakeDocument() {
   const byId = new Map();
-  for (const id of ["caisse-zone-direct", "caisse-zone-etat", "caisse-zone-contenu", "caisse-actualisation"]) byId.set(id, new Node("div"));
+  for (const id of ["caisse-zone-direct", "caisse-zone-etat", "caisse-zone-contenu", "caisse-zone-son", "caisse-actualisation"]) byId.set(id, new Node("div"));
   return { getElementById: (id) => byId.get(id) ?? null, createElement: (tag) => new Node(tag), byId };
 }
 
@@ -72,9 +75,9 @@ const ticket = (n, extra = {}) => ({
 });
 const data = (tickets, extra = {}) => ({ status: "live", banner: null, now: NOW, tickets, ...extra });
 
-function setup(clock = { now: NOW }) {
+function setup(clock = { now: NOW }, extra = {}) {
   const document = fakeDocument();
-  const view = createCaisseView(document, { pollSeconds: 3, nowMs: () => clock.now });
+  const view = createCaisseView(document, { pollSeconds: 3, nowMs: () => clock.now, ...extra });
   return { document, view, clock, content: document.byId.get("caisse-zone-contenu"), state: document.byId.get("caisse-zone-etat"), direct: document.byId.get("caisse-zone-direct") };
 }
 
@@ -160,6 +163,30 @@ test("vue : phrase de mise à jour au pluriel, et « toutes les secondes » pour
   assert.equal(one.byId.get("caisse-actualisation").textContent, "Mise à jour automatique toutes les secondes.");
 });
 
+test("vue : ligne du son = bouton et état en toutes lettres, le clic appelle le rappel", () => {
+  let clicks = 0;
+  const { view, document } = setup({ now: NOW }, { onSoundToggle: () => (clicks += 1) });
+  const zone = document.byId.get("caisse-zone-son");
+  assert.equal(zone.textContent, "", "nothing before the script gives its state");
+  view.updateSound({ text: "Son désactivé : cliquer pour activer", buttonText: "Activer le son", active: false });
+  const line = first(zone, "caisse-son");
+  const button = line.children[0];
+  assert.equal(button.tag, "button");
+  assert.equal(button.attributes.type, "button");
+  assert.equal(button.textContent, "Activer le son");
+  assert.equal(first(line, "caisse-son-etat").textContent, "Son désactivé : cliquer pour activer");
+  assert.equal(first(line, "caisse-son-etat").attributes.role, "status");
+  button.listeners.click();
+  assert.equal(clicks, 1);
+  view.updateSound({ text: "Son activé", buttonText: "Couper le son", active: true });
+  assert.equal(zone.children[0], line, "same line updated in place");
+  assert.equal(line.className, "caisse-son caisse-son-actif");
+  assert.equal(button.textContent, "Couper le son");
+  view.updateSound({ text: "Son non disponible sur ce navigateur", buttonText: null, active: false });
+  assert.equal(button.hidden, true);
+  assert.equal(first(line, "caisse-son-etat").textContent, "Son non disponible sur ce navigateur");
+});
+
 test("vue : montant en cours de lecture = phrase, pas un grand chiffre", () => {
   const { view, content } = setup();
   view.update(data([ticket(1, { amount: "Montant en cours de lecture", amountReady: false })]));
@@ -213,7 +240,7 @@ test("vue : l'affichage reste en place pendant une coupure réseau", () => {
 
 // Intention: the files the browser loads never build HTML from a string, never evaluate text and never use storage or other pages.
 test("fichiers du navigateur : ni innerHTML, ni eval, ni document.write", async () => {
-  for (const name of ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age"]) {
+  for (const name of ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic"]) {
     const code = await readFile(new URL(`../${name}.js`, import.meta.url), "utf8");
     assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\s*\(|new Function|setTimeout\(\s*["'`]/.test(code), name);
   }

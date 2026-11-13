@@ -77,6 +77,8 @@ caisse-view.js       script du navigateur : construit l'affichage (textContent, 
 new-payments.js      détection des nouveaux paiements (fonction pure, servira au son et à la notification)
 date-line.js         ligne de date et décalage d'horloge (fonctions pures)
 age.js               « il y a x min » (fonction pure, utilisée par le serveur et le navigateur)
+sound-logic.js       quand sonner et que dire de l'état du son (fonctions pures)
+sound.js             le son : Web Audio, bip généré, aucun fichier audio
 style.css            feuille de style unique (charte La Graine 34, classes de la caisse comprises)
 logo-lagraine34.png  logo, servi sur /logo.png
 fonts/               polices Roboto et Voltaire (woff2) et leurs licences
@@ -217,7 +219,7 @@ sécurité lit l'historique du compte pour ne rater aucun paiement.
 ## Limites du prototype
 
 - **Un seul commerçant** (celui du compte d'écoute), un seul compte Cyclos par
-  commerçant : pas de sous-comptes ni d'opérateurs. Pas de son. Pas de base de
+  commerçant : pas de sous-comptes ni d'opérateurs. Pas de base de
   données : tout est en mémoire et oublié à l'arrêt de l'écoute.
 - **Session de la page** : la page garde sa session (20 minutes
   d'inactivité, 8 heures au plus). Au bout de 8 heures, elle ramène à la
@@ -235,6 +237,17 @@ sécurité lit l'historique du compte pour ne rater aucun paiement.
   paiement » ; le fond coloré et la marque « Nouveau » ne concernent que les paiements arrivés ensuite.
   Si le serveur ne répond plus, l'affichage reste en place avec la bannière « Connexion au
   serveur interrompue. » ; une réponse 401 (session expirée) ramène à la connexion.
+- **Son** : un bouton « Activer le son » en haut de la page. Les navigateurs interdisent
+  le son sans geste de l'utilisateur : le clic crée l'audio et joue un bip d'essai. Le bip
+  est **généré** par Web Audio (deux notes brèves, moins d'une demi-seconde, volume modéré),
+  sans fichier audio. Le son est **toujours désactivé au chargement de la page** (rien n'est
+  mémorisé) et l'état est écrit en toutes lettres : « Son activé » ou « Son désactivé :
+  cliquer pour activer ». « Son activé » n'est jamais affiché si le navigateur a suspendu
+  l'audio (veille, appel, onglet interrompu) : il faut alors recliquer. Un seul bip par lot
+  de nouveaux paiements, jamais pour les paiements du chargement initial. Le bouton sert aussi
+  à couper le son. Un navigateur sans Web Audio affiche « Son non disponible sur ce navigateur ».
+  Sur certains navigateurs (téléphones surtout), le son d'un onglet caché ou d'un écran verrouillé
+  peut être coupé : à vérifier sur le matériel réel.
 - **Sans JavaScript** : la page rendue par le serveur est complète ; un
   `<meta http-equiv="refresh">` placé dans `<noscript>` la recharge toutes les
   `CAISSE_REFRESH_SECONDS` secondes (il n'y a plus d'en-tête `Refresh`).
@@ -305,6 +318,8 @@ identifiant (ceux des tests sont fictifs).
   (date et âge), `test/caisse-view.test.js` (affichage, avec un faux `document`),
   `test/caisse-script.test.js` (minuteries et réseau du script), `test/caisse-data.test.js`
   (`/caisse/data` et fichiers servis).
+- Étape C : `test/sound-logic.test.js` (quand sonner), `test/sound.test.js` (audio, avec un faux
+  `AudioContext`) ; le son dans le script est couvert par `test/caisse-script.test.js`.
 - Caisse : `test/caisse-config.test.js` (variables), `test/sse-parser.test.js`
   (flux), `test/cyclos-push.test.js` (appels Cyclos), `test/ticket-store.test.js`
   (tickets), `test/cyclos-listener.test.js` (boucle d'écoute),

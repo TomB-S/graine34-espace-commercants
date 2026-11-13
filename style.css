@@ -435,6 +435,28 @@ form[action="/deconnexion"] {
   background: #5fe08a; /* bright green, readable on the main green; the word carries the meaning */
 }
 
+/* Sound: the button and, next to it, the state in words (the colour only underlines it). */
+.caisse-son {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.caisse-son button {
+  min-height: var(--tactile);
+}
+
+.caisse-son-etat {
+  color: var(--texte-secondaire);
+}
+
+.caisse-son-actif .caisse-son-etat {
+  color: var(--vert-principal);
+  font-weight: 700;
+}
+
 /* Before the first payment. */
 .caisse-vide {
   padding: 2rem 1rem;

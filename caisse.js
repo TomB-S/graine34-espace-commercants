@@ -5,6 +5,8 @@
 import { createCaisseView } from "./caisse-view.js";
 import { createNewPaymentDetector } from "./new-payments.js";
 import { clockOffset } from "./date-line.js";
+import { createSound } from "./sound.js";
+import { shouldBeep, soundLabel } from "./sound-logic.js";
 
 const AGE_REFRESH_MS = 15_000;
 
@@ -16,7 +18,17 @@ function start() {
   const loginUrl = root.dataset.loginUrl || "/";
 
   let offset = 0; // server clock minus browser clock
-  const view = createCaisseView(document, { pollSeconds: pollMs / 1000, nowMs: () => Date.now() + offset });
+  // The sound starts off on every load; the click on the button (a gesture the browser accepts) turns it on.
+  const sound = createSound({
+    AudioContextClass: window.AudioContext ?? window.webkitAudioContext,
+    onChange: () => view.updateSound(soundLabel(sound.status())),
+  });
+  const view = createCaisseView(document, {
+    pollSeconds: pollMs / 1000,
+    nowMs: () => Date.now() + offset,
+    onSoundToggle: () => (soundLabel(sound.status()).active ? sound.disable() : sound.enable()),
+  });
+  view.updateSound(soundLabel(sound.status()));
   const detector = createNewPaymentDetector();
   let timer = null;
   let running = false;
@@ -41,6 +53,9 @@ function start() {
       offset = clockOffset(data.now, Date.now());
       const fresh = detector.update(data.tickets);
       view.update(data, fresh);
+      // One bip per batch of new payments (never for the first load, never when the sound is off or the audio suspended).
+      if (shouldBeep(sound.status(), fresh.length)) sound.beep();
+      view.updateSound(soundLabel(sound.status()));
     } catch {
       view.setOffline(true);
     } finally {
@@ -53,7 +68,10 @@ function start() {
 
   // Back in the foreground: read at once, the browser may have slowed the timers of a hidden tab.
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") poll();
+    if (document.visibilityState === "visible") {
+      view.updateSound(soundLabel(sound.status())); // the browser may have suspended the audio meanwhile
+      poll();
+    }
   });
   window.addEventListener("online", poll);
   setInterval(() => view.refreshAges(), AGE_REFRESH_MS);
