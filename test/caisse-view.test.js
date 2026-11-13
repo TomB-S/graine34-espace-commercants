@@ -260,7 +260,7 @@ test("vue : l'affichage reste en place pendant une coupure réseau", () => {
 
 // Intention: the files the browser loads never build HTML from a string, never evaluate text and never use storage or other pages.
 test("fichiers du navigateur : ni innerHTML, ni eval, ni document.write", async () => {
-  for (const name of ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic", "notification", "notification-logic"]) {
+  for (const name of ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic", "notification", "notification-logic", "controls-logic"]) {
     const code = await readFile(new URL(`../${name}.js`, import.meta.url), "utf8");
     assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\s*\(|new Function|setTimeout\(\s*["'`]/.test(code), name);
   }

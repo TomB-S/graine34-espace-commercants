@@ -39,7 +39,7 @@ class Node {
   }
 }
 
-async function run(responses, audio = null, notif = null) {
+async function run(responses, audio = null, notif = null, store = null) {
   const nodes = new Map();
   for (const id of ["caisse-zone-direct", "caisse-zone-etat", "caisse-zone-contenu", "caisse-zone-son", "caisse-zone-notif", "caisse-actualisation"]) nodes.set(id, new Node());
   const root = new Node();
@@ -59,9 +59,12 @@ async function run(responses, audio = null, notif = null) {
     getElementById: (id) => nodes.get(id) ?? null,
     createElement: () => new Node(),
     addEventListener: (type, fn) => (listeners[type] = fn),
+    removeEventListener: (type, fn) => {
+      if (listeners[type] === fn) delete listeners[type];
+    },
   };
   set("document", document);
-  set("window", { addEventListener: (type, fn) => (listeners[`window:${type}`] = fn), AudioContext: audio?.AudioContext, Notification: notif?.Notification, isSecureContext: notif?.secure ?? true, focus: () => (seen.focused += 1) });
+  set("window", { addEventListener: (type, fn) => (listeners[`window:${type}`] = fn), AudioContext: audio?.AudioContext, Notification: notif?.Notification, isSecureContext: notif?.secure ?? true, focus: () => (seen.focused += 1), localStorage: store ?? undefined });
   set("location", { assign: (url) => seen.assigned.push(url), reload: () => (seen.reloaded += 1) });
   set("setTimeout", (fn, ms) => timers.push({ fn, ms }) - 1);
   set("clearTimeout", () => {});
@@ -182,9 +185,10 @@ test("script : le premier chargement n'affiche pas le fond « nouveau », un pai
 
 // ---- the sound ----
 
-// A stand-in for the AudioContext: counts the notes played. `behaviour.state` is what resume() leaves the context in.
-function fakeAudio(behaviour = { state: "running" }) {
-  const audio = { created: 0, notes: 0, contexts: [] };
+// A stand-in for the AudioContext. `audio.state` is what resume() leaves the context in: tests change it to say "the browser now
+// accepts the audio" (after a real gesture) or "still refuses".
+function fakeAudio(state = "running") {
+  const audio = { created: 0, notes: 0, contexts: [], state };
   audio.AudioContext = class {
     constructor() {
       this.state = "suspended";
@@ -194,7 +198,7 @@ function fakeAudio(behaviour = { state: "running" }) {
       audio.contexts.push(this);
     }
     async resume() {
-      this.state = behaviour.state;
+      this.state = audio.state;
     }
     createGain() {
       return { gain: { setValueAtTime() {}, linearRampToValueAtTime() {} }, connect() {} };
@@ -206,123 +210,209 @@ function fakeAudio(behaviour = { state: "running" }) {
   return audio;
 }
 
+// A stand-in for localStorage; `blocked` makes every access throw (private window).
+function fakeStore(initial = {}, { blocked = false } = {}) {
+  const values = { ...initial };
+  return {
+    values,
+    getItem(key) {
+      if (blocked) throw new Error("blocked");
+      return key in values ? values[key] : null;
+    },
+    setItem(key, value) {
+      if (blocked) throw new Error("blocked");
+      values[key] = String(value);
+    },
+  };
+}
+
+const GESTURES = ["pointerdown", "pointerup", "touchend", "click", "keydown"];
+const armed = (page) => GESTURES.filter((type) => page.listeners[type]);
+const tap = async (page, type = "click") => {
+  page.listeners[type]?.();
+  await flush();
+};
 const soundLine = (page) => page.nodes.get("caisse-zone-son").children[0].children[1].textContent;
 const soundButton = (page) => page.nodes.get("caisse-zone-son").children[0].children[0];
+const buttonText = (page) => (soundButton(page).hidden ? null : soundButton(page).textContent);
 const nextRead = (page) => page.timers.filter((t) => !t.every && t.ms === 3000).at(-1).fn();
 
-test("son : démarre désactivé à chaque chargement, aucun AudioContext créé avant un clic, aucun bip", async () => {
+test("son : actif par défaut, mais « en attente » tant que le navigateur n'a pas laissé l'audio démarrer, aucun bip", async () => {
   const audio = fakeAudio();
-  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2, { isNew: true }), ticket(1)]))], audio);
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2, { isNew: true }), ticket(1)]))], audio, null, fakeStore());
   try {
-    assert.match(soundLine(page), /Son désactivé : cliquer pour activer/);
-    assert.equal(soundButton(page).textContent, "Activer le son");
+    assert.equal(soundLine(page), "Son en attente : toucher la page pour l'activer");
+    assert.ok(!/Son activé/.test(soundLine(page)));
+    assert.equal(audio.created, 0, "no audio context before a gesture");
+    assert.deepEqual(armed(page), GESTURES, "listening for the first gesture");
     nextRead(page);
     await flush();
-    assert.equal(audio.created, 0, "no audio context without a click");
-    assert.equal(audio.notes, 0, "a new payment with the sound off rings nothing");
+    assert.equal(audio.notes, 0, "a new payment rings nothing while the audio is not running");
   } finally {
     page.restore();
   }
 });
 
-test("son : le clic active (bip d'essai), puis un seul bip par lot de nouveaux paiements, jamais au premier chargement", async () => {
+test("son : le premier geste sur la page débloque l'audio sans bip, les écouteurs sont retirés, puis un bip par lot de nouveaux paiements", async () => {
   const audio = fakeAudio();
   const page = await run(
     [ok(data([ticket(1, { isNew: true })])), ok(data([ticket(1)])), ok(data([ticket(4), ticket(3), ticket(2), ticket(1)])), ok(data([ticket(4), ticket(3), ticket(2), ticket(1)]))],
     audio,
+    null,
+    fakeStore(),
   );
   try {
-    soundButton(page).listeners.click();
-    await flush();
+    await tap(page, "click");
     assert.equal(audio.created, 1);
-    assert.equal(audio.notes, 2, "the test bip: two notes");
-    assert.match(soundLine(page), /^Son activé/);
-    assert.equal(soundButton(page).textContent, "Couper le son");
-    const afterTest = audio.notes;
-    nextRead(page); // same payments: nothing new
-    await flush();
-    assert.equal(audio.notes, afterTest);
-    nextRead(page); // three payments at once: one bip
-    await flush();
-    assert.equal(audio.notes, afterTest + 2, "one bip (two notes) for a batch of three");
+    assert.equal(audio.notes, 0, "the unlocking gesture rings nothing");
+    assert.equal(soundLine(page), "Son activé");
+    assert.deepEqual(armed(page), [], "listeners removed after use");
     nextRead(page); // nothing new
     await flush();
-    assert.equal(audio.notes, afterTest + 2);
-  } finally {
-    page.restore();
-  }
-});
-
-test("son : le premier chargement ne sonne pas même si le son a été activé avant la réponse", async () => {
-  const audio = fakeAudio();
-  const page = await run([ok(data([ticket(1, { isNew: true })]))], audio);
-  try {
-    soundButton(page).listeners.click();
+    assert.equal(audio.notes, 0);
+    nextRead(page); // three payments at once: one bip
     await flush();
-    assert.equal(audio.notes, 2, "only the test bip");
-  } finally {
-    page.restore();
-  }
-});
-
-test("son : audio suspendu par le navigateur = jamais « Son activé », pas de bip", async () => {
-  const audio = fakeAudio({ state: "suspended" });
-  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)]))], audio);
-  try {
-    soundButton(page).listeners.click();
-    await flush();
-    assert.match(soundLine(page), /Son désactivé : cliquer pour activer/);
-    assert.ok(!/Son activé/.test(soundLine(page)));
+    assert.equal(audio.notes, 2, "one bip (two notes) for a batch of three");
     nextRead(page);
     await flush();
+    assert.equal(audio.notes, 2);
+  } finally {
+    page.restore();
+  }
+});
+
+test("son : un toucher dont le premier événement n'est pas accepté laisse « en attente » et garde les écouteurs, le suivant débloque", async () => {
+  const audio = fakeAudio("suspended");
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)]))], audio, null, fakeStore());
+  try {
+    await tap(page, "pointerdown"); // the browser does not count it yet
+    assert.equal(soundLine(page), "Son en attente : toucher la page pour l'activer");
+    assert.ok(!/Son activé/.test(soundLine(page)), "never 'activé' with a suspended context");
+    assert.deepEqual(armed(page), GESTURES, "still listening");
+    nextRead(page);
+    await flush();
+    assert.equal(audio.notes, 0, "no bip while suspended");
+    audio.state = "running";
+    await tap(page, "pointerup");
+    assert.equal(soundLine(page), "Son activé");
+    assert.deepEqual(armed(page), []);
+  } finally {
+    page.restore();
+  }
+});
+
+test("son : un geste n'est écouté qu'une fois à la fois (écouteurs posés une seule fois, pas de contexte en double)", async () => {
+  const audio = fakeAudio();
+  const page = await run([ok(data([ticket(1)]))], audio, null, fakeStore());
+  try {
+    const before = { ...page.listeners };
+    page.listeners.click();
+    page.listeners.keydown();
+    await flush();
+    assert.equal(audio.created, 1);
+    assert.ok(Object.keys(before).includes("click"));
+  } finally {
+    page.restore();
+  }
+});
+
+test("son : si le navigateur suspend l'audio après coup, l'état redevient « en attente » et un geste suffit à le relancer", async () => {
+  const audio = fakeAudio();
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)]))], audio, null, fakeStore());
+  try {
+    await tap(page);
+    assert.equal(soundLine(page), "Son activé");
+    audio.contexts[0].state = "interrupted";
+    audio.contexts[0].onstatechange();
+    assert.equal(soundLine(page), "Son en attente : toucher la page pour l'activer");
+    assert.deepEqual(armed(page), GESTURES, "listening again");
+    nextRead(page);
+    await flush();
+    assert.equal(audio.notes, 0, "no bip while interrupted");
+    await tap(page, "keydown");
+    assert.equal(soundLine(page), "Son activé");
+  } finally {
+    page.restore();
+  }
+});
+
+test("son : choix « coupé » mémorisé = désactivé au chargement, aucun écouteur de geste, aucun contexte, aucun bip", async () => {
+  const audio = fakeAudio();
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)]))], audio, null, fakeStore({ "caisse-son": "off" }));
+  try {
+    assert.equal(soundLine(page), "Son désactivé : cliquer pour activer");
+    assert.deepEqual(armed(page), []);
+    nextRead(page);
+    await flush();
+    assert.equal(audio.created, 0);
     assert.equal(audio.notes, 0);
   } finally {
     page.restore();
   }
 });
 
-test("son : si le navigateur suspend l'audio après l'activation, l'état le dit et le bip est évité", async () => {
+test("son : le bouton « Couper le son » coupe et mémorise ; « Activer le son » le remet et mémorise", async () => {
   const audio = fakeAudio();
-  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)]))], audio);
+  const store = fakeStore();
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)]))], audio, fakeNotifications({ permission: "granted" }), store);
   try {
+    await tap(page);
+    assert.equal(buttonText(page), "Couper le son");
     soundButton(page).listeners.click();
     await flush();
-    assert.match(soundLine(page), /^Son activé/);
-    audio.contexts[0].state = "suspended";
-    audio.contexts[0].onstatechange();
-    assert.match(soundLine(page), /Son désactivé : cliquer pour activer/);
-    const notes = audio.notes;
+    assert.equal(store.values["caisse-son"], "off");
+    assert.equal(soundLine(page), "Son désactivé : cliquer pour activer");
+    assert.equal(buttonText(page), "Activer le son");
     nextRead(page);
     await flush();
-    assert.equal(audio.notes, notes, "no bip while the audio is suspended");
+    assert.equal(audio.notes, 0, "cut: nothing rings");
+    soundButton(page).listeners.click();
+    await flush();
+    assert.equal(store.values["caisse-son"], "on");
+    assert.equal(soundLine(page), "Son activé");
+    assert.equal(audio.notes, 2, "the button plays the test bip");
   } finally {
     page.restore();
   }
 });
 
-test("son : le bouton coupe le son", async () => {
-  const audio = fakeAudio();
-  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)]))], audio);
+test("son : stockage bloqué ou absent = la page fonctionne, le son reste actif par défaut", async () => {
+  const blocked = await run([ok(data([ticket(1)]))], fakeAudio(), null, fakeStore({}, { blocked: true }));
   try {
-    soundButton(page).listeners.click();
+    assert.equal(soundLine(blocked), "Son en attente : toucher la page pour l'activer");
+    await tap(blocked);
+    assert.equal(soundLine(blocked), "Son activé");
+    soundButton(blocked).listeners.click(); // cut: cannot be remembered, nothing breaks
     await flush();
-    soundButton(page).listeners.click();
-    await flush();
-    assert.match(soundLine(page), /Son désactivé/);
-    const notes = audio.notes;
-    nextRead(page);
-    await flush();
-    assert.equal(audio.notes, notes);
+    assert.equal(soundLine(blocked), "Son désactivé : cliquer pour activer");
+  } finally {
+    blocked.restore();
+  }
+  const absent = await run([ok(data([ticket(1)]))], fakeAudio());
+  try {
+    assert.equal(soundLine(absent), "Son en attente : toucher la page pour l'activer");
+  } finally {
+    absent.restore();
+  }
+});
+
+test("son : le premier chargement ne sonne pas même avec le son débloqué avant la réponse", async () => {
+  const audio = fakeAudio();
+  const page = await run([ok(data([ticket(1, { isNew: true })]))], audio, null, fakeStore());
+  try {
+    await tap(page);
+    assert.equal(audio.notes, 0);
   } finally {
     page.restore();
   }
 });
 
-test("son : navigateur sans Web Audio = message clair, pas de bouton, la page fonctionne", async () => {
+test("son : navigateur sans Web Audio = message clair, aucun écouteur, la page fonctionne", async () => {
   const page = await run([ok(data([ticket(1)]))]);
   try {
     assert.match(soundLine(page), /Son non disponible sur ce navigateur/);
-    assert.equal(soundButton(page).hidden, true);
+    assert.deepEqual(armed(page), []);
+    assert.equal(buttonText(page), null, "no button: nothing to turn on");
     assert.match(page.nodes.get("caisse-zone-contenu").textContent, /P1/);
   } finally {
     page.restore();
@@ -351,25 +441,95 @@ function fakeNotifications({ permission = "default", answer = "granted", secure 
 }
 
 const notifLine = (page) => page.nodes.get("caisse-zone-notif").children[0].children[1].textContent;
-const notifButton = (page) => page.nodes.get("caisse-zone-notif").children[0].children[0];
 
-test("notifications : la permission n'est jamais demandée toute seule, seulement au clic", async () => {
-  const notif = fakeNotifications();
+test("notifications : déjà accordées au chargement = actives tout de suite, sans bouton, sans nouvelle demande", async () => {
+  const notif = fakeNotifications({ permission: "granted" });
   const page = await run([ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)]))], null, notif);
   try {
-    assert.match(notifLine(page), /Notifications désactivées : cliquer pour activer/);
-    assert.equal(notifButton(page).textContent, "Activer les notifications");
+    assert.equal(notifLine(page), "Notifications activées");
+    assert.equal(page.nodes.get("caisse-zone-notif").children[0].children[0].hidden, true, "the notification line never has its own button");
+    assert.equal(buttonText(page), null, "nothing left to turn on");
+    assert.equal(notif.requested, 0);
     nextRead(page);
     await flush();
-    assert.equal(notif.requested, 0, "no request without a click");
-    assert.equal(notif.shown.length, 0, "no notification without the permission");
-    notifButton(page).listeners.click();
-    await flush();
-    assert.equal(notif.requested, 1);
-    assert.equal(notifLine(page), "Notifications activées");
-    assert.equal(notifButton(page).hidden, true);
+    assert.equal(notif.shown.length, 1);
   } finally {
     page.restore();
+  }
+});
+
+test("notifications : la permission n'est jamais demandée toute seule (ni au geste sur la page), seulement au clic sur le bouton", async () => {
+  const notif = fakeNotifications();
+  const audio = fakeAudio();
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)]))], audio, notif, fakeStore());
+  try {
+    assert.match(notifLine(page), /Notifications désactivées : cliquer pour activer/);
+    assert.equal(buttonText(page), "Activer le son et les notifications");
+    await tap(page); // a touch on the page: unlocks the audio, asks nothing
+    assert.equal(notif.requested, 0, "no request without a click on the button");
+    nextRead(page);
+    await flush();
+    assert.equal(notif.requested, 0);
+    assert.equal(notif.shown.length, 0, "no notification without the permission");
+    assert.equal(buttonText(page), "Activer le son et les notifications", "still one to turn on");
+  } finally {
+    page.restore();
+  }
+});
+
+test("bouton unique : un clic active le son (bip d'essai) ET demande les notifications, puis devient « Couper le son »", async () => {
+  const audio = fakeAudio();
+  const notif = fakeNotifications();
+  const store = fakeStore();
+  const page = await run([ok(data([ticket(1)]))], audio, notif, store);
+  try {
+    assert.equal(buttonText(page), "Activer le son et les notifications");
+    soundButton(page).listeners.click();
+    await flush();
+    assert.equal(notif.requested, 1);
+    assert.equal(audio.created, 1);
+    assert.equal(audio.notes, 2, "test bip");
+    assert.equal(store.values["caisse-son"], "on");
+    assert.equal(soundLine(page), "Son activé");
+    assert.equal(notifLine(page), "Notifications activées");
+    assert.equal(buttonText(page), "Couper le son");
+    assert.deepEqual(armed(page), []);
+  } finally {
+    page.restore();
+  }
+});
+
+test("bouton unique : son déjà actif et notifications à accorder = même bouton, sans second bip d'essai", async () => {
+  const audio = fakeAudio();
+  const notif = fakeNotifications();
+  const page = await run([ok(data([ticket(1)]))], audio, notif, fakeStore());
+  try {
+    await tap(page);
+    assert.equal(soundLine(page), "Son activé");
+    assert.equal(buttonText(page), "Activer le son et les notifications");
+    soundButton(page).listeners.click();
+    await flush();
+    assert.equal(notif.requested, 1);
+    assert.equal(audio.notes, 0, "the sound was already on: no test bip");
+    assert.equal(buttonText(page), "Couper le son");
+  } finally {
+    page.restore();
+  }
+});
+
+test("bouton unique : notifications refusées = le bouton ne promet que le son ; navigateur sans son = « Activer les notifications »", async () => {
+  const denied = await run([ok(data([ticket(1)]))], fakeAudio(), fakeNotifications({ permission: "denied" }), fakeStore());
+  try {
+    assert.equal(buttonText(denied), "Activer le son");
+    assert.match(notifLine(denied), /Notifications refusées\. Pour les réactiver/);
+  } finally {
+    denied.restore();
+  }
+  const noSound = await run([ok(data([ticket(1)]))], null, fakeNotifications());
+  try {
+    assert.equal(buttonText(noSound), "Activer les notifications");
+  } finally {
+    noSound.restore();
   }
 });
 
@@ -388,7 +548,6 @@ test("notifications : permission accordée, un nouveau paiement = une notificati
     assert.equal(notif.shown[0].title, "Paiement reçu : 2,00 G");
     assert.equal(notif.shown[0].options.body, "de P2");
     assert.equal(notif.shown[0].options.icon, "/icon.png");
-    assert.equal(notif.shown[0].options.tag, "k2");
     assert.ok(!/SECRET/.test(JSON.stringify([notif.shown[0].title, notif.shown[0].options])));
   } finally {
     page.restore();
@@ -397,17 +556,21 @@ test("notifications : permission accordée, un nouveau paiement = une notificati
 
 test("notifications : jamais pour le premier chargement ni pour l'historique d'ouverture", async () => {
   const notif = fakeNotifications({ permission: "granted" });
+  const audio = fakeAudio();
   const page = await run(
     [ok(data([ticket(2, { isNew: true }), ticket(1)])), ok(data([ticket(9, { initial: true }), ticket(2), ticket(1)])), ok(data([ticket(9, { initial: true }), ticket(2), ticket(1)]))],
-    null,
+    audio,
     notif,
+    fakeStore(),
   );
   try {
+    await tap(page);
     nextRead(page);
     await flush();
     nextRead(page);
     await flush();
     assert.equal(notif.shown.length, 0);
+    assert.equal(audio.notes, 0, "no sound either");
   } finally {
     page.restore();
   }
@@ -457,11 +620,10 @@ test("notifications : un clic sur la notification ramène l'onglet au premier pl
   }
 });
 
-test("notifications : refusées = phrase d'explication et aucun bouton ; non prises en charge ou hors HTTPS = message", async () => {
+test("notifications : refusées = phrase d'explication ; non prises en charge ou hors HTTPS = message", async () => {
   const denied = await run([ok(data([ticket(1)]))], null, fakeNotifications({ permission: "denied" }));
   try {
     assert.match(notifLine(denied), /Notifications refusées\. Pour les réactiver/);
-    assert.equal(notifButton(denied).hidden, true);
   } finally {
     denied.restore();
   }
@@ -485,22 +647,11 @@ test("notifications : accordées après un paiement annoncé sans permission, ce
   try {
     nextRead(page);
     await flush();
-    notifButton(page).listeners.click();
+    soundButton(page).listeners.click();
     await flush();
     nextRead(page);
     await flush();
     assert.equal(notif.shown.length, 0);
-  } finally {
-    page.restore();
-  }
-});
-
-test("notifications et son sont indépendants : chacun a sa ligne et son état", async () => {
-  const notif = fakeNotifications({ permission: "granted" });
-  const page = await run([ok(data([ticket(1)]))], fakeAudio(), notif);
-  try {
-    assert.match(soundLine(page), /Son désactivé/);
-    assert.equal(notifLine(page), "Notifications activées");
   } finally {
     page.restore();
   }

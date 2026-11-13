@@ -1,7 +1,7 @@
 // When to ring and what to say about the sound (sound-logic.js): pure logic, no audio.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BEEP, beepLength, isSoundActive, soundLabel, shouldBeep } from "../sound-logic.js";
+import { BEEP, beepLength, initialWanted, isSoundActive, soundLabel, soundText, shouldBeep } from "../sound-logic.js";
 
 const state = (extra = {}) => ({ supported: true, wanted: true, audioState: "running", ...extra });
 
@@ -14,29 +14,36 @@ test("son : actif seulement si pris en charge, voulu (clic) et audio réellement
   }
 });
 
-test("son : jamais « Son activé » quand l'audio est suspendu, même si l'utilisateur l'a demandé", () => {
-  assert.equal(soundLabel(state()).text, "Son activé");
-  assert.equal(soundLabel(state()).buttonText, "Couper le son");
-  assert.equal(soundLabel(state()).active, true);
-  for (const audioState of ["suspended", "interrupted", "closed"]) {
+test("son : « Son activé » seulement si l'audio tourne vraiment ; voulu mais pas en marche = « en attente »", () => {
+  assert.deepEqual(soundLabel(state()), { text: "Son activé", active: true });
+  for (const audioState of ["none", "suspended", "interrupted", "closed"]) {
     const label = soundLabel(state({ audioState }));
-    assert.equal(label.text, "Son désactivé : cliquer pour activer", audioState);
-    assert.equal(label.buttonText, "Activer le son");
+    assert.equal(label.text, "Son en attente : toucher la page pour l'activer", audioState);
     assert.equal(label.active, false);
   }
 });
 
-test("son : au chargement (rien voulu, pas de contexte) = désactivé ; navigateur sans audio = message et pas de bouton", () => {
-  assert.deepEqual(soundLabel({ supported: true, wanted: false, audioState: "none" }), {
-    text: "Son désactivé : cliquer pour activer",
-    buttonText: "Activer le son",
-    active: false,
-  });
-  assert.deepEqual(soundLabel({ supported: false, wanted: false, audioState: "none" }), {
-    text: "Son non disponible sur ce navigateur",
-    buttonText: null,
-    active: false,
-  });
+test("son : jamais « Son activé » avec un contexte suspendu, quoi qu'on ait voulu", () => {
+  for (const wanted of [true, false]) {
+    for (const audioState of ["none", "suspended", "interrupted", "closed", undefined]) {
+      assert.notEqual(soundText(state({ wanted, audioState })), "Son activé", `${wanted} ${audioState}`);
+    }
+  }
+});
+
+test("son : coupé = « désactivé », même si le contexte tourne ; navigateur sans audio = message", () => {
+  assert.equal(soundText(state({ wanted: false })), "Son désactivé : cliquer pour activer");
+  assert.equal(soundText(state({ wanted: false, audioState: "none" })), "Son désactivé : cliquer pour activer");
+  assert.equal(soundText({ supported: false, wanted: false, audioState: "none" }), "Son non disponible sur ce navigateur");
+  assert.equal(soundText({ supported: false, wanted: true, audioState: "none" }), "Son non disponible sur ce navigateur");
+});
+
+test("son : voulu par défaut, coupé seulement si le choix « off » est mémorisé", () => {
+  assert.equal(initialWanted(null), true);
+  assert.equal(initialWanted(undefined), true);
+  assert.equal(initialWanted("on"), true);
+  assert.equal(initialWanted(""), true);
+  assert.equal(initialWanted("off"), false);
 });
 
 test("son : sonne une fois dès qu'il y a au moins un nouveau paiement, jamais sinon", () => {

@@ -1,5 +1,5 @@
-// The audio code (sound.js) against a stand-in for the AudioContext: nothing is created before the click, the sound only counts as
-// wanted if the browser really runs the audio, the notes are short, no audio file is ever fetched.
+// The audio code (sound.js) against a stand-in for the AudioContext: wanted by default but nothing is created before a gesture, the
+// choice to cut is remembered, the unlocking gesture rings nothing, the notes are short, no audio file is ever fetched.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -34,95 +34,165 @@ function fakeContext(resumeTo = "running") {
   return { FakeContext, log };
 }
 
-test("audio : rien n'est créé avant le clic, l'état de départ est « désactivé »", () => {
+const memory = (initial = {}) => {
+  const values = { ...initial };
+  return { values, get: (key) => (key in values ? values[key] : null), set: (key, value) => (values[key] = value) };
+};
+
+// A stand-in for the document: records which gesture listeners are on.
+function fakeTarget() {
+  const on = new Map();
+  return {
+    on,
+    addEventListener: (type, fn) => on.set(type, fn),
+    removeEventListener: (type, fn) => {
+      if (on.get(type) === fn) on.delete(type);
+    },
+  };
+}
+
+test("audio : voulu par défaut, rien n'est créé avant un geste, les cinq gestes sont écoutés une seule fois", () => {
   const { FakeContext, log } = fakeContext();
-  const sound = createSound({ AudioContextClass: FakeContext });
+  const target = fakeTarget();
+  const sound = createSound({ AudioContextClass: FakeContext, storage: memory(), gestureTarget: target });
   assert.equal(log.created, 0);
-  assert.deepEqual(sound.status(), { supported: true, wanted: false, audioState: "none" });
+  assert.deepEqual(sound.status(), { supported: true, wanted: true, audioState: "none" });
+  assert.deepEqual([...target.on.keys()].sort(), ["click", "keydown", "pointerdown", "pointerup", "touchend"]);
   sound.beep();
-  assert.equal(log.oscillators.length, 0, "no bip without an enabled sound");
+  assert.equal(log.oscillators.length, 0, "no bip while the audio does not run");
 });
 
-test("audio : le clic crée et reprend le contexte, joue le bip d'essai, deux notes courtes à volume modéré", async () => {
+test("audio : le premier geste crée et reprend le contexte, ne sonne pas, retire les écouteurs", async () => {
   const { FakeContext, log } = fakeContext();
+  const target = fakeTarget();
   let changes = 0;
-  const sound = createSound({ AudioContextClass: FakeContext, onChange: () => (changes += 1) });
-  await sound.enable();
+  const sound = createSound({ AudioContextClass: FakeContext, storage: memory(), gestureTarget: target, onChange: () => (changes += 1) });
+  await target.on.get("click")();
   assert.equal(log.created, 1);
   assert.deepEqual(sound.status(), { supported: true, wanted: true, audioState: "running" });
+  assert.equal(log.oscillators.length, 0, "the unlocking gesture rings nothing");
+  assert.equal(target.on.size, 0, "listeners removed");
+  assert.ok(changes >= 1);
+});
+
+test("audio : geste non accepté par le navigateur = reste en attente, écouteurs gardés ; le suivant débloque", async () => {
+  const { FakeContext, log } = fakeContext("suspended");
+  const target = fakeTarget();
+  const sound = createSound({ AudioContextClass: FakeContext, storage: memory(), gestureTarget: target });
+  await target.on.get("pointerdown")();
+  assert.equal(sound.status().audioState, "suspended");
+  assert.equal(target.on.size, 5, "still listening");
+  assert.equal(log.created, 1, "same context reused");
+  log.context.resumeTo = "running";
+  FakeContext.prototype.resume = async function () {
+    this.state = "running";
+  };
+  await target.on.get("pointerup")();
+  assert.equal(sound.status().audioState, "running");
+  assert.equal(target.on.size, 0);
+  assert.equal(log.created, 1);
+});
+
+test("audio : choix « off » mémorisé = non voulu, aucun écouteur ; le bouton active et mémorise « on » ; couper mémorise « off »", async () => {
+  const { FakeContext } = fakeContext();
+  const target = fakeTarget();
+  const storage = memory({ "caisse-son": "off" });
+  const sound = createSound({ AudioContextClass: FakeContext, storage, gestureTarget: target });
+  assert.equal(sound.status().wanted, false);
+  assert.equal(target.on.size, 0);
+  await sound.enable();
+  assert.equal(storage.values["caisse-son"], "on");
+  assert.deepEqual(sound.status(), { supported: true, wanted: true, audioState: "running" });
+  sound.disable();
+  assert.equal(storage.values["caisse-son"], "off");
+  assert.equal(sound.status().wanted, false);
+  assert.equal(target.on.size, 0);
+});
+
+test("audio : le bouton joue le bip d'essai (deux notes brèves à volume modéré), sauf si on le lui interdit", async () => {
+  const { FakeContext, log } = fakeContext();
+  const sound = createSound({ AudioContextClass: FakeContext, storage: memory(), gestureTarget: fakeTarget() });
+  await sound.enable();
   assert.equal(log.oscillators.length, 2);
   assert.deepEqual(log.oscillators.map((o) => o.frequency.value), BEEP.notes.map((n) => n.frequency));
   assert.ok(log.oscillators.every((o) => o.type === "sine"));
   const end = Math.max(...log.oscillators.map((o) => o.stops[0])) - Math.min(...log.oscillators.map((o) => o.starts[0]));
-  assert.ok(end < 1, `${end} s`);
-  assert.ok(end >= beepLength());
-  // Each note rises to the volume and falls back to zero: no click, never above BEEP.volume.
+  assert.ok(end < 1 && end >= beepLength(), `${end} s`);
   for (const gain of log.gains) {
-    const levels = gain.calls.map((call) => call[1]);
-    assert.ok(Math.max(...levels) <= BEEP.volume);
-    assert.equal(gain.calls.at(-1)[1], 0);
+    assert.ok(Math.max(...gain.calls.map((call) => call[1])) <= BEEP.volume);
+    assert.equal(gain.calls.at(-1)[1], 0, "falls back to zero: no click");
   }
-  assert.ok(changes >= 1);
+  const quiet = fakeContext();
+  const other = createSound({ AudioContextClass: quiet.FakeContext, storage: memory(), gestureTarget: fakeTarget() });
+  await other.enable({ testBeep: false });
+  assert.equal(quiet.log.oscillators.length, 0);
 });
 
-test("audio : un deuxième clic réutilise le même contexte", async () => {
-  const { FakeContext, log } = fakeContext();
-  const sound = createSound({ AudioContextClass: FakeContext });
-  await sound.enable();
-  sound.disable();
-  assert.equal(sound.status().wanted, false);
-  await sound.enable();
-  assert.equal(log.created, 1);
-});
-
-test("audio : si le navigateur laisse l'audio suspendu, le son n'est pas considéré comme voulu et rien ne sonne", async () => {
+test("audio : si le navigateur laisse l'audio suspendu après le bouton, le son reste « en attente » (voulu, pas en marche) et rien ne sonne", async () => {
   const { FakeContext, log } = fakeContext("suspended");
-  const sound = createSound({ AudioContextClass: FakeContext });
+  const target = fakeTarget();
+  const sound = createSound({ AudioContextClass: FakeContext, storage: memory(), gestureTarget: target });
   await sound.enable();
-  assert.deepEqual(sound.status(), { supported: true, wanted: false, audioState: "suspended" });
+  assert.deepEqual(sound.status(), { supported: true, wanted: true, audioState: "suspended" });
   assert.equal(log.oscillators.length, 0);
+  assert.equal(target.on.size, 5, "a later gesture will try again");
   sound.beep();
   assert.equal(log.oscillators.length, 0);
 });
 
-test("audio : bip refusé quand le navigateur suspend le contexte après coup ; l'état suit le contexte", async () => {
+test("audio : le navigateur suspend le contexte après coup = écouteurs reposés et pas de bip ; l'état suit le contexte", async () => {
   const { FakeContext, log } = fakeContext();
+  const target = fakeTarget();
   let changes = 0;
-  const sound = createSound({ AudioContextClass: FakeContext, onChange: () => (changes += 1) });
-  await sound.enable();
-  const before = log.oscillators.length;
+  const sound = createSound({ AudioContextClass: FakeContext, storage: memory(), gestureTarget: target, onChange: () => (changes += 1) });
+  await target.on.get("click")();
+  assert.equal(target.on.size, 0);
   sound.beep();
-  assert.equal(log.oscillators.length, before + 2, "one bip is two notes");
+  assert.equal(log.oscillators.length, 2, "one bip is two notes");
   log.context.state = "interrupted";
   log.context.onstatechange();
   assert.equal(sound.status().audioState, "interrupted");
+  assert.equal(target.on.size, 5, "listening again");
   assert.ok(changes >= 2, "the page is told");
   sound.beep();
-  assert.equal(log.oscillators.length, before + 2);
+  assert.equal(log.oscillators.length, 2);
 });
 
-test("audio : un contexte qui échoue ne casse pas la page", async () => {
+test("audio : un contexte qui échoue ne casse pas la page, le geste suivant réessaie", async () => {
   class Broken {
     constructor() {
       throw new Error("no audio device");
     }
   }
-  const sound = createSound({ AudioContextClass: Broken });
+  const target = fakeTarget();
+  const sound = createSound({ AudioContextClass: Broken, storage: memory(), gestureTarget: target });
+  await target.on.get("click")();
+  assert.equal(sound.status().audioState, "none");
+  assert.equal(target.on.size, 5);
   await sound.enable();
-  assert.equal(sound.status().wanted, false);
   sound.beep();
 });
 
-test("audio : navigateur sans Web Audio = non pris en charge, aucune erreur", async () => {
-  const sound = createSound({ AudioContextClass: undefined });
+test("audio : navigateur sans Web Audio = non pris en charge, non voulu, aucun écouteur, aucune erreur", async () => {
+  const target = fakeTarget();
+  const sound = createSound({ AudioContextClass: undefined, storage: memory(), gestureTarget: target });
   assert.equal(sound.supported, false);
   await sound.enable();
   sound.beep();
   assert.deepEqual(sound.status(), { supported: false, wanted: false, audioState: "none" });
+  assert.equal(target.on.size, 0);
 });
 
-// Intention: no sound file, nothing stored, nothing fetched: the bip is generated.
-test("audio : aucun fichier audio, aucune dépendance, aucun stockage dans sound.js", async () => {
+test("audio : sans stockage ni cible de gestes (valeurs par défaut) rien ne casse", async () => {
+  const { FakeContext } = fakeContext();
+  const sound = createSound({ AudioContextClass: FakeContext });
+  assert.equal(sound.status().wanted, true);
+  await sound.enable();
+  sound.disable();
+});
+
+// Intention: no sound file, nothing fetched, and no direct access to the storage (it is given, and its wrapper never throws).
+test("audio : aucun fichier audio, aucune dépendance, aucun accès direct au stockage dans sound.js", async () => {
   const code = await readFile(new URL("../sound.js", import.meta.url), "utf8");
   assert.ok(!/\.(mp3|wav|ogg|m4a)|new Audio\(|<audio|fetch\(|decodeAudioData|localStorage|sessionStorage|indexedDB/i.test(code));
   assert.deepEqual([...code.matchAll(/^import .* from "([^"]+)";/gm)].map((m) => m[1]), ["./sound-logic.js"]);

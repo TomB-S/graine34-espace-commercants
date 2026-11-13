@@ -77,7 +77,8 @@ caisse-view.js       script du navigateur : construit l'affichage (textContent, 
 new-payments.js      détection des nouveaux paiements (fonction pure, servira au son et à la notification)
 date-line.js         ligne de date et décalage d'horloge (fonctions pures)
 age.js               « il y a x min » (fonction pure, utilisée par le serveur et le navigateur)
-sound-logic.js       quand sonner et que dire de l'état du son (fonctions pures)
+sound-logic.js       quand sonner et que dire de l'état du son, son voulu par défaut (fonctions pures)
+controls-logic.js    le bouton unique du son et des notifications : libellé et action (fonctions pures)
 sound.js             le son : Web Audio, bip généré, aucun fichier audio
 notification-logic.js  quoi notifier et que dire de l'état (regroupement, tag, texte : fonctions pures)
 notification.js      notifications du navigateur : le seul fichier qui touche à l'API Notification
@@ -240,19 +241,31 @@ sécurité lit l'historique du compte pour ne rater aucun paiement.
   paiement » ; le fond coloré et la marque « Nouveau » ne concernent que les paiements arrivés ensuite.
   Si le serveur ne répond plus, l'affichage reste en place avec la bannière « Connexion au
   serveur interrompue. » ; une réponse 401 (session expirée) ramène à la connexion.
-- **Son** : un bouton « Activer le son » en haut de la page. Les navigateurs interdisent
-  le son sans geste de l'utilisateur : le clic crée l'audio et joue un bip d'essai. Le bip
-  est **généré** par Web Audio (deux notes brèves, moins d'une demi-seconde, volume modéré),
-  sans fichier audio. Le son est **toujours désactivé au chargement de la page** (rien n'est
-  mémorisé) et l'état est écrit en toutes lettres : « Son activé » ou « Son désactivé :
-  cliquer pour activer ». « Son activé » n'est jamais affiché si le navigateur a suspendu
-  l'audio (veille, appel, onglet interrompu) : il faut alors recliquer. Un seul bip par lot
-  de nouveaux paiements, jamais pour les paiements du chargement initial. Le bouton sert aussi
-  à couper le son. Un navigateur sans Web Audio affiche « Son non disponible sur ce navigateur ».
+- **Son (actif par défaut)** : le son est **voulu par défaut**. Les navigateurs interdisent
+  pourtant tout son avant un geste de l'utilisateur sur la page, à **chaque chargement** : tant
+  que l'audio ne tourne pas vraiment, la page écrit « Son en attente : toucher la page pour
+  l'activer », et le **premier clic, toucher ou touche du clavier n'importe où** sur la page
+  crée ou reprend l'audio (sans bip ; l'écouteur est posé une seule fois et retiré dès que
+  l'audio tourne). « Son activé » n'est **jamais** affiché si le navigateur a suspendu l'audio
+  (veille, appel, onglet interrompu) : l'état repasse à « en attente » et le geste suivant le
+  relance. Le bouton permet de **couper le son** (« Son désactivé : cliquer pour activer ») ; ce
+  choix est **mémorisé** dans le navigateur (`localStorage`, toujours dans un `try/catch` : un
+  stockage bloqué ou absent n'empêche rien, le son reste alors actif par défaut). Le bip est
+  **généré** par Web Audio (deux notes brèves, moins d'une demi-seconde, volume modéré), sans fichier
+  audio. Un seul bip par lot de nouveaux paiements, jamais pour le chargement initial ni pour
+  l'historique. Un navigateur sans Web Audio affiche « Son non disponible sur ce navigateur ».
   Sur certains navigateurs (téléphones surtout), le son d'un onglet caché ou d'un écran verrouillé
   peut être coupé : à vérifier sur le matériel réel.
-- **Notifications du navigateur** : un bouton « Activer les notifications » ; la demande
-  d'autorisation se fait **uniquement au clic**, jamais automatiquement. L'état est écrit en
+- **Un seul bouton pour le son et les notifications** : tant que l'un des deux n'est pas actif et
+  peut être activé par un clic, le bouton s'appelle « Activer le son et les notifications » : un clic
+  débloque l'audio (avec un bip d'essai) **et** demande l'autorisation des notifications, dans le
+  même geste. Une fois les deux actifs, il devient « Couper le son ». Ce que le navigateur ne peut
+  pas activer n'est pas promis : notifications refusées ou hors HTTPS, le bouton dit « Activer le
+  son » ; navigateur sans Web Audio, « Activer les notifications ».
+- **Notifications du navigateur** : si l'autorisation est **déjà accordée** au chargement
+  (`Notification.permission` vaut `granted`), elles sont actives tout de suite, sans bouton :
+  « Notifications activées ». Sinon la demande d'autorisation se fait **uniquement au clic sur le
+  bouton** (voir ci-dessus), jamais automatiquement ni au simple toucher de la page. L'état est écrit en
   toutes lettres : désactivées (avec le bouton), activées, refusées (une phrase explique comment les
   réactiver : cadenas à gauche de l'adresse, autoriser les notifications, recharger la page), ou non
   disponibles (navigateur sans l'API, ou page hors HTTPS). Pour chaque nouveau paiement : titre
@@ -344,6 +357,8 @@ identifiant (ceux des tests sont fictifs).
   (date et âge), `test/caisse-view.test.js` (affichage, avec un faux `document`),
   `test/caisse-script.test.js` (minuteries et réseau du script), `test/caisse-data.test.js`
   (`/caisse/data` et fichiers servis).
+- Étape E : `test/controls-logic.test.js` (le bouton unique) ; les tests du son et des notifications
+  ci-dessous couvrent aussi l'état « en attente », le geste, la mémorisation et le stockage bloqué.
 - Étape C : `test/sound-logic.test.js` (quand sonner), `test/sound.test.js` (audio, avec un faux
   `AudioContext`) ; le son dans le script est couvert par `test/caisse-script.test.js`.
 - Étape D : `test/notification-logic.test.js` (regroupement, tag, texte, attente du montant),

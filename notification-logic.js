@@ -12,13 +12,19 @@ export const MAX_SEPARATE = 3;
 export const MAX_WAIT_MS = 15_000;
 
 // `state`: { supported, secure, permission } where permission is "default", "granted" or "denied".
-// Returns what the page shows: the line of state, the button label (null = no button) and whether they are on.
+// Returns what the page shows: the line of state and whether they are on. Already granted at load = on at once. The button is
+// shared with the sound (controls-logic.js); the permission is still only ever asked by a click.
 export function notificationLabel({ supported, secure, permission }) {
-  if (!supported) return { text: TEXTS.notificationUnsupported, buttonText: null, active: false };
-  if (!secure) return { text: TEXTS.notificationInsecure, buttonText: null, active: false };
-  if (permission === "granted") return { text: TEXTS.notificationOn, buttonText: null, active: true };
-  if (permission === "denied") return { text: TEXTS.notificationDenied, buttonText: null, active: false };
-  return { text: TEXTS.notificationOff, buttonText: TEXTS.notificationEnableButton, active: false };
+  if (!supported) return { text: TEXTS.notificationUnsupported, active: false };
+  if (!secure) return { text: TEXTS.notificationInsecure, active: false };
+  if (permission === "granted") return { text: TEXTS.notificationOn, active: true };
+  if (permission === "denied") return { text: TEXTS.notificationDenied, active: false };
+  return { text: TEXTS.notificationOff, active: false };
+}
+
+// The permission can still be asked (by a click): the browser supports it, the page is secure, and the user has not decided yet.
+export function canAskPermission({ supported, secure, permission }) {
+  return Boolean(supported && secure && permission === "default");
 }
 
 export function canNotify({ supported, secure, permission }) {

@@ -1,17 +1,28 @@
 // The audio of the cash register page: Web Audio only, no sound file, no library. The bip is generated (two short sine notes, see
 // BEEP in sound-logic.js). The rules (when to ring, what to say) are in sound-logic.js; this file only touches the audio.
 //
-// The sound starts OFF on every load of the page and nothing is remembered: browsers refuse sound without a gesture, so
-// enable() is meant to be called from a click, and creates or resumes the AudioContext right there.
-import { BEEP } from "./sound-logic.js";
+// The sound is wanted by default, and the choice to cut it is remembered (`storage`, which never throws). Browsers refuse sound
+// before a gesture on the page, so while the sound is wanted but the audio is not running, the first click, touch or key anywhere on
+// the page creates or resumes the AudioContext (listeners put once, removed as soon as the audio runs). Nothing rings for that
+// gesture: only the button plays a test bip.
+import { BEEP, initialWanted } from "./sound-logic.js";
 
-// `AudioContextClass`: window.AudioContext (or webkitAudioContext), undefined when the browser has none. `onChange`: called
-// when something the page shows may have changed (the browser suspends or resumes the audio by itself, e.g. on a phone call).
-export function createSound({ AudioContextClass, onChange = () => {} }) {
+const STORAGE_KEY = "caisse-son";
+// Events that count as a user gesture for audio in the browsers (touch and mouse have different ones).
+const GESTURES = ["pointerdown", "pointerup", "touchend", "click", "keydown"];
+
+// `AudioContextClass`: window.AudioContext (or webkitAudioContext), undefined when the browser has none. `storage`: { get(key), set(key, value) }
+// that never throws. `gestureTarget`: the document (addEventListener / removeEventListener). `onChange`: called when something the page
+// shows may have changed (the browser suspends or resumes the audio by itself, e.g. on a phone call).
+export function createSound({ AudioContextClass, storage = { get: () => null, set: () => {} }, gestureTarget = null, onChange = () => {} }) {
+  const supported = typeof AudioContextClass === "function";
   let context = null;
-  let wanted = false;
+  let wanted = supported && initialWanted(storage.get(STORAGE_KEY));
+  let armed = false;
+  let unlocking = false;
 
   const audioState = () => (context ? String(context.state) : "none");
+  const running = () => context !== null && context.state === "running";
 
   function play() {
     const start = context.currentTime + 0.02;
@@ -31,41 +42,89 @@ export function createSound({ AudioContextClass, onChange = () => {} }) {
     }
   }
 
+  function ensureContext() {
+    if (!context) {
+      context = new AudioContextClass();
+      context.onstatechange = () => {
+        // Suspended or interrupted by the browser while the sound is wanted: wait for the next gesture.
+        if (running()) disarm();
+        else arm();
+        onChange();
+      };
+    }
+    return context;
+  }
+
+  // The gesture: unlocks the audio, rings nothing. The listeners stay until the audio really runs (a touch fires several events, the
+  // first ones may not count as a gesture for the browser).
+  async function onGesture() {
+    if (unlocking || !wanted) return;
+    unlocking = true;
+    try {
+      await ensureContext().resume();
+    } catch {
+      // not allowed yet: the next gesture tries again
+    } finally {
+      unlocking = false;
+    }
+    if (running()) disarm();
+    onChange();
+  }
+
+  function arm() {
+    if (armed || !wanted || !gestureTarget || running()) return;
+    armed = true;
+    for (const type of GESTURES) gestureTarget.addEventListener(type, onGesture);
+  }
+
+  function disarm() {
+    if (!armed) return;
+    armed = false;
+    for (const type of GESTURES) gestureTarget.removeEventListener(type, onGesture);
+  }
+
+  arm();
+
   return {
     get supported() {
-      return typeof AudioContextClass === "function";
+      return supported;
     },
 
     // What sound-logic.js needs to decide and to write.
     status() {
-      return { supported: typeof AudioContextClass === "function", wanted, audioState: audioState() };
+      return { supported, wanted, audioState: audioState() };
     },
 
-    // To call from a click. Creates or resumes the context, and only counts as enabled if the browser really runs it.
-    async enable() {
-      if (typeof AudioContextClass !== "function") return;
+    // To call from a click: turns the sound on (and remembers it), creates or resumes the context, plays the test bip if the audio runs.
+    async enable({ testBeep = true } = {}) {
+      if (!supported) return;
+      wanted = true;
+      storage.set(STORAGE_KEY, "on");
       try {
-        if (!context) {
-          context = new AudioContextClass();
-          context.onstatechange = () => onChange();
+        await ensureContext().resume();
+        if (running()) {
+          disarm();
+          if (testBeep) play();
+        } else {
+          arm();
         }
-        await context.resume();
-        wanted = context.state === "running";
-        if (wanted) play(); // the test bip
       } catch {
-        wanted = false;
+        arm();
       }
       onChange();
     },
 
+    // The button "Couper le son": remembered.
     disable() {
       wanted = false;
+      storage.set(STORAGE_KEY, "off");
+      disarm();
       onChange();
     },
 
     // The bip of a batch of new payments (the caller checked shouldBeep()).
     beep() {
-      if (!context || context.state !== "running") return;
+      if (!running()) return;
       try {
         play();
       } catch {

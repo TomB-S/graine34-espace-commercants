@@ -227,7 +227,7 @@ function staticAsset(file, contentType, cacheControl = "public, max-age=3600") {
 
 // Script of the cash register page and the pure modules it imports (each one is also tested by Node). The only
 // scripts the CSP lets run are these, served from our own address.
-const BROWSER_MODULES = ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic", "notification", "notification-logic"];
+const BROWSER_MODULES = ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic", "notification", "notification-logic", "controls-logic"];
 
 const STATIC_ASSETS = new Map([
   ["GET /style.css", staticAsset("./style.css", "text/css; charset=utf-8")],

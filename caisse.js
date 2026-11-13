@@ -7,10 +7,32 @@ import { createNewPaymentDetector } from "./new-payments.js";
 import { clockOffset } from "./date-line.js";
 import { createSound } from "./sound.js";
 import { shouldBeep, soundLabel } from "./sound-logic.js";
+import { controlsLabel } from "./controls-logic.js";
 import { createNotifier } from "./notification.js";
 import { canNotify, createNotificationPlanner, notificationLabel } from "./notification-logic.js";
 
 const AGE_REFRESH_MS = 15_000;
+
+// localStorage for light comforts only (the choice to cut the sound). Every access is in a try/catch: the storage may be blocked,
+// full or absent (private window), and the page must work without it.
+function safeStorage() {
+  return {
+    get(key) {
+      try {
+        return window.localStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    set(key, value) {
+      try {
+        window.localStorage.setItem(key, value);
+      } catch {
+        // not remembered, nothing else
+      }
+    },
+  };
+}
 
 function start() {
   const root = document.getElementById("caisse");
@@ -20,27 +42,45 @@ function start() {
   const loginUrl = root.dataset.loginUrl || "/";
 
   let offset = 0; // server clock minus browser clock
-  // The sound starts off on every load; the click on the button (a gesture the browser accepts) turns it on.
+  // The sound is on by default (unless the user cut it, remembered): until the browser lets the audio run, the first touch or key
+  // on the page unlocks it. Notifications already granted are on at once; otherwise the permission is asked only from the click.
   const sound = createSound({
     AudioContextClass: window.AudioContext ?? window.webkitAudioContext,
-    onChange: () => view.updateSound(soundLabel(sound.status())),
+    storage: safeStorage(),
+    gestureTarget: document,
+    onChange: () => refreshControls(),
   });
-  // Notifications: the permission is asked only from the click on the button, never by itself.
   const notifier = createNotifier({
     NotificationClass: window.Notification,
     secure: window.isSecureContext,
     focusWindow: () => window.focus(),
-    onChange: () => view.updateNotifications(notificationLabel(notifier.status())),
+    onChange: () => refreshControls(),
   });
+  // The two status lines and the one button. The button belongs to the sound line.
+  function refreshControls() {
+    const soundState = sound.status();
+    const notificationState = notifier.status();
+    const controls = controlsLabel(soundState, notificationState);
+    const notification = notificationLabel(notificationState);
+    view.updateSound({ ...soundLabel(soundState), buttonText: controls.buttonText });
+    view.updateNotifications({ text: notification.text, buttonText: null, active: notification.active });
+  }
+  // The click: both at once, in the same gesture (the audio is unlocked and the permission asked without waiting for each other).
+  function onButton() {
+    const controls = controlsLabel(sound.status(), notifier.status());
+    if (controls.action === "cut") sound.disable();
+    else if (controls.action === "enable") {
+      if (controls.enableSound) sound.enable();
+      if (controls.askNotifications) notifier.request();
+    }
+  }
   const planner = createNotificationPlanner();
   const view = createCaisseView(document, {
     pollSeconds: pollMs / 1000,
     nowMs: () => Date.now() + offset,
-    onSoundToggle: () => (soundLabel(sound.status()).active ? sound.disable() : sound.enable()),
-    onNotificationToggle: () => notifier.request(),
+    onSoundToggle: onButton,
   });
-  view.updateSound(soundLabel(sound.status()));
-  view.updateNotifications(notificationLabel(notifier.status()));
+  refreshControls();
   const detector = createNewPaymentDetector();
   let timer = null;
   let running = false;
@@ -67,12 +107,12 @@ function start() {
       view.update(data, fresh);
       // One bip per batch of new payments (never for the first load, never when the sound is off or the audio suspended).
       if (shouldBeep(sound.status(), fresh.length)) sound.beep();
-      view.updateSound(soundLabel(sound.status()));
+      refreshControls();
       // Notifications: the same detection as the sound (so never for the first load nor the opening history). The planner always
       // runs, so that a payment announced while the permission is missing is not announced late.
       const planned = planner.update(fresh, data.tickets, Date.now() + offset);
       if (canNotify(notifier.status())) for (const notification of planned) notifier.show(notification);
-      view.updateNotifications(notificationLabel(notifier.status()));
+      refreshControls();
     } catch {
       view.setOffline(true);
     } finally {
@@ -86,8 +126,7 @@ function start() {
   // Back in the foreground: read at once, the browser may have slowed the timers of a hidden tab.
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
-      view.updateSound(soundLabel(sound.status())); // the browser may have suspended the audio meanwhile
-      view.updateNotifications(notificationLabel(notifier.status())); // the permission may have changed in the settings
+      refreshControls(); // the browser may have suspended the audio, or the permission changed in the settings
       poll();
     }
   });

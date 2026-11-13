@@ -184,7 +184,7 @@ test("caisse/data : les clés d'un ticket complété gardent celle de sa notific
 
 // ---- files of the browser ----
 
-const MODULES = ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic", "notification", "notification-logic"];
+const MODULES = ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic", "notification", "notification-logic", "controls-logic"];
 
 appTest("scripts : servis avec le bon type, revalidés à chaque fois (no-cache + ETag, 304), contenu identique au fichier", async (app) => {
   for (const name of MODULES) {

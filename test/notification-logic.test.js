@@ -1,7 +1,7 @@
 // What to notify and what to say (notification-logic.js): pure logic, no browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MAX_SEPARATE, canNotify, createNotificationPlanner, notificationLabel, paymentBody, paymentTitle, planNotifications } from "../notification-logic.js";
+import { MAX_SEPARATE, canAskPermission, canNotify, createNotificationPlanner, notificationLabel, paymentBody, paymentTitle, planNotifications } from "../notification-logic.js";
 
 const ticket = (n, extra = {}) => ({
   keys: [`k${n}`],
@@ -15,17 +15,24 @@ const ticket = (n, extra = {}) => ({
 });
 const state = (extra = {}) => ({ supported: true, secure: true, permission: "default", ...extra });
 
-test("notifications : état par permission, bouton seulement quand il y a une action à faire", () => {
-  assert.deepEqual(notificationLabel(state()), { text: "Notifications désactivées : cliquer pour activer", buttonText: "Activer les notifications", active: false });
-  assert.deepEqual(notificationLabel(state({ permission: "granted" })), { text: "Notifications activées", buttonText: null, active: true });
+test("notifications : état par permission (déjà accordée = active tout de suite), jamais de bouton propre", () => {
+  assert.deepEqual(notificationLabel(state()), { text: "Notifications désactivées : cliquer pour activer", active: false });
+  assert.deepEqual(notificationLabel(state({ permission: "granted" })), { text: "Notifications activées", active: true });
   const denied = notificationLabel(state({ permission: "denied" }));
-  assert.equal(denied.buttonText, null);
   assert.equal(denied.active, false);
   assert.match(denied.text, /^Notifications refusées\. Pour les réactiver : cliquer sur le cadenas/);
   assert.match(denied.text, /réglages de notifications du système/);
-  assert.deepEqual(notificationLabel(state({ supported: false })), { text: "Notifications non disponibles sur ce navigateur", buttonText: null, active: false });
+  assert.deepEqual(notificationLabel(state({ supported: false })), { text: "Notifications non disponibles sur ce navigateur", active: false });
   assert.match(notificationLabel(state({ secure: false })).text, /HTTPS/);
   assert.equal(notificationLabel(state({ secure: false, permission: "granted" })).active, false, "never 'activées' without HTTPS");
+  for (const permission of ["default", "granted", "denied"]) assert.ok(!("buttonText" in notificationLabel(state({ permission }))));
+});
+
+test("notifications : la permission ne peut être demandée que si elle est encore à décider, en contexte sûr", () => {
+  assert.equal(canAskPermission(state()), true);
+  for (const bad of [{ permission: "granted" }, { permission: "denied" }, { supported: false }, { secure: false }]) {
+    assert.equal(canAskPermission(state(bad)), false, JSON.stringify(bad));
+  }
 });
 
 test("notifications : on ne notifie que si pris en charge, en contexte sûr et autorisé", () => {
