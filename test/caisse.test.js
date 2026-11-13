@@ -20,6 +20,9 @@ const HOOKS = { listenerOptions: { shortStreamMs: 0, sleep: async () => {} }, pr
 const OPTIONS = { caisse: ON, caisseHooks: HOOKS };
 const withOptions = (caisse = {}) => ({ caisse: { ...ON, ...caisse }, caisseHooks: HOOKS });
 
+// The page says nothing while the listening works (no banner), so "up" means "no longer connecting".
+const isLive = (html) => !html.includes("Connexion à Cyclos en cours");
+
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Reads /caisse again and again until `predicate(html)` is true (what the browser does every 5 seconds).
@@ -118,7 +121,7 @@ appTest("caisse : HTML sans script, sans style en ligne, sans meta refresh, un s
   assert.ok(!/(src|href)="https?:/i.test(html), "nothing external");
   assert.equal(html.match(/<h1[\s>]/g).length, 1);
   assert.match(html, /<html lang="fr">/);
-  assert.match(html, /<link rel="stylesheet" href="\/style\.css">/);
+  assert.match(html, /<link rel="stylesheet" href="\/style\.css\?v=[0-9a-f]{16}">/);
   assert.match(html, /<form method="post" action="\/deconnexion">/, "a logout button");
 });
 
@@ -187,7 +190,7 @@ appTest("caisse : gros ticket du dernier paiement et liste des précédents (cha
   const line = (n, amount) => entry(n, { amount, who: "Payeur" });
   app.cyclos.state.entries = [line(3, "3.50"), line(2, "12.00"), line(1, "0.50")];
   const html = await pageUntil(app, (h) => h.includes("Paiements précédents"), "paiements chargés");
-  assert.match(html, /En ligne/);
+  assert.ok(!html.includes("État"), "no state banner while it works");
   const big = html.match(/<section class="caisse-gros"[\s\S]*?<\/section>/)[0];
   assert.match(big, /Payeur 3/);
   assert.match(big, /3,50 G/);
@@ -213,8 +216,9 @@ appTest("caisse : la liste montre 10 paiements précédents au plus", withOption
 // Intention: no payment yet, once the listening is up: the sentence of the instructions.
 appTest("caisse : aucun paiement = phrase dédiée, sans ticket ni liste", OPTIONS, async (app) => {
   await ready(app);
-  const html = await pageUntil(app, (h) => h.includes("En ligne"), "état live");
-  assert.match(html, /Aucun paiement reçu pour le moment\./);
+  const html = await pageUntil(app, isLive, "état live");
+  assert.match(html, /Aucun paiement pour l'instant/);
+  assert.match(html, /Le prochain paiement s'affichera ici/);
   assert.ok(!html.includes("caisse-gros"));
   assert.ok(!html.includes("Paiements précédents"));
 });
@@ -223,11 +227,11 @@ appTest("caisse : aucun paiement = phrase dédiée, sans ticket ni liste", OPTIO
 // description gives no "Description" line.
 appTest("caisse : paiement notifié = ticket marqué Nouveau, ligne Description omise si vide", OPTIONS, async (app) => {
   await ready(app);
-  await pageUntil(app, (h) => h.includes("En ligne"), "état live");
+  await pageUntil(app, isLive, "état live");
   app.cyclos.state.transfers.set("tr-1", transfer(1, { amount: "1.00", description: "" }));
   app.cyclos.push("newNotification", paymentNotification(1));
   const html = await pageUntil(app, (h) => h.includes("1,00 G"), "ticket affiché");
-  const big = html.match(/<section class="caisse-gros"[\s\S]*?<\/section>/)[0];
+  const big = html.match(/<section class="caisse-gros[^"]*"[\s\S]*?<\/section>/)[0];
   assert.match(big, /<p class="caisse-nouveau">Nouveau<\/p>/);
   assert.match(big, /Payeur 1/);
   assert.ok(!big.includes("Description"));
@@ -237,7 +241,7 @@ appTest("caisse : paiement notifié = ticket marqué Nouveau, ligne Description 
 // Intention: two payments a few seconds apart are two tickets (the older one moves to the list), never a duplicate.
 appTest("caisse : deux paiements rapprochés = deux tickets, aucun doublon", OPTIONS, async (app) => {
   await ready(app);
-  await pageUntil(app, (h) => h.includes("En ligne"), "état live");
+  await pageUntil(app, isLive, "état live");
   app.cyclos.state.transfers.set("tr-1", transfer(1, { amount: "1.00" }));
   app.cyclos.state.transfers.set("tr-2", transfer(2, { amount: "1.00" }));
   app.cyclos.state.entries = [entry(2, { amount: "1.00" }), entry(1, { amount: "1.00" })];
@@ -257,7 +261,7 @@ appTest("caisse : deux paiements rapprochés = deux tickets, aucun doublon", OPT
 // Intention: a payer or a description written like HTML shows as plain text: the page cannot be turned into a script.
 appTest("caisse : payeur et description malveillants affichés en texte brut", OPTIONS, async (app) => {
   await ready(app);
-  await pageUntil(app, (h) => h.includes("En ligne"), "état live");
+  await pageUntil(app, isLive, "état live");
   const payer = `<script>alert(1)</script> "Payeur" & <b>gras</b>`;
   const description = `"><img src=x onerror=alert(1)> 'quote'`;
   app.cyclos.state.transfers.set("tr-1", transfer(1, { amount: "1.00", payer, description }));
@@ -280,24 +284,30 @@ appTest("caisse : CAISSE_HIDE_PAYER_NAME=true remplace le payeur par Client part
   assert.match(html.match(/<li class="caisse-ligne">[\s\S]*?<\/li>/)[0], /<span class="caisse-payeur">Client<\/span>/);
 });
 
-// Intention: "payment received" notification switched off at Cyclos: the page says so, in words.
-appTest("caisse : réglage paymentReceived désactivé = état 'Mode de secours' en toutes lettres", OPTIONS, async (app) => {
+// Intention: "payment received" notification switched off at Cyclos (fallback mode): NO banner for the merchant, and a
+// payment still shows up.
+appTest("caisse : mode de secours = aucune bannière, le paiement s'affiche quand même", OPTIONS, async (app) => {
   app.cyclos.state.notificationSettings = { paymentReceived: { internal: false, email: false, app: false } };
   await ready(app);
-  const html = await pageUntil(app, (h) => h.includes("Mode de secours"), "mode de secours");
-  assert.match(html, /Mode de secours : les paiements apparaissent avec quelques secondes de retard\./);
-  assert.ok(!html.includes("En ligne"));
+  const html = await pageUntil(app, isLive, "écoute en route");
+  assert.ok(!html.includes("Mode de secours") && !html.includes("caisse-bandeau") && !html.includes("avertissement"));
+  app.cyclos.state.transfers.set("tr-1", transfer(1, { amount: "4.00" }));
+  app.cyclos.state.entries = [entry(1, { amount: "4.00" })];
+  app.cyclos.push("accountStatus", { n: 1 });
+  const shown = await pageUntil(app, (h) => h.includes("4,00 G"), "paiement affiché en mode de secours");
+  assert.ok(!shown.includes("caisse-bandeau"));
 });
 
-// Intention: the listener ends in "error" (credentials refused again and again): red, icon, "Erreur :" label, and NO technical detail.
-appTest("caisse : état error = rouge, icône, libellé Erreur, sans détail technique", OPTIONS, async (app) => {
+// Intention: the listener ends in "error" (credentials refused again and again): the banner of the instructions, role="status",
+// an icon, and NO technical detail.
+appTest("caisse : état error = bandeau d'erreur durable, sans détail technique", OPTIONS, async (app) => {
   await ready(app);
-  await pageUntil(app, (h) => h.includes("En ligne"), "état live");
+  await pageUntil(app, isLive, "état live");
   app.cyclos.force("POST /auth/session", 401);
   app.cyclos.expireTokens();
   app.cyclos.endStreams();
-  const html = await pageUntil(app, (h) => h.includes("le service de notification est indisponible"), "état error");
-  assert.match(html, /<p class="erreur" role="alert"><span class="icone" aria-hidden="true">⚠<\/span> <strong>Erreur :<\/strong> le service de notification est indisponible\.<\/p>/);
+  const html = await pageUntil(app, (h) => h.includes("Impossible de lire les paiements"), "état error");
+  assert.match(html, /<p class="caisse-bandeau erreur" role="status"><span class="icone" aria-hidden="true">⚠<\/span> Impossible de lire les paiements pour le moment\. Prévenir l'équipe La Graine 34\.<\/p>/);
   assert.ok(!/401|jeton|session|identifiant|mot de passe/i.test(html.replace(/<[^>]+>/g, " ")), "no technical detail");
 });
 
@@ -313,22 +323,113 @@ const helpers = {
 const NOW = Date.parse("2026-01-10T12:00:00Z");
 const render = (view, extra = {}) => renderCaissePage(view, { refreshSeconds: 5, hidePayerName: false, now: NOW, csrfToken: "x", ...extra }, helpers);
 
-// Intention: each state has its own sentence, with the word "État" (never a colour alone).
-test("page : chaque état affiche son texte", () => {
-  const texts = {
-    starting: "Connexion à Cyclos en cours",
-    live: "En ligne",
-    reconnecting: "Reconnexion en cours. Les paiements récents seront rattrapés.",
-    degraded: "Écoute interrompue : vérifiez vos paiements dans Appligraine ou Cyclos.",
-    fallback: "Mode de secours : les paiements apparaissent avec quelques secondes de retard.",
-  };
-  for (const [status, text] of Object.entries(texts)) {
+// Intention: the banner of each state (table of step A1): none while it works, a warning when reconnecting, a durable error.
+test("page : bannière selon l'état (aucune en direct, avertissement, erreur durable)", () => {
+  for (const status of ["live", "fallback"]) {
     const html = render({ status, tickets: [] });
-    assert.ok(html.includes(`<strong>État :</strong> ${text}`), status);
+    assert.ok(!html.includes("caisse-bandeau") && !html.includes("role=\"status\"") && !html.includes("État"), status);
   }
-  assert.match(render({ status: "error", tickets: [] }), /<strong>Erreur :<\/strong> le service de notification est indisponible\./);
-  assert.match(render({ status: "live", tickets: [] }), /Aucun paiement reçu pour le moment\./);
+  for (const status of ["reconnecting", "degraded"]) {
+    const html = render({ status, tickets: [] });
+    assert.ok(
+      html.includes('<p class="caisse-bandeau avertissement" role="status"><span class="icone" aria-hidden="true">⚠</span> Connexion interrompue, reconnexion en cours. Les nouveaux paiements peuvent apparaître avec du retard.</p>'),
+      status,
+    );
+  }
+  const error = render({ status: "error", tickets: [] });
+  assert.match(error, /role="status"[^>]*>[\s\S]*Impossible de lire les paiements pour le moment\. Prévenir l'équipe La Graine 34\./);
+  assert.ok(render({ status: "starting", tickets: [] }).includes("Connexion à Cyclos en cours"));
   assert.ok(!render({ status: "starting", tickets: [] }).includes("Aucun paiement"));
+  assert.match(render({ status: "live", tickets: [] }), /Aucun paiement pour l'instant/);
+  for (const status of ["reconnecting", "degraded", "error"]) {
+    assert.ok(!render({ status, tickets: [] }).includes("Aucun paiement"), `no empty line while ${status}: the banner speaks`);
+  }
+  for (const status of ["starting", "live", "reconnecting", "degraded", "fallback", "error"]) {
+    assert.ok(!/État :|::/.test(render({ status, tickets: [] })), `no "État :" prefix or double colon (${status})`);
+  }
+});
+
+// Intention: the big ticket, top to bottom: mark, payer, amount, date line with the age, description, number.
+test("page : grand ticket dans l'ordre, ligne de date avec l'ancienneté, description et numéro", () => {
+  const at = new Date(NOW - 2 * 60_000).toISOString();
+  const ticket = makeTicket({ transfer: transfer(1, { date: at, description: "Pain & fromage" }), source: "push", arrivedAt: NOW - 30_000 });
+  const big = render({ status: "live", tickets: [ticket] }).match(/<section class="caisse-gros"[\s\S]*?<\/section>/)[0];
+  const order = ["caisse-nouveau", "caisse-gros-payeur", "caisse-gros-montant", "caisse-gros-heure", "caisse-gros-description", "caisse-gros-numero"].map((c) => big.indexOf(c));
+  assert.ok(order.every((n) => n >= 0) && order.every((n, i) => i === 0 || n > order[i - 1]), `order ${order}`);
+  assert.match(big, /<p class="caisse-gros-heure">Aujourd'hui 12:58 · il y a 2 min<\/p>/);
+  assert.match(big, /Description : Pain &amp; fromage/);
+  assert.match(big, /N° T00001/);
+});
+
+// Intention: another day: the date, with "il y a N h" only under 24 hours; 24 hours or more: the date alone.
+test("page : date d'un autre jour = jj/MM HH:mm, âge seulement sous 24 h", () => {
+  const dateLine = (ms) => render({ status: "live", tickets: [makeTicket({ transfer: transfer(1, { date: new Date(ms).toISOString() }), source: "initial", arrivedAt: ms })] })
+    .match(/<p class="caisse-gros-heure">([^<]*)<\/p>/)[1];
+  assert.equal(dateLine(NOW - 20 * 3_600_000), "09/01 17:00 · il y a 20 h");
+  assert.equal(dateLine(NOW - 30 * 3_600_000), "09/01 07:00");
+});
+
+// Intention: no description = no description line; the list shows the description under the payer, escaped; the time stays on one line.
+test("page : description dans la liste (échappée), ligne absente si vide", () => {
+  const withText = makeTicket({ transfer: transfer(2, { description: '<b>Gras</b> "x"' }), source: "initial", arrivedAt: NOW - 1000 });
+  const without = makeTicket({ transfer: transfer(3, { description: "" }), source: "initial", arrivedAt: NOW - 2000 });
+  const top = makeTicket({ transfer: transfer(1), source: "initial", arrivedAt: NOW });
+  const rows = render({ status: "live", tickets: [top, withText, without] }).match(/<li class="caisse-ligne">[\s\S]*?<\/li>/g);
+  assert.equal(rows.length, 2);
+  assert.match(rows[0], /<span class="caisse-description">&lt;b&gt;Gras&lt;\/b&gt; &quot;x&quot;<\/span>/);
+  assert.ok(!rows[1].includes("caisse-description"));
+  assert.ok(!/<b>/.test(rows[0]));
+});
+
+// Intention: the CSS keeps the date on one line and the description on one cut line (no inline style possible).
+test("page : CSS = heure sur une ligne, description en une ligne avec points de suspension", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const css = await readFile(new URL("../style.css", import.meta.url), "utf8");
+  assert.match(css.match(/\.caisse-heure\s*{[^}]*}/)[0], /white-space:\s*nowrap/);
+  const description = css.match(/\.caisse-description\s*{[^}]*}/)[0];
+  assert.match(description, /text-overflow:\s*ellipsis/);
+  assert.match(description, /white-space:\s*nowrap/);
+  assert.match(css, /\.caisse-bandeau/);
+});
+
+// Intention: the header says "En direct" only while the listening works, and drops it during a reconnection or an error.
+test("page : pastille 'En direct' dans l'en-tête seulement quand l'écoute fonctionne", () => {
+  for (const status of ["live", "fallback"]) {
+    const html = render({ status, tickets: [] });
+    assert.match(html, /<header[\s\S]*<span class="caisse-direct"><span class="caisse-direct-point" aria-hidden="true"><\/span>En direct<\/span>[\s\S]*<\/header>/, status);
+  }
+  for (const status of ["starting", "reconnecting", "degraded", "error"]) {
+    assert.ok(!render({ status, tickets: [] }).includes("En direct"), status);
+  }
+});
+
+// Intention: the fading background (class caisse-gros-neuf) is only on a payment that has just arrived, so a reload after the
+// fade does not replay it; the CSS holds the animation (no script, no inline style).
+test("page : fond coloré qui s'estompe sur un paiement qui vient d'arriver, sans script", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const fresh = makeTicket({ transfer: transfer(1), source: "push", arrivedAt: NOW - 1000 });
+  const older = makeTicket({ transfer: transfer(2), source: "push", arrivedAt: NOW - 20_000 });
+  const opening = makeTicket({ transfer: transfer(3), source: "initial", arrivedAt: NOW - 1000 });
+  const big = (ticket) => render({ status: "live", tickets: [ticket] }).match(/<section class="caisse-gros[^"]*"/)[0];
+  assert.match(big(fresh), /caisse-gros caisse-gros-neuf/);
+  assert.ok(!big(older).includes("caisse-gros-neuf"), "still Nouveau, but the fade is over");
+  assert.ok(render({ status: "live", tickets: [older] }).includes("caisse-nouveau"));
+  assert.ok(!big(opening).includes("caisse-gros-neuf"));
+  const css = await readFile(new URL("../style.css", import.meta.url), "utf8");
+  assert.match(css.match(/\.caisse-gros-neuf\s*{[^}]*}/)[0], /animation:\s*caisse-fond-neuf/);
+  assert.match(css, /@keyframes caisse-fond-neuf/);
+  assert.match(css, /prefers-reduced-motion/);
+});
+
+// Intention: big ticket hierarchy: the description is smaller than the date line and grey; the amount has room around it.
+test("page : gros ticket = description plus petite et grise que la date, marge autour du montant", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const css = await readFile(new URL("../style.css", import.meta.url), "utf8");
+  const rem = (selector) => Number(css.match(new RegExp(`${selector.replaceAll(".", "\\.")}\\s*{[^}]*font-size:\\s*([\\d.]+)rem`))[1]);
+  assert.ok(rem(".caisse-gros .caisse-gros-description") <= 1.05);
+  assert.ok(rem(".caisse-gros .caisse-gros-heure") > rem(".caisse-gros .caisse-gros-description") * 1.4);
+  assert.match(css.match(/\.caisse-gros \.caisse-gros-description\s*{[^}]*}/)[0], /color:\s*var\(--texte-secondaire\)/);
+  assert.match(css.match(/\.caisse-gros \.caisse-gros-montant\s*{[^}]*}/)[0], /margin:\s*0\.75rem 0/);
 });
 
 // Intention: an incomplete ticket shows the payer and time, and says the amount is being read; an unreadable one says so.
@@ -370,7 +471,7 @@ test("page : pages de refus (403, indisponible, plafond atteint) en français av
 // learn its identity) are closed.
 appTest("caisse : arrêt du serveur = flux coupé et sessions Cyclos de l'écoute fermées", OPTIONS, async (app) => {
   await ready(app);
-  await pageUntil(app, (h) => h.includes("En ligne"), "état live");
+  await pageUntil(app, isLive, "état live");
   assert.equal(app.cyclos.openStreams(), 1);
   const visitorToken = app.cyclos.calls("GET", "/users/self")[0].headers["session-token"];
   await app.server.close();
@@ -445,7 +546,7 @@ appTest("caisse : le journal d'un scénario complet ne contient aucune donnée s
   app.cyclos.force("POST /auth/session", 401);
   app.cyclos.expireTokens();
   app.cyclos.endStreams();
-  await pageUntil(app, (h) => h.includes("le service de notification est indisponible"), "état error");
+  await pageUntil(app, (h) => h.includes("Impossible de lire les paiements"), "état error");
   await app.server.close();
 
   const text = app.logs.join("\n");

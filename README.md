@@ -182,12 +182,24 @@ sécurité lit l'historique du compte pour ne rater aucun paiement.
   (« Montant en cours de lecture » ou « Montant indisponible ») au lieu
   d'inventer un chiffre. Le texte du message de la notification n'est jamais
   utilisé.
-- **États affichés** (toujours en toutes lettres) : connexion en cours, en
-  ligne, reconnexion en cours, écoute interrompue (flux coupé depuis plus de 60
-  secondes), mode de secours (le réglage de notification « paiement reçu » est
-  désactivé : le prototype **lit** ce réglage et ne le modifie jamais ; les
-  paiements apparaissent alors avec quelques secondes de retard), et erreur
-  (en rouge, avec le mot « Erreur » et une icône, sans détail technique).
+- **Bannière d'état** (ce que voit le caissier) : **aucune** quand l'écoute
+  fonctionne, y compris en « mode de secours » (le réglage de notification
+  « paiement reçu » n'est pas confirmé : le prototype **lit** ce réglage et ne le
+  modifie jamais, les paiements peuvent alors apparaître avec quelques secondes
+  de retard, sans message). Une bannière d'avertissement apparaît pendant une
+  reconnexion (« Connexion interrompue, reconnexion en cours. Les nouveaux
+  paiements peuvent apparaître avec du retard. »). Une bannière d'erreur apparaît
+  si la lecture est durablement impossible (« Impossible de lire les paiements
+  pour le moment. Prévenir l'équipe La Graine 34. »), sans détail technique.
+  Seule la première connexion affiche « Connexion à Cyclos en cours ». Le
+  message d'avertissement du mode de secours reste dans le terminal.
+- **Grand ticket** (dernier paiement), de haut en bas : la marque « NOUVEAU »,
+  le payeur, le montant, la date (« Aujourd'hui 10:33 · il y a 2 min », ou
+  « 12/11 17:21 » un autre jour, avec « il y a N h » seulement sous 24 heures),
+  « Description : ... » (absente si vide), puis le numéro de transaction en petit.
+- **Paiements précédents** : une ligne par paiement avec la date et l'heure sur
+  une seule ligne, le payeur en gras, sa description en petit gris dessous (une
+  ligne, coupée par « … » si elle est longue) et le montant à droite.
 - **Journal** : on n'y écrit que des types d'événements, des statuts HTTP, des
   compteurs et des états. Jamais d'identifiant, de mot de passe, de jeton, de nom
   de payeur, de montant ni de description.
@@ -236,8 +248,8 @@ champs, nombres de tickets).
    Attendu : statut 200 avec le jeton de session, `text/event-stream`,
    `:Initialized` reçu, fermeture par Cyclos après environ 41 secondes.
 2. Lancer le serveur avec la commande de la section « Activer et lancer la caisse », se connecter
-   avec le compte de test, ouvrir `/caisse` : l'état passe de « Connexion à Cyclos en
-   cours » à « En ligne » et les derniers paiements s'affichent.
+   avec le compte de test, ouvrir `/caisse` : la mention « Connexion à Cyclos en
+   cours » disparaît et les derniers paiements s'affichent.
 3. Payer 1 G depuis Appligraine vers le compte de test avec une description
    reconnaissable : le ticket doit apparaître en **moins de 7 secondes**, avec
    le bon payeur, le bon montant, la bonne heure et la bonne description, et la

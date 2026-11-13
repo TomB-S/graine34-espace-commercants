@@ -7,6 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import net from "node:net";
 import { startFakeCyclos } from "../test-support/fake-cyclos.js";
 import { envEnfant } from "../test-support/env-propre.js";
 
@@ -28,6 +29,29 @@ function run(args, env) {
   return { child, exited, output: () => output };
 }
 
+// A free port chosen by the system (listen on 0, read it, close). No fixed or random number that could clash with another program.
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
+// Waits for `text` in the output of the process (the announcement lines), up to 20 s: a loaded machine starts Node slowly. Fails at once
+// with the output if the process ends before printing it.
+async function waitForOutput(child, output, text, limitMs = 20_000) {
+  const end = Date.now() + limitMs;
+  while (!output().includes(text)) {
+    if (child.exitCode !== null) assert.fail(`the process ended (code ${child.exitCode}) before printing "${text}":\n${output()}`);
+    if (Date.now() > end) assert.fail(`"${text}" not printed within ${limitMs} ms:\n${output()}`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 // Intention: IMPORTING server.js must start no server and print nothing, otherwise every test file that imports it
 // would open a port. The process must end by itself, with code 0 (success).
 test("importer server.js ne démarre aucun serveur et le processus se termine", async () => {
@@ -37,15 +61,13 @@ test("importer server.js ne démarre aucun serveur et le processus se termine", 
 });
 
 // Intention: launched for real, the server listens on the requested port (PORT variable), prints its address and the channel, and serves the login
-// page. The port is drawn at random so as not to clash with another program. The `finally` block always stops the process.
+// page. The port is chosen by the system, and the test waits for the announcement lines (no fixed delay). The `finally` block always stops the process.
 test("node server.js : écoute sur PORT, annonce l'adresse, sert la page de connexion", async () => {
   const cyclos = await startFakeCyclos();
-  const port = 20000 + Math.floor(Math.random() * 20000);
+  const port = await freePort();
   const { child, exited, output } = run(["server.js"], { PORT: String(port), CYCLOS_BASE_URL: cyclos.url, COOKIE_SECURE: "" });
   try {
-    for (let i = 0; i < 100 && !output().includes("Serveur démarré"); i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    }
+    await waitForOutput(child, output, "Canal Cyclos");
     assert.equal(output().trim(), `Serveur démarré sur http://localhost:${port}\nCanal Cyclos : (par defaut)`);
     const res = await fetch(`http://127.0.0.1:${port}/`);
     assert.equal(res.status, 200);
@@ -61,12 +83,10 @@ test("node server.js : écoute sur PORT, annonce l'adresse, sert la page de conn
 // the call). We deliberately add a trailing "/" to check that it is ignored. Without this, the tool would query the Cyclos demo.
 test("node server.js : CYCLOS_BASE_URL est bien utilisée pour la connexion", async () => {
   const cyclos = await startFakeCyclos();
-  const port = 20000 + Math.floor(Math.random() * 20000);
+  const port = await freePort();
   const { child, exited, output } = run(["server.js"], { PORT: String(port), CYCLOS_BASE_URL: `${cyclos.url}/` });
   try {
-    for (let i = 0; i < 100 && !output().includes("Serveur démarré"); i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    }
+    await waitForOutput(child, output, "Canal Cyclos");
     const base = `http://127.0.0.1:${port}`;
     const res = await fetch(`${base}/connexion`, {
       method: "POST",
@@ -103,15 +123,13 @@ test("--env-file-if-exists : le fichier remplit les variables, une variable déj
   const flag = `--env-file-if-exists=${envFile}`;
   const start = async (args, env) => {
     const { child, exited, output } = run(args, env);
-    for (let i = 0; i < 100 && !output().includes("Canal Cyclos"); i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    }
+    await waitForOutput(child, output, "Canal Cyclos");
     child.kill();
     await exited;
     return output();
   };
   try {
-    const port = String(20000 + Math.floor(Math.random() * 20000));
+    const port = String(await freePort());
     // The file supplies the channel; its PORT=1 loses against the PORT given in front (port 1 would fail).
     let out = await start([flag, "server.js"], { PORT: port, CYCLOS_CHANNEL: undefined });
     assert.match(out, /Canal Cyclos : depuis-le-fichier/);

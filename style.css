@@ -420,9 +420,54 @@ form[action="/deconnexion"] {
   margin: 0 0 0 auto;
 }
 
+/* "En direct": small, in the header; a dot and a word (never the colour alone). */
+.caisse-direct {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.caisse-direct-point {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: #5fe08a; /* bright green, readable on the main green; the word carries the meaning */
+}
+
+/* Before the first payment. */
+.caisse-vide {
+  padding: 2rem 1rem;
+  border: 2px dashed var(--bordure);
+  border-radius: 0.75rem;
+  color: var(--texte-secondaire);
+  text-align: center;
+}
+
+.caisse-vide p {
+  margin: 0;
+}
+
+.caisse-vide-titre {
+  margin-bottom: 0.25rem;
+  color: var(--texte);
+  font-family: var(--police-titre);
+  font-size: 1.5rem;
+}
+
 .caisse-etat {
   margin-bottom: 1rem;
   font-size: 1.15rem;
+}
+
+/* Banner of the listening (reconnecting, unreadable): the warning or error style, an icon and a sentence. */
+.caisse-bandeau {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+}
+
+.caisse-bandeau .icone {
+  font-weight: 700;
 }
 
 /* The latest payment: a big ticket, amount in very large type (3 rem at least). */
@@ -436,6 +481,27 @@ form[action="/deconnexion"] {
 
 .caisse-gros p {
   margin: 0 0 0.25rem;
+}
+
+/* A new payment: a light green background that fades out (CSS only, no script). It comes on top of the "Nouveau" word. */
+.caisse-gros-neuf {
+  animation: caisse-fond-neuf 6s ease-out forwards;
+}
+
+@keyframes caisse-fond-neuf {
+  from {
+    background-color: #d6efdf;
+  }
+  to {
+    background-color: var(--blanc);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caisse-gros-neuf {
+    animation: none;
+    background-color: #eaf6ee;
+  }
 }
 
 /* "Nouveau" is a word, the colour only underlines it. */
@@ -462,7 +528,8 @@ form[action="/deconnexion"] {
   line-height: 1.25;
 }
 
-.caisse-gros-montant {
+.caisse-gros .caisse-gros-montant {
+  margin: 0.75rem 0;
   font-family: var(--police-titre);
   font-size: clamp(3rem, 12vw, 6rem);
   line-height: 1.1;
@@ -475,13 +542,21 @@ form[action="/deconnexion"] {
   font-style: italic;
 }
 
-.caisse-gros-heure {
-  font-size: 1.5rem;
+.caisse-gros-payeur {
+  margin-bottom: 0.25rem;
+}
+
+.caisse-gros .caisse-gros-heure {
+  color: var(--texte);
+  font-size: 1.65rem;
   font-variant-numeric: tabular-nums;
 }
 
-.caisse-gros-description {
-  font-size: 1.25rem;
+/* Description: much smaller than the date line, grey. */
+.caisse-gros .caisse-gros-description {
+  margin-top: 0.5rem;
+  color: var(--texte-secondaire);
+  font-size: 1rem;
 }
 
 .caisse-gros-numero {
@@ -490,7 +565,7 @@ form[action="/deconnexion"] {
   font-size: 0.85rem;
 }
 
-/* Previous payments: one line each, time | payer | amount. */
+/* Previous payments: time | payer and, under it, the description | amount. */
 .caisse-precedents {
   margin: 0;
   padding: 0;
@@ -499,8 +574,8 @@ form[action="/deconnexion"] {
 
 .caisse-ligne {
   display: grid;
-  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
-  column-gap: 1rem;
+  grid-template-columns: 6.25rem minmax(0, 1fr) auto;
+  column-gap: 0.75rem;
   align-items: baseline;
   padding: 0.6rem 0.5rem;
   border-bottom: 1px solid var(--bordure);
@@ -511,13 +586,31 @@ form[action="/deconnexion"] {
   background: var(--fond-alterne);
 }
 
+/* Date and time on ONE line, "12/11 17:21" included. */
 .caisse-heure {
   color: var(--texte-secondaire);
+  font-size: 0.95rem;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.caisse-qui {
+  min-width: 0;
 }
 
 .caisse-payeur {
-  font-weight: 600;
+  display: block;
+  font-weight: 700;
+}
+
+/* Description: small, grey, one line cut with an ellipsis. */
+.caisse-description {
+  display: block;
+  overflow: hidden;
+  color: var(--texte-secondaire);
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .caisse-montant {
@@ -560,8 +653,17 @@ form[action="/deconnexion"] {
   }
 
   .caisse-ligne {
-    grid-template-columns: 6rem minmax(0, 1fr) auto;
+    grid-template-columns: 8.5rem minmax(0, 1fr) auto;
+    column-gap: 1rem;
     font-size: 1.3rem;
+  }
+
+  .caisse-heure {
+    font-size: 1.15rem;
+  }
+
+  .caisse-description {
+    font-size: 1rem;
   }
 
   /* One table row: date | counterparty | amount, then number | description */

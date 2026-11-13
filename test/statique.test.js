@@ -156,3 +156,14 @@ appTest("fichiers statiques : seule la méthode GET est servie", async (app) => 
     assert.equal(res.status, 404, method);
   }
 });
+
+// Intention: the pages link the stylesheet with the hash of its content, so a new style.css is never hidden by the 1-hour cache.
+appTest("style.css : l'adresse dans la page porte l'empreinte du fichier, le serveur répond sur cette adresse", async (app) => {
+  const login = await (await app.request("/")).text();
+  const href = login.match(/<link rel="stylesheet" href="([^"]+)">/)[1];
+  const etag = (await app.request("/style.css")).headers.get("etag");
+  assert.equal(href, `/style.css?v=${etag.slice(1, -1)}`);
+  const res = await app.request(href);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("content-type"), "text/css; charset=utf-8");
+});

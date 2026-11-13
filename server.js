@@ -235,6 +235,10 @@ const STATIC_ASSETS = new Map([
   ]),
 ]);
 
+// Address of the stylesheet in the pages: the hash of its content is part of it, so a changed style.css is
+// never hidden by the one-hour cache of the browser (a new content = a new address).
+const STYLE_HREF = `/style.css?v=${STATIC_ASSETS.get("GET /style.css").etag.slice(1, -1)}`;
+
 function serveStatic(req, res, asset) {
   const headers = {
     "Cache-Control": "public, max-age=3600",
@@ -269,7 +273,7 @@ function htmlPage(title, body) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="${STYLE_HREF}">
   <title>${escapeHtml(title)}</title>
 </head>
 <body>
@@ -477,7 +481,7 @@ function cookieHeader(value, maxAgeSeconds) {
 let clearCookie = cookieHeader("", 0);
 
 // What the cash register page needs from this file, given to caisse-page.js.
-const CAISSE_HELPERS = { escapeHtml, formatAmount, htmlPage, errorMessage, logoutForm };
+const CAISSE_HELPERS = { escapeHtml, formatAmount, htmlPage, errorMessage, logoutForm, stylesheetHref: STYLE_HREF };
 
 // GET /caisse: the page of payments received (see caisse-page.js and listener-manager.js).
 // The merchant is always deduced from the session, never from the URL.

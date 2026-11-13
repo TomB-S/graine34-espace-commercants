@@ -12,12 +12,15 @@
 // - The text of the notification `message` is never used.
 // - Nothing here writes to the log.
 import { DateTime } from "luxon";
+import { ageText } from "./age.js";
 
 const ZONE = "Europe/Paris";
 const AMOUNT_SHAPE = /^-?\d+(\.\d+)?$/;
 const PLAIN_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_TEXT = 300; // payer, description: a longer text is cut, the page stays readable
 const NEW_MARK_MS = 60_000;
+// The coloured background of the big ticket fades in this time (see .caisse-gros-neuf in style.css).
+export const FRESH_FLASH_MS = 6000;
 const SAME_PAYMENT_MS = 5_000; // notification date vs transfer date, when no entityId links them
 const DEFAULT_SUFFIX = " G";
 const DEFAULT_DECIMALS = 2;
@@ -111,14 +114,21 @@ export function isNew(ticket, now) {
 export function ticketDisplay(ticket, { now, formatAmount }) {
   const at = DateTime.fromMillis(timeOf(ticket), { zone: ZONE });
   const today = DateTime.fromMillis(now, { zone: ZONE });
+  const sameDay = at.hasSame(today, "day");
+  const age = ageText(at.toMillis(), now);
   return {
-    time: at.hasSame(today, "day") ? at.toFormat("HH:mm") : at.toFormat("dd/MM HH:mm"),
+    // List: "10:32" today, otherwise "12/11 17:21".
+    time: sameDay ? at.toFormat("HH:mm") : at.toFormat("dd/MM HH:mm"),
+    // Big ticket: "Aujourd'hui 10:33 · il y a 2 min", or "12/11 17:21" (then "· il y a N h" under 24 h).
+    dateLine: `${sameDay ? `Aujourd'hui ${at.toFormat("HH:mm")}` : at.toFormat("dd/MM HH:mm")}${age ? ` · ${age}` : ""}`,
     amount: ticket.amount === null ? null : `${formatAmount(ticket.amount, ticket.decimals)}${ticket.currencySuffix}`,
     amountState: ticket.amountState,
     payer: ticket.payer,
     description: ticket.description,
     number: ticket.transactionNumber ?? "",
     isNew: isNew(ticket, now),
+    // Only while the fade lasts: a reload after it must not replay it.
+    isFresh: isNew(ticket, now) && now - ticket.arrivedAt < FRESH_FLASH_MS,
     complete: ticket.complete,
   };
 }
