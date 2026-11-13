@@ -12,6 +12,7 @@ import { createCyclosPush, PushAuthError } from "./cyclos-push.js";
 import { describeError } from "./cyclos-listener.js";
 import { createListenerManager } from "./listener-manager.js";
 import { renderCaissePage, renderCaisseRefused } from "./caisse-page.js";
+import { renderCaisseData } from "./caisse-data.js";
 
 
 // Cyclos API address. CYCLOS_BASE_URL overrides the public demo (default),
@@ -216,15 +217,22 @@ async function closeCyclosSession(sessionToken) {
 // forbids inline styles, so every page links to /style.css; the logo and the
 // fonts are served by us too, no external domain). Public and cacheable,
 // unlike the pages (no-store by default), with ETag revalidation (304).
-function staticAsset(file, contentType) {
+// `cacheControl`: one hour by default; the scripts of the cash register page use "no-cache" (the browser asks again each
+// time and gets a 304 when nothing changed), so that a changed script is never hidden by the cache.
+function staticAsset(file, contentType, cacheControl = "public, max-age=3600") {
   const body = readFileSync(new URL(file, import.meta.url));
   const etag = `"${createHash("sha256").update(body).digest("hex").slice(0, 16)}"`;
-  return { body, contentType, etag };
+  return { body, contentType, etag, cacheControl };
 }
+
+// Script of the cash register page and the pure modules it imports (each one is also tested by Node). The only
+// scripts the CSP lets run are these, served from our own address.
+const BROWSER_MODULES = ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age"];
 
 const STATIC_ASSETS = new Map([
   ["GET /style.css", staticAsset("./style.css", "text/css; charset=utf-8")],
   ["GET /logo.png", staticAsset("./logo-lagraine34.png", "image/png")],
+  ...BROWSER_MODULES.map((name) => [`GET /${name}.js`, staticAsset(`./${name}.js`, "text/javascript; charset=utf-8", "no-cache")]),
   ...[
     "roboto-latin-400-normal",
     "roboto-latin-700-normal",
@@ -241,7 +249,7 @@ const STYLE_HREF = `/style.css?v=${STATIC_ASSETS.get("GET /style.css").etag.slic
 
 function serveStatic(req, res, asset) {
   const headers = {
-    "Cache-Control": "public, max-age=3600",
+    "Cache-Control": asset.cacheControl,
     ETag: asset.etag,
   };
   if (req.headers["if-none-match"] === asset.etag) {
@@ -483,21 +491,15 @@ let clearCookie = cookieHeader("", 0);
 // What the cash register page needs from this file, given to caisse-page.js.
 const CAISSE_HELPERS = { escapeHtml, formatAmount, htmlPage, errorMessage, logoutForm, stylesheetHref: STYLE_HREF };
 
-// GET /caisse: the page of payments received (see caisse-page.js and listener-manager.js).
-// The merchant is always deduced from the session, never from the URL.
-async function handleCaisse(req, res) {
-  if (!CAISSE_RUNTIME) {
-    send(res, 404, "text/plain", "Page introuvable");
-    return;
-  }
-  if (req.method !== "GET") {
-    send(res, 405, "text/plain", "Méthode non autorisée", { Allow: "GET" });
-    return;
-  }
+// What /caisse and /caisse/data share: the session, the identity of the visitor, the registration check and the
+// visit (touch) that keeps the listener alive. `fail(kind, session)` answers a refusal in the format of the caller
+// (an HTML page, or JSON for the script). The merchant is always deduced from the session, never from the URL.
+// Returns { session, view } or null when the answer has been sent.
+async function caisseVisit(req, res, fail) {
   const found = getSession(req);
   if (!found) {
-    redirect(res, "/");
-    return;
+    fail("login");
+    return null;
   }
   const { id, session } = found;
   const { push, manager } = CAISSE_RUNTIME;
@@ -510,27 +512,50 @@ async function handleCaisse(req, res) {
       if (error instanceof PushAuthError) {
         // Cyclos no longer accepts the token: drop the local session, like the statement does.
         sessions.delete(id);
-        redirect(res, "/", { "Set-Cookie": clearCookie });
-        return;
+        fail("login", session, { "Set-Cookie": clearCookie });
+        return null;
       }
       console.error(`Caisse : identité du visiteur illisible : ${describeError(error)}`);
-      send(res, 503, "text/html", renderCaisseRefused("unavailable", session.csrfToken, CAISSE_HELPERS));
-      return;
+      fail("unavailable", session);
+      return null;
     }
     if (session.cyclosUserId === null) console.error("Caisse : identifiant utilisateur du visiteur illisible, accès refusé");
   }
 
   const decision = await manager.authorize(session.cyclosUserId);
   if (!decision.ok) {
-    const kind = decision.status === 403 ? "denied" : "unavailable";
-    send(res, decision.status, "text/html", renderCaisseRefused(kind, session.csrfToken, CAISSE_HELPERS));
-    return;
+    fail(decision.status === 403 ? "denied" : "unavailable", session);
+    return null;
   }
   const visit = manager.touch(decision.merchantKey);
   if (!visit.ok) {
-    send(res, 503, "text/html", renderCaisseRefused("busy", session.csrfToken, CAISSE_HELPERS), { "Retry-After": "30" });
+    fail("busy", session);
+    return null;
+  }
+  return { session, view: visit.view };
+}
+
+const REFUSAL_STATUS = { denied: 403, unavailable: 503, busy: 503 };
+
+// GET /caisse: the page of payments received (see caisse-page.js and listener-manager.js). Complete without
+// script; the reload without script is the <meta refresh> of the page, there is no Refresh header.
+async function handleCaisse(req, res) {
+  if (!CAISSE_RUNTIME) {
+    send(res, 404, "text/plain", "Page introuvable");
     return;
   }
+  if (req.method !== "GET") {
+    send(res, 405, "text/plain", "Méthode non autorisée", { Allow: "GET" });
+    return;
+  }
+  const visit = await caisseVisit(req, res, (kind, session, headers = {}) => {
+    if (kind === "login") {
+      redirect(res, "/", headers);
+      return;
+    }
+    send(res, REFUSAL_STATUS[kind], "text/html", renderCaisseRefused(kind, session.csrfToken, CAISSE_HELPERS), kind === "busy" ? { "Retry-After": "30" } : {});
+  });
+  if (!visit) return;
   send(
     res,
     200,
@@ -539,16 +564,36 @@ async function handleCaisse(req, res) {
       visit.view,
       {
         refreshSeconds: CAISSE.refreshSeconds,
+        pollSeconds: CAISSE.pollSeconds,
         hidePayerName: CAISSE.hidePayerName,
         now: Date.now(),
-        csrfToken: session.csrfToken,
+        csrfToken: visit.session.csrfToken,
       },
       CAISSE_HELPERS,
     ),
-    { Refresh: String(CAISSE.refreshSeconds) },
   );
 }
 
+// GET /caisse/data: the same payments as JSON, for the script of the page (and, later, an app). Same session, same
+// registration check, same visit as the page. Errors are JSON with a status the script understands:
+// 401 (no session: back to the login page), 403 (not registered), 503 (unavailable or too many listeners).
+async function handleCaisseData(req, res) {
+  const json = (status, body, headers = {}) => send(res, status, "application/json", JSON.stringify(body), headers);
+  if (!CAISSE_RUNTIME) {
+    json(404, { error: "Page introuvable" });
+    return;
+  }
+  if (req.method !== "GET") {
+    json(405, { error: "Méthode non autorisée" }, { Allow: "GET" });
+    return;
+  }
+  const visit = await caisseVisit(req, res, (kind, session, headers = {}) => {
+    if (kind === "login") json(401, { error: "Session expirée" }, headers);
+    else json(REFUSAL_STATUS[kind], { error: kind }, kind === "busy" ? { "Retry-After": "30" } : {});
+  });
+  if (!visit) return;
+  json(200, renderCaisseData(visit.view, { hidePayerName: CAISSE.hidePayerName, now: Date.now() }, CAISSE_HELPERS));
+}
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -559,7 +604,7 @@ const server = http.createServer(async (req, res) => {
   // headers with these.
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
   );
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
@@ -586,6 +631,10 @@ const server = http.createServer(async (req, res) => {
     // The cash register page answers on one path whatever the method (405, or 404 when disabled).
     if (pathname === "/caisse") {
       await handleCaisse(req, res);
+      return;
+    }
+    if (pathname === "/caisse/data") {
+      await handleCaisseData(req, res);
       return;
     }
 

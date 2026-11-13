@@ -28,6 +28,8 @@ async function everyResponse(app) {
   await take("POST /connexion 303", app.login());
   const csrf = await app.csrf();
   await take("GET /caisse 200", app.request("/caisse"));
+  await take("GET /caisse/data 200", app.request("/caisse/data"));
+  await take("GET /caisse.js", app.request("/caisse.js"));
   app.cyclos.push("newNotification", paymentNotification(1));
   await take("POST /caisse 405", app.request("/caisse", { method: "POST", form: { csrf } }));
   await take("GET /deconnexion 405", app.request("/deconnexion"));
@@ -63,15 +65,22 @@ appTest("en-têtes de sécurité sur chaque type de réponse, CSP exacte", CAISS
     assert.equal(res.headers.get("referrer-policy"), label === "GET / (connexion)" ? "same-origin" : "no-referrer", label);
     assert.equal(res.headers.get("strict-transport-security"), null, `${label} : pas de HSTS sans COOKIE_SECURE`);
   }
-  assert.ok(!/unsafe-|https?:|script-src/.test(EXPECTED_CSP));
+  assert.ok(!/unsafe-|https?:/.test(EXPECTED_CSP));
+  // Only script-src and connect-src were added, both to 'self'; everything else is as it was.
+  assert.equal(
+    EXPECTED_CSP,
+    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+  );
 });
 
 // Intention: pages must be kept neither in cache nor by the back button: `no-store`. Only static files are cached for 1 hour.
-appTest("Cache-Control : no-store partout sauf fichiers statiques (public, 1 h)", CAISSE_OPTIONS, async (app) => {
+appTest("Cache-Control : no-store partout sauf fichiers statiques (public, 1 h) et scripts (no-cache)", CAISSE_OPTIONS, async (app) => {
   for (const { label, res } of await everyResponse(app)) {
     const expected = /^GET \/(style\.css|logo\.png|fonts\/\S+\.woff2)( 304)?$/.test(label) && !label.includes("inconnue")
       ? "public, max-age=3600"
-      : "no-store";
+      : label === "GET /caisse.js"
+        ? "no-cache" // script: revalidated each time (ETag), see staticAsset() in server.js
+        : "no-store";
     assert.equal(res.headers.get("cache-control"), expected, label);
   }
 });
@@ -105,8 +114,12 @@ appTest("aucune réponse HTML ne contient style=, <style ni <script", CAISSE_OPT
     const html = body.toString("utf-8");
     assert.ok(!/\sstyle\s*=/i.test(html), `${label} : style=`);
     assert.ok(!/<style/i.test(html), `${label} : <style`);
-    assert.ok(!/<script/i.test(html), `${label} : <script`);
-    assert.ok(!/<meta[^>]+refresh/i.test(html), `${label} : <meta refresh>`);
+    // The only script allowed is the external one of the cash register page; the only meta refresh is its noscript fallback.
+    const scripts = html.match(/<script[^>]*>[\s\S]*?<\/script>/gi) ?? [];
+    assert.ok(scripts.every((tag) => /^<script type="module" src="\/caisse\.js"><\/script>$/.test(tag)), `${label} : <script`);
+    assert.ok(label === "GET /caisse 200" || scripts.length === 0, `${label} : script hors caisse`);
+    const refreshes = html.match(/<meta[^>]+refresh[^>]*>/gi) ?? [];
+    assert.ok(refreshes.length === 0 || (label === "GET /caisse 200" && html.includes("<noscript>" + refreshes[0] + "</noscript>")), `${label} : <meta refresh>`);
     assert.ok(!/\son[a-z]+\s*=/i.test(html), `${label} : gestionnaire d'événement`);
     assert.ok(!/(src|href|action)="https?:/i.test(html), `${label} : ressource externe`);
   }

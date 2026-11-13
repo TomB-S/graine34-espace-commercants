@@ -1,7 +1,7 @@
 // === WHAT THIS FILE CHECKS ===
 // The /caisse page and its route, with the real server, the real listener and the fake Cyclos: 404 when the page is disabled, the redirection
 // when not logged in, 405 for other methods, 403 for a user who is not the registered merchant (and nothing is listened to), the
-// headers (Refresh, no-store, the CSP EXACTLY as before), HTML with no script, no style attribute and no <meta refresh>, the escaping of a
+// headers (no Refresh, no-store, the CSP with only script-src and connect-src added), HTML with no inline script, no style attribute and a <meta refresh> only inside <noscript>, the escaping of a
 // hostile payer or description, the option that hides the payer, every state in words, the big ticket and the list, the "New" mark, the
 // stop of the server (SIGTERM included), and a log with no sensitive data. All values are fictitious. Basic notions: test/statique.test.js.
 import { test } from "node:test";
@@ -83,12 +83,12 @@ appTest("caisse : méthodes autres que GET = 405 (HEAD compris)", OPTIONS, async
 });
 
 // Intention: the registered merchant gets the page at once, in the state "starting", with the headers of the instructions.
-appTest("caisse : visite de l'inscrit = 200, Refresh: 5, no-store, CSP inchangée, état 'Connexion en cours'", OPTIONS, async (app) => {
+appTest("caisse : visite de l'inscrit = 200, pas d'en-tête Refresh, no-store, CSP, état 'Connexion en cours'", OPTIONS, async (app) => {
   await ready(app);
   const res = await app.request("/caisse");
   const html = await res.text();
   assert.equal(res.status, 200);
-  assert.equal(res.headers.get("refresh"), "5");
+  assert.equal(res.headers.get("refresh"), null, "one reload mechanism only: the script, or the noscript fallback");
   assert.equal(res.headers.get("cache-control"), "no-store");
   assert.equal(res.headers.get("content-security-policy"), EXPECTED_CSP);
   assert.equal(res.headers.get("x-content-type-options"), "nosniff");
@@ -99,12 +99,16 @@ appTest("caisse : visite de l'inscrit = 200, Refresh: 5, no-store, CSP inchangé
   assert.ok(!html.includes("Aucun paiement reçu"), "not announced while connecting");
 });
 
-// Intention: the reload delay follows CAISSE_REFRESH_SECONDS, in the header and in the sentence under the list.
-appTest("caisse : CAISSE_REFRESH_SECONDS réglé = en-tête Refresh et phrase à jour", withOptions({ refreshSeconds: 7 }), async (app) => {
+// Intention: the reload delay of the fallback follows CAISSE_REFRESH_SECONDS (in the <noscript> meta refresh, never in a
+// header), and the reading rhythm of the script follows CAISSE_POLL_SECONDS.
+appTest("caisse : CAISSE_REFRESH_SECONDS (repli sans script) et CAISSE_POLL_SECONDS (script) réglés", withOptions({ refreshSeconds: 7, pollSeconds: 4 }), async (app) => {
   await ready(app);
   const res = await app.request("/caisse");
-  assert.equal(res.headers.get("refresh"), "7");
-  assert.match(await res.text(), /Mise à jour automatique toutes les 7 secondes\./);
+  const html = await res.text();
+  assert.equal(res.headers.get("refresh"), null);
+  assert.match(html, /<noscript><meta http-equiv="refresh" content="7"><\/noscript>/);
+  assert.match(html, /data-poll-seconds="4"/);
+  assert.match(html, /Mise à jour automatique toutes les 7 secondes\./);
 });
 
 // Intention: the HTML follows the strict CSP: no script, no style attribute, no <style>, no <meta refresh>, nothing external,
@@ -113,10 +117,12 @@ appTest("caisse : HTML sans script, sans style en ligne, sans meta refresh, un s
   await ready(app);
   app.cyclos.state.entries = [entry(2, { amount: "2.00" }), entry(1, { amount: "1.00" })];
   const html = await pageUntil(app, (h) => h.includes("Paiements précédents"), "page avec paiements");
-  assert.ok(!/<script/i.test(html));
+  assert.deepEqual(html.match(/<script[^>]*>/gi), ['<script type="module" src="/caisse.js">'], "one external script, nothing inline");
+  assert.ok(!/<script[^>]*>\s*[^<\s]/i.test(html), "no script content");
   assert.ok(!/\sstyle\s*=/i.test(html));
   assert.ok(!/<style/i.test(html));
-  assert.ok(!/<meta[^>]+refresh/i.test(html));
+  assert.deepEqual(html.match(/<meta[^>]+refresh[^>]*>/gi), ['<meta http-equiv="refresh" content="5">'], "refresh only as the noscript fallback");
+  assert.ok(html.includes('<noscript><meta http-equiv="refresh" content="5"></noscript>'));
   assert.ok(!/\son[a-z]+\s*=/i.test(html), "no event attribute");
   assert.ok(!/(src|href)="https?:/i.test(html), "nothing external");
   assert.equal(html.match(/<h1[\s>]/g).length, 1);
@@ -269,7 +275,7 @@ appTest("caisse : payeur et description malveillants affichés en texte brut", O
   const html = await pageUntil(app, (h) => h.includes("1,00 G"), "ticket affiché");
   assert.ok(html.includes("&lt;script&gt;alert(1)&lt;/script&gt; &quot;Payeur&quot; &amp; &lt;b&gt;gras&lt;/b&gt;"));
   assert.ok(html.includes("&quot;&gt;&lt;img src=x onerror=alert(1)&gt;"));
-  assert.ok(!/<script/i.test(html));
+  assert.equal(html.match(/<script/gi).length, 1, "only the external script of the page, none from the payer");
   assert.ok(!/<img src=x/i.test(html));
   assert.ok(!/<b>/i.test(html));
 });

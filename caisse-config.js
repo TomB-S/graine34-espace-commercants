@@ -14,7 +14,9 @@ export const PROTOTYPE_MERCHANT = "prototype";
 
 // [variable, config field, default, minimum, maximum]. Whole numbers only.
 const INTEGER_SETTINGS = [
+  // Reload of the page for a browser WITHOUT script (<meta refresh> in <noscript>), and reading rhythm of the script.
   ["CAISSE_REFRESH_SECONDS", "refreshSeconds", 5, 2, 60],
+  ["CAISSE_POLL_SECONDS", "pollSeconds", 3, 1, 60],
   ["CAISSE_IDLE_SECONDS", "idleSeconds", 45, 15, 600],
   ["CAISSE_STREAM_WATCHDOG_SECONDS", "streamWatchdogSeconds", 60, 10, 600],
   ["CAISSE_RECONNECT_MAX_SECONDS", "reconnectMaxSeconds", 30, 1, 600],

@@ -41,6 +41,7 @@ test("caisse : activée, valeurs par défaut de la section configuration", () =>
     {
       enabled: true,
       refreshSeconds: 5,
+      pollSeconds: 3,
       idleSeconds: 45,
       streamWatchdogSeconds: 60,
       reconnectMaxSeconds: 30,
@@ -90,6 +91,7 @@ test("caisse : valeurs explicites lues, bornes incluses", () => {
 test("caisse : valeur numérique invalide refusée, la variable est nommée", () => {
   const limits = {
     CAISSE_REFRESH_SECONDS: [2, 60],
+    CAISSE_POLL_SECONDS: [1, 60],
     CAISSE_IDLE_SECONDS: [15, 600],
     CAISSE_STREAM_WATCHDOG_SECONDS: [10, 600],
     CAISSE_RECONNECT_MAX_SECONDS: [1, 600],

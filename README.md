@@ -3,8 +3,10 @@
 Petit serveur web qui affiche au caissier, sur la page `/caisse`, les **paiements
 reçus** en monnaie locale (La Graine 34) comme un petit ticket : payeur, montant,
 heure, description. Il écoute les notifications du logiciel
-[Cyclos](https://www.cyclos.org/) avec un compte d'écoute, et la page se recharge
-seule toutes les 5 secondes, **sans JavaScript côté navigateur**.
+[Cyclos](https://www.cyclos.org/) avec un compte d'écoute. Un petit script
+(`/caisse.js`) relit les paiements toutes les 3 secondes et met l'affichage à jour
+**sans recharger la page** ; sans JavaScript, la page reste complète et se recharge
+seule toutes les 5 secondes.
 
 **C'est la mission 2B, indépendante de la mission 2A.** La mission 2A est l'outil
 de relevé de caisse (ticket de fin de service, PDF), dans le dossier
@@ -67,7 +69,14 @@ ticket-store.js      tickets en mémoire : modèle, doublons, tri, état
 cyclos-listener.js   boucle d'écoute d'un commerçant : réouverture, chien de garde, reconnexion
 payment-processor.js événements reçus, tickets, filet de sécurité par l'historique
 listener-manager.js  cycle de vie des écouteurs : inscription, inactivité, plafond, arrêt
-caisse-page.js       HTML de la page /caisse (fonctions pures)
+caisse-page.js       HTML de la page /caisse (fonctions pures), complète sans script
+caisse-data.js       bannière, textes d'un ticket et JSON de /caisse/data (fonctions pures)
+caisse-texts.js      textes fixes de la page, partagés avec le navigateur
+caisse.js            script du navigateur : lecture toutes les N secondes, minuteries, réseau
+caisse-view.js       script du navigateur : construit l'affichage (textContent, jamais de HTML brut)
+new-payments.js      détection des nouveaux paiements (fonction pure, servira au son et à la notification)
+date-line.js         ligne de date et décalage d'horloge (fonctions pures)
+age.js               « il y a x min » (fonction pure, utilisée par le serveur et le navigateur)
 style.css            feuille de style unique (charte La Graine 34, classes de la caisse comprises)
 logo-lagraine34.png  logo, servi sur /logo.png
 fonts/               polices Roboto et Voltaire (woff2) et leurs licences
@@ -117,7 +126,8 @@ compte d'écoute : le navigateur arrive directement sur `/caisse`.
 | `CAISSE_CYCLOS_LOGIN` | Identifiant du compte d'écoute (exigé si activée) | aucun |
 | `CAISSE_CYCLOS_PASSWORD` | Mot de passe du compte d'écoute (exigé si activée, jamais journalisé) | aucun |
 | `CAISSE_ACCOUNT_TYPE` | Type de compte à lire (par exemple `MonComptePro`) ; lettres, chiffres, `.`, `-`, `_` | découverte automatique |
-| `CAISSE_REFRESH_SECONDS` | Rechargement de la page (2 à 60) | `5` |
+| `CAISSE_POLL_SECONDS` | Rythme de lecture du script (1 à 60) | `3` |
+| `CAISSE_REFRESH_SECONDS` | Rechargement de la page pour un navigateur **sans** JavaScript (2 à 60) | `5` |
 | `CAISSE_IDLE_SECONDS` | Arrêt de l'écoute sans visite (15 à 600) | `45` |
 | `CAISSE_STREAM_WATCHDOG_SECONDS` | Silence maximal sur le flux avant de le rouvrir (10 à 600) | `60` |
 | `CAISSE_RECONNECT_MAX_SECONDS` | Pause maximale entre deux essais (1 à 600) | `30` |
@@ -151,7 +161,7 @@ sécurité lit l'historique du compte pour ne rater aucun paiement.
   ferme aussitôt ; après 3 échecs de suite il n'essaie plus avant le
   redémarrage (pour ne pas faire verrouiller le compte).
 - **Écoute seulement pendant que la page est ouverte** : la première visite
-  d'un inscrit démarre l'écoute ; chaque rechargement la prolonge ; plusieurs
+  d'un inscrit démarre l'écoute ; chaque lecture (de la page ou du script) la prolonge ; plusieurs
   onglets ou tablettes ouverts ensemble partagent **un seul écouteur** ; sans
   visite pendant 45 secondes (`CAISSE_IDLE_SECONDS`) elle s'arrête : flux
   coupé, session Cyclos fermée, tickets et session effacés de la mémoire. À la
@@ -214,7 +224,20 @@ sécurité lit l'historique du compte pour ne rater aucun paiement.
   connexion. La session de l'**écouteur** est distincte.
 - **État erreur** : l'écoute ne reprend pas toute seule (pour ne pas marteler la
   connexion). Fermer la page environ une minute, puis la rouvrir, relance l'écoute.
-- **Clignotement** : le rechargement toutes les 5 secondes fait clignoter la page.
+- **Mise à jour par le script** : la page n'est plus rechargée, il n'y a donc plus de
+  clignotement. Le script interroge `GET /caisse/data` (même session, même contrôle
+  d'inscription, même prolongation de l'écoute que `/caisse` ; réponse JSON, jamais mise en cache). Il recalcule « il y a x min » toutes les 15 secondes,
+  continue d'interroger quand l'onglet est caché et relit tout de suite au retour au
+  premier plan. **Limite connue** : les navigateurs ralentissent les minuteurs d'un onglet
+  caché (souvent une lecture par seconde au plus, et jusqu'à une par minute après
+  plusieurs minutes de masquage sur certains navigateurs) ; le délai réel est à mesurer
+  (voir le test à la main). Le premier chargement ne déclenche aucune détection de « nouveau
+  paiement » ; le fond coloré et la marque « Nouveau » ne concernent que les paiements arrivés ensuite.
+  Si le serveur ne répond plus, l'affichage reste en place avec la bannière « Connexion au
+  serveur interrompue. » ; une réponse 401 (session expirée) ramène à la connexion.
+- **Sans JavaScript** : la page rendue par le serveur est complète ; un
+  `<meta http-equiv="refresh">` placé dans `<noscript>` la recharge toutes les
+  `CAISSE_REFRESH_SECONDS` secondes (il n'y a plus d'en-tête `Refresh`).
 - **Remboursements** (`paymentReceivedChargedBack`) : ignorés.
 - **À confirmer avec l'instance réelle** (le test réel ci-dessous le fait) : que
   le flux accepte le jeton de session avec le canal `main` (jusqu'ici testé depuis
@@ -278,6 +301,10 @@ démarrent le vrai serveur sur un port libre face à un **faux Cyclos** local
 (`test-support/fake-cyclos.js`) : aucun appel à un service externe, aucun vrai
 identifiant (ceux des tests sont fictifs).
 
+- Étape B : `test/new-payments.test.js` (détection), `test/date-line.test.js`
+  (date et âge), `test/caisse-view.test.js` (affichage, avec un faux `document`),
+  `test/caisse-script.test.js` (minuteries et réseau du script), `test/caisse-data.test.js`
+  (`/caisse/data` et fichiers servis).
 - Caisse : `test/caisse-config.test.js` (variables), `test/sse-parser.test.js`
   (flux), `test/cyclos-push.test.js` (appels Cyclos), `test/ticket-store.test.js`
   (tickets), `test/cyclos-listener.test.js` (boucle d'écoute),
@@ -300,8 +327,9 @@ identifiant (ceux des tests sont fictifs).
 - **CSRF** : chaque session a un jeton aléatoire exigé sur `POST /deconnexion`
   (comparaison à temps constant) ; la connexion vérifie l'en-tête `Origin` (ou
   `Referer`).
-- **En-têtes** : Content-Security-Policy stricte (`default-src 'none'`, pas de
-  script ni de style en ligne, rien d'externe), `X-Content-Type-Options`,
+- **En-têtes** : Content-Security-Policy stricte (`default-src 'none'`, avec
+  seulement `script-src 'self'` et `connect-src 'self'` en plus ; pas de script ni de
+  style en ligne, pas d'`eval`, rien d'externe), `X-Content-Type-Options`,
   `X-Frame-Options: DENY`, `Referrer-Policy`, `Cache-Control: no-store` sur les
   pages, HSTS avec `COOKIE_SECURE=true`.
 - **Limites** : 5 échecs de connexion par adresse IP et par 15 minutes (puis 429) ;
@@ -311,7 +339,9 @@ identifiant (ceux des tests sont fictifs).
   journal ; le visiteur doit être le même utilisateur Cyclos que le compte d'écoute
   (comparé par identifiant, jamais par nom) et l'écoute n'existe que pendant que la
   page est ouverte ; le journal ne contient ni identifiant, ni jeton, ni nom de
-  payeur, ni montant, ni description.
+  payeur, ni montant, ni description. Côté navigateur, les textes venant de Cyclos
+  ne sont posés qu'avec `textContent`, jamais comme du HTML ; `/caisse/data` ne
+  contient ni jeton, ni identifiant Cyclos (les clés des tickets sont opaques).
 
 ## Limites connues
 

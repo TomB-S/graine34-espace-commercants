@@ -1,0 +1,20 @@
+// Fixed texts of the cash register page, shared by the server (page without script) and the browser script.
+// Pure data: no import, so that the browser can load this very file.
+export const TEXTS = {
+  starting: "Connexion à Cyclos en cours",
+  reconnecting: "Connexion interrompue, reconnexion en cours. Les nouveaux paiements peuvent apparaître avec du retard.",
+  unreadable: "Impossible de lire les paiements pour le moment. Prévenir l'équipe La Graine 34.",
+  offline: "Connexion au serveur interrompue.",
+  emptyTitle: "Aucun paiement pour l'instant",
+  emptyHelp: "Le prochain paiement s'affichera ici dès qu'il sera reçu.",
+  live: "En direct",
+  newMark: "Nouveau",
+  descriptionLabel: "Description : ",
+  numberLabel: "N° ",
+  previous: "Paiements précédents",
+  lastPayment: "Dernier paiement reçu",
+  noPayer: "Payeur inconnu",
+  clientPayer: "Client",
+  amountUnreadable: "Montant indisponible",
+  amountPending: "Montant en cours de lecture",
+};

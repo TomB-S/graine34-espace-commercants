@@ -18,7 +18,7 @@ import { startFakeCyclos, USER } from "./fake-cyclos.js";
 // The expected Content Security Policy (CSP), written out in full: an HTTP header telling the browser
 // what the page may load (here: only files from the site itself). See test/securite.test.js.
 export const EXPECTED_CSP =
-  "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 
 // Tests import USER from the harness so that there is a single entry point.
 export { USER };

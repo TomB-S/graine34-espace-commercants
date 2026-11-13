@@ -109,6 +109,16 @@ export function isNew(ticket, now) {
   return ticket.source !== "initial" && now - ticket.arrivedAt < NEW_MARK_MS;
 }
 
+// Every identifier a ticket is known by: its transaction number, its notification entity, or (neither) its arrival.
+// A ticket first known by its notification gains its number later and keeps the entity key.
+export function ticketKeys(ticket) {
+  const keys = [];
+  if (ticket.transactionNumber) keys.push(`tx:${ticket.transactionNumber}`);
+  if (ticket.entityId) keys.push(`entity:${ticket.entityId}`);
+  if (keys.length === 0) keys.push(`anon:${ticket.arrivedAt}:${ticket.payer}`);
+  return keys;
+}
+
 // Strings shown for a ticket, not escaped (the page escapes them). `formatAmount` is the one of
 // server.js, given by the caller (it works on strings, no floating point).
 export function ticketDisplay(ticket, { now, formatAmount }) {
@@ -117,6 +127,10 @@ export function ticketDisplay(ticket, { now, formatAmount }) {
   const sameDay = at.hasSame(today, "day");
   const age = ageText(at.toMillis(), now);
   return {
+    // Date of the payment in milliseconds (the arrival when the date is missing), and the label without the age:
+    // the script works the age out again with the same pure function (age.js, date-line.js).
+    at: at.toMillis(),
+    dateLabel: sameDay ? `Aujourd'hui ${at.toFormat("HH:mm")}` : at.toFormat("dd/MM HH:mm"),
     // List: "10:32" today, otherwise "12/11 17:21".
     time: sameDay ? at.toFormat("HH:mm") : at.toFormat("dd/MM HH:mm"),
     // Big ticket: "Aujourd'hui 10:33 · il y a 2 min", or "12/11 17:21" (then "· il y a N h" under 24 h).

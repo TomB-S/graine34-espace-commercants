@@ -455,6 +455,16 @@ form[action="/deconnexion"] {
   font-size: 1.5rem;
 }
 
+/* The zones the script updates take no room of their own. */
+.caisse-zone {
+  display: contents;
+}
+
+/* The script hides a line with the hidden attribute: it wins over display rules of the classes. */
+[hidden] {
+  display: none !important;
+}
+
 .caisse-etat {
   margin-bottom: 1rem;
   font-size: 1.15rem;
