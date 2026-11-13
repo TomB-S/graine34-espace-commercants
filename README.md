@@ -79,8 +79,11 @@ date-line.js         ligne de date et décalage d'horloge (fonctions pures)
 age.js               « il y a x min » (fonction pure, utilisée par le serveur et le navigateur)
 sound-logic.js       quand sonner et que dire de l'état du son (fonctions pures)
 sound.js             le son : Web Audio, bip généré, aucun fichier audio
+notification-logic.js  quoi notifier et que dire de l'état (regroupement, tag, texte : fonctions pures)
+notification.js      notifications du navigateur : le seul fichier qui touche à l'API Notification
 style.css            feuille de style unique (charte La Graine 34, classes de la caisse comprises)
 logo-lagraine34.png  logo, servi sur /logo.png
+icon-lagraine34.png  icône carrée, servie sur /icon.png (favicon des pages et icône des notifications)
 fonts/               polices Roboto et Voltaire (woff2) et leurs licences
 test/                tests (node:test)
 test-support/        faux Cyclos, harnais de test, options communes
@@ -248,6 +251,29 @@ sécurité lit l'historique du compte pour ne rater aucun paiement.
   à couper le son. Un navigateur sans Web Audio affiche « Son non disponible sur ce navigateur ».
   Sur certains navigateurs (téléphones surtout), le son d'un onglet caché ou d'un écran verrouillé
   peut être coupé : à vérifier sur le matériel réel.
+- **Notifications du navigateur** : un bouton « Activer les notifications » ; la demande
+  d'autorisation se fait **uniquement au clic**, jamais automatiquement. L'état est écrit en
+  toutes lettres : désactivées (avec le bouton), activées, refusées (une phrase explique comment les
+  réactiver : cadenas à gauche de l'adresse, autoriser les notifications, recharger la page), ou non
+  disponibles (navigateur sans l'API, ou page hors HTTPS). Pour chaque nouveau paiement : titre
+  « Paiement reçu : 7,50 G », corps « de Nom du payeur » (« de Client » avec `CAISSE_HIDE_PAYER_NAME=true`),
+  **jamais la description ni le numéro de transaction** (une notification peut s'afficher sur un écran
+  verrouillé). Le `tag` est propre à chaque paiement : le même paiement ne s'affiche jamais deux
+  fois. L'icône est carrée (`/icon.png`). Plus de 3 paiements d'un coup : une seule notification « N nouveaux paiements », sans nom ni montant. Si le montant
+  d'un paiement n'est pas encore lu, la notification attend (15 secondes au plus) pour l'afficher
+  avec le montant. Elle utilise la même détection que le son : **jamais** pour le chargement initial ni
+  pour l'historique. Un clic sur la notification ramène l'onglet au premier plan.
+  **Limites** :
+  - elles ne fonctionnent **que tant que la page est ouverte** (onglet ouvert, même en arrière-plan
+    ou réduit) : pas de Web Push, pas de service worker, pas d'appli ;
+  - elles exigent **HTTPS ou localhost** : en production, HTTPS est obligatoire (avec
+    `COOKIE_SECURE=true`), sans quoi le navigateur les refuse et la page l'écrit ;
+  - il faut l'**autorisation du navigateur** (Chrome peut aussi la bloquer pour le site, ou
+    la masquer s'il juge les demandes gênantes) et les **réglages de notifications du système**
+    (macOS : Réglages Système, Notifications, Chrome ; Windows : Paramètres, Notifications ;
+    mode Ne pas déranger ou Concentration inclus) ;
+  - sur téléphone, beaucoup de navigateurs refusent l'API Notification depuis une page web : la
+    page l'indique ou l'ignore sans erreur, à vérifier sur le matériel réel.
 - **Sans JavaScript** : la page rendue par le serveur est complète ; un
   `<meta http-equiv="refresh">` placé dans `<noscript>` la recharge toutes les
   `CAISSE_REFRESH_SECONDS` secondes (il n'y a plus d'en-tête `Refresh`).
@@ -320,6 +346,9 @@ identifiant (ceux des tests sont fictifs).
   (`/caisse/data` et fichiers servis).
 - Étape C : `test/sound-logic.test.js` (quand sonner), `test/sound.test.js` (audio, avec un faux
   `AudioContext`) ; le son dans le script est couvert par `test/caisse-script.test.js`.
+- Étape D : `test/notification-logic.test.js` (regroupement, tag, texte, attente du montant),
+  `test/notification.test.js` (API du navigateur, avec une fausse API) ; les notifications dans le
+  script sont couvertes par `test/caisse-script.test.js`.
 - Caisse : `test/caisse-config.test.js` (variables), `test/sse-parser.test.js`
   (flux), `test/cyclos-push.test.js` (appels Cyclos), `test/ticket-store.test.js`
   (tickets), `test/cyclos-listener.test.js` (boucle d'écoute),

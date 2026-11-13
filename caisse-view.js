@@ -12,9 +12,9 @@ import { dateLine } from "./date-line.js";
 
 const LIVE = new Set(["live", "fallback"]);
 
-export function createCaisseView(document, { pollSeconds, nowMs, onSoundToggle = () => {} }) {
+export function createCaisseView(document, { pollSeconds, nowMs, onSoundToggle = () => {}, onNotificationToggle = () => {} }) {
   const zone = (name) => document.getElementById(`caisse-zone-${name}`);
-  const zones = { direct: zone("direct"), state: zone("etat"), content: zone("contenu"), sound: zone("son") };
+  const zones = { direct: zone("direct"), state: zone("etat"), content: zone("contenu"), sound: zone("son"), notification: zone("notif") };
   const footer = document.getElementById("caisse-actualisation");
 
   const make = (tag, className, text) => {
@@ -24,8 +24,6 @@ export function createCaisseView(document, { pollSeconds, nowMs, onSoundToggle =
     return node;
   };
 
-  let soundBox = null; // { button, status } built at the first updateSound()
-  let soundSignature = null;
   let last = null; // last data shown
   let offline = false;
   const signatures = { state: null, direct: null, list: null, empty: null };
@@ -161,32 +159,40 @@ export function createCaisseView(document, { pollSeconds, nowMs, onSoundToggle =
     holders.empty.replaceChildren(box);
   }
 
-  // The sound line: the button and, always visible, the state in words. `label` comes from soundLabel() (sound-logic.js).
-  // No script, no button: the zone stays empty in the page rendered by the server.
-  function renderSound(label) {
-    if (!zones.sound) return;
-    const signature = JSON.stringify(label);
-    if (signature === soundSignature) return;
-    soundSignature = signature;
-    if (!soundBox) {
-      const line = make("p", "caisse-son");
-      const button = make("button");
-      button.setAttribute("type", "button");
-      button.addEventListener("click", () => onSoundToggle());
-      const status = make("span", "caisse-son-etat");
-      status.setAttribute("role", "status");
-      line.append(button, status);
-      zones.sound.replaceChildren(line);
-      soundBox = { line, button, status };
-    }
-    soundBox.status.textContent = label.text;
-    soundBox.button.hidden = label.buttonText === null;
-    soundBox.button.textContent = label.buttonText ?? "";
-    soundBox.line.className = label.active ? "caisse-son caisse-son-actif" : "caisse-son";
+  // A line made of a button and, always visible, a state in words (the sound, the notifications). `label` comes from
+  // soundLabel() or notificationLabel(): { text, buttonText (null = no button), active }. Built at the first call, then updated
+  // in place. No script, no line: the zone stays empty in the page rendered by the server.
+  function controlLine(zoneNode, prefix, onClick) {
+    let box = null;
+    let signature = null;
+    return (label) => {
+      if (!zoneNode) return;
+      const next = JSON.stringify(label);
+      if (next === signature) return;
+      signature = next;
+      if (!box) {
+        const line = make("p", prefix);
+        const button = make("button");
+        button.setAttribute("type", "button");
+        button.addEventListener("click", () => onClick());
+        const status = make("span", `${prefix}-etat`);
+        status.setAttribute("role", "status");
+        line.append(button, status);
+        zoneNode.replaceChildren(line);
+        box = { line, button, status };
+      }
+      box.status.textContent = label.text;
+      box.button.hidden = label.buttonText === null;
+      box.button.textContent = label.buttonText ?? "";
+      box.line.className = label.active ? `${prefix} ${prefix}-actif` : prefix;
+    };
   }
+  const renderSound = controlLine(zones.sound, "caisse-son", onSoundToggle);
+  const renderNotification = controlLine(zones.notification, "caisse-notif", onNotificationToggle);
 
   return {
     updateSound: renderSound,
+    updateNotifications: renderNotification,
 
     // New data. `freshTickets`: the tickets the detector found new in this very update (they get the fading background).
     update(data, freshTickets = []) {

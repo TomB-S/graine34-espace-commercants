@@ -80,6 +80,7 @@ export function renderCaissePage(view, { refreshSeconds, pollSeconds = 3, hidePa
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" href="/icon.png">
   <link rel="stylesheet" href="${e(stylesheetHref)}">
   <noscript><meta http-equiv="refresh" content="${e(refreshSeconds)}"></noscript>
   <script type="module" src="/caisse.js"></script>
@@ -94,6 +95,7 @@ export function renderCaissePage(view, { refreshSeconds, pollSeconds = 3, hidePa
   </header>
   <div class="page" id="caisse" data-poll-seconds="${e(pollSeconds)}" data-data-url="/caisse/data" data-login-url="/">
   <div class="caisse-zone" id="caisse-zone-son"></div>
+  <div class="caisse-zone" id="caisse-zone-notif"></div>
   <div class="caisse-zone" id="caisse-zone-etat">${stateBlock(view.status, e)}</div>
   <div class="caisse-zone" id="caisse-zone-contenu">
   ${main}

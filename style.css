@@ -435,8 +435,9 @@ form[action="/deconnexion"] {
   background: #5fe08a; /* bright green, readable on the main green; the word carries the meaning */
 }
 
-/* Sound: the button and, next to it, the state in words (the colour only underlines it). */
-.caisse-son {
+/* Sound and notifications: the button and, next to it, the state in words (the colour only underlines it). */
+.caisse-son,
+.caisse-notif {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -444,15 +445,18 @@ form[action="/deconnexion"] {
   margin: 0 0 1rem;
 }
 
-.caisse-son button {
+.caisse-son button,
+.caisse-notif button {
   min-height: var(--tactile);
 }
 
-.caisse-son-etat {
+.caisse-son-etat,
+.caisse-notif-etat {
   color: var(--texte-secondaire);
 }
 
-.caisse-son-actif .caisse-son-etat {
+.caisse-son-actif .caisse-son-etat,
+.caisse-notif-actif .caisse-notif-etat {
   color: var(--vert-principal);
   font-weight: 700;
 }

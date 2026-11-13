@@ -227,11 +227,13 @@ function staticAsset(file, contentType, cacheControl = "public, max-age=3600") {
 
 // Script of the cash register page and the pure modules it imports (each one is also tested by Node). The only
 // scripts the CSP lets run are these, served from our own address.
-const BROWSER_MODULES = ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic"];
+const BROWSER_MODULES = ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic", "notification", "notification-logic"];
 
 const STATIC_ASSETS = new Map([
   ["GET /style.css", staticAsset("./style.css", "text/css; charset=utf-8")],
   ["GET /logo.png", staticAsset("./logo-lagraine34.png", "image/png")],
+  // Square icon: the favicon of the pages and the icon of the notifications (the logo is a wide rectangle).
+  ["GET /icon.png", staticAsset("./icon-lagraine34.png", "image/png")],
   ...BROWSER_MODULES.map((name) => [`GET /${name}.js`, staticAsset(`./${name}.js`, "text/javascript; charset=utf-8", "no-cache")]),
   ...[
     "roboto-latin-400-normal",
@@ -281,6 +283,7 @@ function htmlPage(title, body) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" href="/icon.png">
   <link rel="stylesheet" href="${STYLE_HREF}">
   <title>${escapeHtml(title)}</title>
 </head>

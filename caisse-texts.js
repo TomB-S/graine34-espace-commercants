@@ -22,4 +22,13 @@ export const TEXTS = {
   soundUnsupported: "Son non disponible sur ce navigateur",
   soundEnableButton: "Activer le son",
   soundDisableButton: "Couper le son",
+  notificationTitle: "Paiement reçu",
+  notificationOff: "Notifications désactivées : cliquer pour activer",
+  notificationOn: "Notifications activées",
+  notificationEnableButton: "Activer les notifications",
+  notificationDenied:
+    "Notifications refusées. Pour les réactiver : cliquer sur le cadenas à gauche de l'adresse, autoriser les notifications, puis recharger la page. Vérifier aussi les réglages de notifications du système.",
+  notificationUnsupported: "Notifications non disponibles sur ce navigateur",
+  notificationInsecure: "Notifications non disponibles : la page doit être ouverte en HTTPS",
+  notificationsOpenCash: "Ouvrir la caisse pour les voir",
 };

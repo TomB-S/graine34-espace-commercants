@@ -48,7 +48,7 @@ class Node {
 
 function fakeDocument() {
   const byId = new Map();
-  for (const id of ["caisse-zone-direct", "caisse-zone-etat", "caisse-zone-contenu", "caisse-zone-son", "caisse-actualisation"]) byId.set(id, new Node("div"));
+  for (const id of ["caisse-zone-direct", "caisse-zone-etat", "caisse-zone-contenu", "caisse-zone-son", "caisse-zone-notif", "caisse-actualisation"]) byId.set(id, new Node("div"));
   return { getElementById: (id) => byId.get(id) ?? null, createElement: (tag) => new Node(tag), byId };
 }
 
@@ -187,6 +187,26 @@ test("vue : ligne du son = bouton et état en toutes lettres, le clic appelle le
   assert.equal(first(line, "caisse-son-etat").textContent, "Son non disponible sur ce navigateur");
 });
 
+test("vue : ligne des notifications = état en toutes lettres, bouton seulement quand il y a une action", () => {
+  let clicks = 0;
+  const { view, document } = setup({ now: NOW }, { onNotificationToggle: () => (clicks += 1) });
+  const zone = document.byId.get("caisse-zone-notif");
+  assert.equal(zone.textContent, "");
+  view.updateNotifications({ text: "Notifications désactivées : cliquer pour activer", buttonText: "Activer les notifications", active: false });
+  const line = first(zone, "caisse-notif");
+  assert.equal(line.children[0].textContent, "Activer les notifications");
+  assert.equal(first(line, "caisse-notif-etat").attributes.role, "status");
+  line.children[0].listeners.click();
+  assert.equal(clicks, 1);
+  view.updateNotifications({ text: "Notifications activées", buttonText: null, active: true });
+  assert.equal(zone.children[0], line, "same line updated in place");
+  assert.equal(line.children[0].hidden, true, "no button once granted");
+  assert.equal(line.className, "caisse-notif caisse-notif-actif");
+  assert.equal(first(line, "caisse-notif-etat").textContent, "Notifications activées");
+  // The sound line is a different zone, untouched.
+  assert.equal(document.byId.get("caisse-zone-son").textContent, "");
+});
+
 test("vue : montant en cours de lecture = phrase, pas un grand chiffre", () => {
   const { view, content } = setup();
   view.update(data([ticket(1, { amount: "Montant en cours de lecture", amountReady: false })]));
@@ -240,7 +260,7 @@ test("vue : l'affichage reste en place pendant une coupure réseau", () => {
 
 // Intention: the files the browser loads never build HTML from a string, never evaluate text and never use storage or other pages.
 test("fichiers du navigateur : ni innerHTML, ni eval, ni document.write", async () => {
-  for (const name of ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic"]) {
+  for (const name of ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic", "notification", "notification-logic"]) {
     const code = await readFile(new URL(`../${name}.js`, import.meta.url), "utf8");
     assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\s*\(|new Function|setTimeout\(\s*["'`]/.test(code), name);
   }

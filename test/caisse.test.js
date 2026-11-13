@@ -128,6 +128,7 @@ appTest("caisse : HTML sans script, sans style en ligne, sans meta refresh, un s
   assert.equal(html.match(/<h1[\s>]/g).length, 1);
   assert.match(html, /<html lang="fr">/);
   assert.match(html, /<link rel="stylesheet" href="\/style\.css\?v=[0-9a-f]{16}">/);
+  assert.match(html, /<link rel="icon" type="image\/png" href="\/icon\.png">/, "favicon declared, no request for /favicon.ico");
   assert.match(html, /<form method="post" action="\/deconnexion">/, "a logout button");
 });
 

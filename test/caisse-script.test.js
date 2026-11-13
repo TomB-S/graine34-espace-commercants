@@ -39,16 +39,16 @@ class Node {
   }
 }
 
-async function run(responses, audio = null) {
+async function run(responses, audio = null, notif = null) {
   const nodes = new Map();
-  for (const id of ["caisse-zone-direct", "caisse-zone-etat", "caisse-zone-contenu", "caisse-zone-son", "caisse-actualisation"]) nodes.set(id, new Node());
+  for (const id of ["caisse-zone-direct", "caisse-zone-etat", "caisse-zone-contenu", "caisse-zone-son", "caisse-zone-notif", "caisse-actualisation"]) nodes.set(id, new Node());
   const root = new Node();
   root.dataset = { pollSeconds: "3", dataUrl: "/caisse/data", loginUrl: "/" };
   nodes.set("caisse", root);
   const listeners = {};
   const timers = [];
   const calls = [];
-  const seen = { assigned: [], reloaded: 0 };
+  const seen = { assigned: [], reloaded: 0, focused: 0 };
   const saved = {};
   const set = (name, value) => {
     saved[name] = Object.getOwnPropertyDescriptor(globalThis, name);
@@ -61,7 +61,7 @@ async function run(responses, audio = null) {
     addEventListener: (type, fn) => (listeners[type] = fn),
   };
   set("document", document);
-  set("window", { addEventListener: (type, fn) => (listeners[`window:${type}`] = fn), AudioContext: audio?.AudioContext });
+  set("window", { addEventListener: (type, fn) => (listeners[`window:${type}`] = fn), AudioContext: audio?.AudioContext, Notification: notif?.Notification, isSecureContext: notif?.secure ?? true, focus: () => (seen.focused += 1) });
   set("location", { assign: (url) => seen.assigned.push(url), reload: () => (seen.reloaded += 1) });
   set("setTimeout", (fn, ms) => timers.push({ fn, ms }) - 1);
   set("clearTimeout", () => {});
@@ -324,6 +324,183 @@ test("son : navigateur sans Web Audio = message clair, pas de bouton, la page fo
     assert.match(soundLine(page), /Son non disponible sur ce navigateur/);
     assert.equal(soundButton(page).hidden, true);
     assert.match(page.nodes.get("caisse-zone-contenu").textContent, /P1/);
+  } finally {
+    page.restore();
+  }
+});
+
+// ---- the notifications ----
+
+function fakeNotifications({ permission = "default", answer = "granted", secure = true } = {}) {
+  const notif = { requested: 0, shown: [], secure };
+  notif.Notification = class {
+    static permission = permission;
+    static async requestPermission() {
+      notif.requested += 1;
+      notif.Notification.permission = answer;
+      return answer;
+    }
+    constructor(title, options) {
+      this.title = title;
+      this.options = options;
+      notif.shown.push(this);
+    }
+    close() {}
+  };
+  return notif;
+}
+
+const notifLine = (page) => page.nodes.get("caisse-zone-notif").children[0].children[1].textContent;
+const notifButton = (page) => page.nodes.get("caisse-zone-notif").children[0].children[0];
+
+test("notifications : la permission n'est jamais demandée toute seule, seulement au clic", async () => {
+  const notif = fakeNotifications();
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)]))], null, notif);
+  try {
+    assert.match(notifLine(page), /Notifications désactivées : cliquer pour activer/);
+    assert.equal(notifButton(page).textContent, "Activer les notifications");
+    nextRead(page);
+    await flush();
+    assert.equal(notif.requested, 0, "no request without a click");
+    assert.equal(notif.shown.length, 0, "no notification without the permission");
+    notifButton(page).listeners.click();
+    await flush();
+    assert.equal(notif.requested, 1);
+    assert.equal(notifLine(page), "Notifications activées");
+    assert.equal(notifButton(page).hidden, true);
+  } finally {
+    page.restore();
+  }
+});
+
+test("notifications : permission accordée, un nouveau paiement = une notification « Paiement reçu : montant » de payeur, sans description ni numéro", async () => {
+  const notif = fakeNotifications({ permission: "granted" });
+  const page = await run(
+    [ok(data([ticket(1, { description: "SECRET", number: "T-SECRET" })])), ok(data([ticket(2, { description: "SECRET", number: "T-SECRET" }), ticket(1)]))],
+    null,
+    notif,
+  );
+  try {
+    assert.equal(notif.shown.length, 0, "first load: nothing");
+    nextRead(page);
+    await flush();
+    assert.equal(notif.shown.length, 1);
+    assert.equal(notif.shown[0].title, "Paiement reçu : 2,00 G");
+    assert.equal(notif.shown[0].options.body, "de P2");
+    assert.equal(notif.shown[0].options.icon, "/icon.png");
+    assert.equal(notif.shown[0].options.tag, "k2");
+    assert.ok(!/SECRET/.test(JSON.stringify([notif.shown[0].title, notif.shown[0].options])));
+  } finally {
+    page.restore();
+  }
+});
+
+test("notifications : jamais pour le premier chargement ni pour l'historique d'ouverture", async () => {
+  const notif = fakeNotifications({ permission: "granted" });
+  const page = await run(
+    [ok(data([ticket(2, { isNew: true }), ticket(1)])), ok(data([ticket(9, { initial: true }), ticket(2), ticket(1)])), ok(data([ticket(9, { initial: true }), ticket(2), ticket(1)]))],
+    null,
+    notif,
+  );
+  try {
+    nextRead(page);
+    await flush();
+    nextRead(page);
+    await flush();
+    assert.equal(notif.shown.length, 0);
+  } finally {
+    page.restore();
+  }
+});
+
+test("notifications : plus de 3 paiements d'un coup = une seule « N nouveaux paiements »", async () => {
+  const notif = fakeNotifications({ permission: "granted" });
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(5), ticket(4), ticket(3), ticket(2), ticket(1)]))], null, notif);
+  try {
+    nextRead(page);
+    await flush();
+    assert.equal(notif.shown.length, 1);
+    assert.equal(notif.shown[0].title, "4 nouveaux paiements");
+  } finally {
+    page.restore();
+  }
+});
+
+test("notifications : un paiement dont le montant n'est pas encore lu attend, puis part avec le montant", async () => {
+  const notif = fakeNotifications({ permission: "granted" });
+  const pending = ticket(2, { amount: "Montant en cours de lecture", amountReady: false });
+  const page = await run([ok(data([ticket(1)])), ok(data([pending, ticket(1)])), ok(data([ticket(2), ticket(1)]))], null, notif);
+  try {
+    nextRead(page);
+    await flush();
+    assert.equal(notif.shown.length, 0, "held back");
+    nextRead(page);
+    await flush();
+    assert.equal(notif.shown.length, 1);
+    assert.equal(notif.shown[0].title, "Paiement reçu : 2,00 G");
+    assert.equal(notif.shown[0].options.body, "de P2");
+  } finally {
+    page.restore();
+  }
+});
+
+test("notifications : un clic sur la notification ramène l'onglet au premier plan", async () => {
+  const notif = fakeNotifications({ permission: "granted" });
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)]))], null, notif);
+  try {
+    nextRead(page);
+    await flush();
+    notif.shown[0].onclick();
+    assert.equal(page.seen.focused, 1);
+  } finally {
+    page.restore();
+  }
+});
+
+test("notifications : refusées = phrase d'explication et aucun bouton ; non prises en charge ou hors HTTPS = message", async () => {
+  const denied = await run([ok(data([ticket(1)]))], null, fakeNotifications({ permission: "denied" }));
+  try {
+    assert.match(notifLine(denied), /Notifications refusées\. Pour les réactiver/);
+    assert.equal(notifButton(denied).hidden, true);
+  } finally {
+    denied.restore();
+  }
+  const none = await run([ok(data([ticket(1)]))]);
+  try {
+    assert.match(notifLine(none), /Notifications non disponibles sur ce navigateur/);
+  } finally {
+    none.restore();
+  }
+  const insecure = await run([ok(data([ticket(1)]))], null, fakeNotifications({ permission: "granted", secure: false }));
+  try {
+    assert.match(notifLine(insecure), /HTTPS/);
+  } finally {
+    insecure.restore();
+  }
+});
+
+test("notifications : accordées après un paiement annoncé sans permission, ce paiement n'est pas annoncé en retard", async () => {
+  const notif = fakeNotifications();
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)])), ok(data([ticket(2), ticket(1)]))], null, notif);
+  try {
+    nextRead(page);
+    await flush();
+    notifButton(page).listeners.click();
+    await flush();
+    nextRead(page);
+    await flush();
+    assert.equal(notif.shown.length, 0);
+  } finally {
+    page.restore();
+  }
+});
+
+test("notifications et son sont indépendants : chacun a sa ligne et son état", async () => {
+  const notif = fakeNotifications({ permission: "granted" });
+  const page = await run([ok(data([ticket(1)]))], fakeAudio(), notif);
+  try {
+    assert.match(soundLine(page), /Son désactivé/);
+    assert.equal(notifLine(page), "Notifications activées");
   } finally {
     page.restore();
   }

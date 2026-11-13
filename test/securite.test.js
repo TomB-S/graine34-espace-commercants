@@ -37,7 +37,7 @@ async function everyResponse(app) {
   await take("GET /releve 404 (pas de relevé ici)", app.request("/releve"));
   await take("POST /deconnexion 403 (CSRF)", app.request("/deconnexion", { method: "POST", form: {} }));
   await take("POST /deconnexion 413", app.request("/deconnexion", { method: "POST", body: "x".repeat(10_001), headers: { "Content-Type": "application/x-www-form-urlencoded" } }));
-  for (const path of ["/style.css", "/logo.png", "/fonts/roboto-latin-400-normal.woff2", "/fonts/roboto-latin-700-normal.woff2", "/fonts/voltaire-latin-400-normal.woff2"]) {
+  for (const path of ["/style.css", "/logo.png", "/icon.png", "/fonts/roboto-latin-400-normal.woff2", "/fonts/roboto-latin-700-normal.woff2", "/fonts/voltaire-latin-400-normal.woff2"]) {
     await take(`GET ${path}`, app.request(path));
   }
   const etag = out.find((r) => r.label === "GET /style.css").res.headers.get("etag");
@@ -76,7 +76,7 @@ appTest("en-têtes de sécurité sur chaque type de réponse, CSP exacte", CAISS
 // Intention: pages must be kept neither in cache nor by the back button: `no-store`. Only static files are cached for 1 hour.
 appTest("Cache-Control : no-store partout sauf fichiers statiques (public, 1 h) et scripts (no-cache)", CAISSE_OPTIONS, async (app) => {
   for (const { label, res } of await everyResponse(app)) {
-    const expected = /^GET \/(style\.css|logo\.png|fonts\/\S+\.woff2)( 304)?$/.test(label) && !label.includes("inconnue")
+    const expected = /^GET \/(style\.css|logo\.png|icon\.png|fonts\/\S+\.woff2)( 304)?$/.test(label) && !label.includes("inconnue")
       ? "public, max-age=3600"
       : label === "GET /caisse.js"
         ? "no-cache" // script: revalidated each time (ETag), see staticAsset() in server.js

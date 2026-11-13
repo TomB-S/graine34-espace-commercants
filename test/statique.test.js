@@ -32,6 +32,7 @@ const ROOT = new URL("../", import.meta.url);
 const FILES = [
   ["/style.css", "style.css", "text/css; charset=utf-8"],
   ["/logo.png", "logo-lagraine34.png", "image/png"],
+  ["/icon.png", "icon-lagraine34.png", "image/png"],
   ["/fonts/roboto-latin-400-normal.woff2", "fonts/roboto-latin-400-normal.woff2", "font/woff2"],
   ["/fonts/roboto-latin-700-normal.woff2", "fonts/roboto-latin-700-normal.woff2", "font/woff2"],
   ["/fonts/voltaire-latin-400-normal.woff2", "fonts/voltaire-latin-400-normal.woff2", "font/woff2"],
@@ -47,7 +48,7 @@ const FILES = [
 appTest("fichiers statiques : bon type, cache public, ETag, contenu identique au fichier", async (app) => {
   // 1) ARRANGE: an empty set where we will put the ETags seen; a Set only keeps distinct values.
   const etags = new Set();
-  // The same checks are repeated for each of the five files.
+  // The same checks are repeated for each of the files.
   for (const [route, file, type] of FILES) {
     // 2) ACT: ask the real server for the file, as a browser would. `await` waits for the response.
     const res = await app.request(route);
@@ -73,9 +74,11 @@ appTest("fichiers statiques : bon type, cache public, ETag, contenu identique au
 // Intention: check that the files are REALLY PNG and woff2 (their first bytes, the "signature"),
 // not an error text served with the wrong type. Otherwise the logo or the fonts would be broken.
 appTest("fichiers statiques : signatures (PNG, woff2)", async (app) => {
-  const png = Buffer.from(await (await app.request("/logo.png")).arrayBuffer());
-  assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-  for (const [route] of FILES.slice(2)) {
+  for (const route of ["/logo.png", "/icon.png"]) {
+    const png = Buffer.from(await (await app.request(route)).arrayBuffer());
+    assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], route);
+  }
+  for (const [route] of FILES.slice(3)) {
     const font = Buffer.from(await (await app.request(route)).arrayBuffer());
     assert.equal(font.subarray(0, 4).toString(), "wOF2", route);
   }
@@ -166,4 +169,16 @@ appTest("style.css : l'adresse dans la page porte l'empreinte du fichier, le ser
   const res = await app.request(href);
   assert.equal(res.status, 200);
   assert.equal(res.headers.get("content-type"), "text/css; charset=utf-8");
+});
+
+// Intention: the icon is SQUARE (the notification would cut a wide logo), and every page, the login page included, points to it as its
+// favicon: no more request for /favicon.ico. The icon comes from our own server, so the CSP does not change.
+appTest("icône : carrée, servie sur /icon.png et déclarée comme favicon de chaque page", async (app) => {
+  const png = Buffer.from(await (await app.request("/icon.png")).arrayBuffer());
+  const [width, height] = [png.readUInt32BE(16), png.readUInt32BE(20)];
+  assert.equal(width, height, `${width}x${height}`);
+  assert.ok(width >= 128, "large enough for a notification");
+  const login = await (await app.request("/")).text();
+  assert.match(login, /<link rel="icon" type="image\/png" href="\/icon\.png">/);
+  assert.equal((await app.request("/favicon.ico")).status, 404, "nothing to answer for favicon.ico: the pages declare their icon");
 });

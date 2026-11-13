@@ -7,6 +7,8 @@ import { createNewPaymentDetector } from "./new-payments.js";
 import { clockOffset } from "./date-line.js";
 import { createSound } from "./sound.js";
 import { shouldBeep, soundLabel } from "./sound-logic.js";
+import { createNotifier } from "./notification.js";
+import { canNotify, createNotificationPlanner, notificationLabel } from "./notification-logic.js";
 
 const AGE_REFRESH_MS = 15_000;
 
@@ -23,12 +25,22 @@ function start() {
     AudioContextClass: window.AudioContext ?? window.webkitAudioContext,
     onChange: () => view.updateSound(soundLabel(sound.status())),
   });
+  // Notifications: the permission is asked only from the click on the button, never by itself.
+  const notifier = createNotifier({
+    NotificationClass: window.Notification,
+    secure: window.isSecureContext,
+    focusWindow: () => window.focus(),
+    onChange: () => view.updateNotifications(notificationLabel(notifier.status())),
+  });
+  const planner = createNotificationPlanner();
   const view = createCaisseView(document, {
     pollSeconds: pollMs / 1000,
     nowMs: () => Date.now() + offset,
     onSoundToggle: () => (soundLabel(sound.status()).active ? sound.disable() : sound.enable()),
+    onNotificationToggle: () => notifier.request(),
   });
   view.updateSound(soundLabel(sound.status()));
+  view.updateNotifications(notificationLabel(notifier.status()));
   const detector = createNewPaymentDetector();
   let timer = null;
   let running = false;
@@ -56,6 +68,11 @@ function start() {
       // One bip per batch of new payments (never for the first load, never when the sound is off or the audio suspended).
       if (shouldBeep(sound.status(), fresh.length)) sound.beep();
       view.updateSound(soundLabel(sound.status()));
+      // Notifications: the same detection as the sound (so never for the first load nor the opening history). The planner always
+      // runs, so that a payment announced while the permission is missing is not announced late.
+      const planned = planner.update(fresh, data.tickets, Date.now() + offset);
+      if (canNotify(notifier.status())) for (const notification of planned) notifier.show(notification);
+      view.updateNotifications(notificationLabel(notifier.status()));
     } catch {
       view.setOffline(true);
     } finally {
@@ -70,6 +87,7 @@ function start() {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       view.updateSound(soundLabel(sound.status())); // the browser may have suspended the audio meanwhile
+      view.updateNotifications(notificationLabel(notifier.status())); // the permission may have changed in the settings
       poll();
     }
   });
