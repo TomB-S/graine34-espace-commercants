@@ -49,7 +49,7 @@ const assets = Object.fromEntries(
 
 writeFileSync(
   "build/sea-config.json",
-  JSON.stringify({ main: "build/server.cjs", output, assets }, null, 2),
+  JSON.stringify({ main: "build/server.cjs", output, assets, disableExperimentalSEAWarning: true }, null, 2),
 );
 
 execFileSync(seaNode, ["--build-sea", "build/sea-config.json"], { stdio: "inherit" });
