@@ -51,6 +51,7 @@ test("caisse : activée, valeurs par défaut de la section configuration", () =>
       ticketsKept: 50,
       maxListeners: 5,
       hidePayerName: false,
+      nameOrder: "nom-prenom",
       hiddenDescriptions: ["Virement Mobile Pro"],
       accountType: null,
       credentialsFor: undefined,
@@ -111,6 +112,24 @@ test("caisse : valeur numérique invalide refusée, la variable est nommée", ()
       );
     }
   }
+});
+
+// Intention: the order of the words of the payer name: two values, "nom-prenom" by default, anything else refused
+// without ever repeating the value in the message.
+test("caisse : CAISSE_NAME_ORDER, valeurs acceptées et refusées", () => {
+  assert.equal(readCaisseConfig(ENABLED).nameOrder, "nom-prenom");
+  assert.equal(readCaisseConfig({ ...ENABLED, CAISSE_NAME_ORDER: "" }).nameOrder, "nom-prenom");
+  assert.equal(readCaisseConfig({ ...ENABLED, CAISSE_NAME_ORDER: "nom-prenom" }).nameOrder, "nom-prenom");
+  assert.equal(readCaisseConfig({ ...ENABLED, CAISSE_NAME_ORDER: "prenom-nom" }).nameOrder, "prenom-nom");
+  for (const bad of ["Nom-Prenom", "famille", "ordre inverse", "Dupont-Marie"]) {
+    assert.throws(
+      () => readCaisseConfig({ ...ENABLED, CAISSE_NAME_ORDER: bad }),
+      (error) => /CAISSE_NAME_ORDER invalide/.test(error.message) && !error.message.includes(bad),
+      bad,
+    );
+  }
+  // Page disabled: the other CAISSE_* variables are not read.
+  assert.doesNotThrow(() => readCaisseConfig({ CAISSE_NAME_ORDER: "n'importe quoi" }));
 });
 
 // Intention: the boolean and the account type are strict as well (the type goes into a URL path).

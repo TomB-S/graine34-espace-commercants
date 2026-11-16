@@ -220,20 +220,61 @@ test("scripts : le navigateur n'importe que des fichiers servis, jamais le code 
   }
 });
 
-// Intention: the payer is shown as "first name + initial of the last name", the way a cash desk should show it.
-test("caisse/data : nom du payeur = prénom + initiale du nom", () => {
-  const payer = (name) =>
-    renderCaisseData({ status: "live", loaded: true, tickets: [makeTicket({ transfer: transfer(1, { payer: name }), source: "push", arrivedAt: 1 })] }, { hidePayerName: false, now: 2 }, { formatAmount: String }).tickets[0].payer;
-  assert.equal(payer("Marie Dupont"), "Marie D.");
-  assert.equal(payer("  Marie   dupont "), "Marie D.");
-  assert.equal(payer("Jean-Pierre Martin Durand"), "Jean-Pierre D.");
-  assert.equal(payer("Émilie Éluard"), "Émilie É.");
-  assert.equal(payer("Marie"), "Marie", "one word stays");
-  assert.equal(payer("Client 1"), "Client 1", "last word is not a name: untouched");
-  assert.equal(payer(""), "Payeur inconnu");
-  const hidden = renderCaisseData({ status: "live", tickets: [makeTicket({ transfer: transfer(1, { payer: "Marie Dupont" }), source: "push", arrivedAt: 1 })] }, { hidePayerName: true, now: 2 }, { formatAmount: String });
-  assert.equal(hidden.tickets[0].payer, "Client");
-  assert.ok(!JSON.stringify(hidden).includes("Dupont"));
+// Intention: the payer is shown as "first name + initial of the family name". Default order "nom-prenom" (Cyclos writes
+// "Family First"): the first name is the last word, the initial is the one of the first word.
+const payerOf = (name, nameOrder) =>
+  renderCaisseData(
+    { status: "live", loaded: true, tickets: [makeTicket({ transfer: transfer(1, { payer: name }), source: "push", arrivedAt: 1 })] },
+    { hidePayerName: false, nameOrder, now: 2 },
+    { formatAmount: String },
+  ).tickets[0].payer;
+
+test("caisse/data : nom-prenom (défaut) : « Nom Prénom » devient « Prénom N. »", () => {
+  for (const order of [undefined, "nom-prenom"]) {
+    assert.equal(payerOf("Dupont Marie", order), "Marie D.");
+    assert.equal(payerOf("  dupont   Marie ", order), "Marie D.", "extra spaces and lower case initial");
+    assert.equal(payerOf("Plumeau Ysolde", order), "Ysolde P.");
+    assert.equal(payerOf("Éluard Émilie", order), "Émilie É.");
+    assert.equal(payerOf("Martin Jean-Pierre", order), "Jean-Pierre M.", "hyphenated first name: one word");
+    assert.equal(payerOf("De La Fontaine Marie", order), "Marie D.", "particles: initial of the first word of the family name");
+    assert.equal(payerOf("Le Gall Marie", order), "Marie L.");
+    assert.equal(payerOf("Dupont Durand Marie", order), "Marie D.", "compound family name");
+    assert.equal(payerOf("Marie", order), "Marie", "one word stays");
+    assert.equal(payerOf("Client 1", order), "Client 1", "not a name: untouched");
+    assert.equal(payerOf("1 Client", order), "1 Client");
+    assert.equal(payerOf("", order), "Payeur inconnu");
+  }
+});
+
+test("caisse/data : prenom-nom : « Prénom Nom » devient « Prénom N. » (ordre d'avant)", () => {
+  assert.equal(payerOf("Marie Dupont", "prenom-nom"), "Marie D.");
+  assert.equal(payerOf("  Marie   dupont ", "prenom-nom"), "Marie D.");
+  assert.equal(payerOf("Jean-Pierre Martin Durand", "prenom-nom"), "Jean-Pierre D.");
+  assert.equal(payerOf("Émilie Éluard", "prenom-nom"), "Émilie É.");
+  assert.equal(payerOf("Marie", "prenom-nom"), "Marie");
+  assert.equal(payerOf("Client 1", "prenom-nom"), "Client 1");
+  assert.equal(payerOf("", "prenom-nom"), "Payeur inconnu");
+});
+
+test("caisse/data : CAISSE_HIDE_PAYER_NAME l'emporte sur l'ordre des mots", () => {
+  for (const nameOrder of ["nom-prenom", "prenom-nom"]) {
+    const hidden = renderCaisseData({ status: "live", tickets: [makeTicket({ transfer: transfer(1, { payer: "Marie Dupont" }), source: "push", arrivedAt: 1 })] }, { hidePayerName: true, nameOrder, now: 2 }, { formatAmount: String });
+    assert.equal(hidden.tickets[0].payer, "Client");
+    assert.ok(!JSON.stringify(hidden).includes("Dupont"));
+  }
+});
+
+appTest("caisse : la page et /caisse/data appliquent CAISSE_NAME_ORDER, sans nom en clair", withOptions({ nameOrder: "nom-prenom" }), async (app) => {
+  await signIn(app);
+  // A "Family First" name with a particle, received through the push.
+  app.cyclos.state.transfers.set("tr-1", transfer(1, { amount: "1.00", payer: "De La Fontaine Marie" }));
+  await dataUntil(app, (d) => d.status === "live", "écoute en route");
+  app.cyclos.push("newNotification", paymentNotification(1, { payer: "De La Fontaine Marie" }));
+  const data = await dataUntil(app, (d) => d.tickets.some((t) => t.amount === "1,00 G" && t.payer === "Marie D."), "nom abrégé");
+  assert.ok(!JSON.stringify(data).includes("Fontaine"));
+  const html = await (await app.request("/caisse")).text();
+  assert.ok(html.includes("Marie D."));
+  assert.ok(!html.includes("Fontaine"));
 });
 
 test("caisse/data : descriptions de la liste à masquer absentes du JSON, `loaded` annoncé", () => {

@@ -17,17 +17,24 @@ export function bannerOf(status) {
   return { level: "info", text: TEXTS.starting };
 }
 
-// "Marie Dupont" -> "Marie D.": the first word and the initial of the last one. A single word stays as it is, and so does a name
-// whose last word does not start with a letter ("Client 1"). Letters only: nothing else is ever cut into pieces.
-export function shortPayerName(name) {
+// Short name of the payer: first name + initial of the family name ("Marie D."). `order` is the order of the words in
+// the name as Cyclos writes it:
+//   "nom-prenom" (default), "Dupont Marie": the first name is the LAST word, the family name is everything before it
+//     and its initial is the one of its first word ("De La Fontaine Marie" -> "Marie D.");
+//   "prenom-nom", "Marie Dupont": the first name is the FIRST word, the initial is the one of the last word.
+// A hyphenated first name is one word ("Jean-Pierre"). A single word stays as it is, and so does a name whose two
+// words used do not start with a letter ("Client 1"). Letters only: nothing else is ever cut into pieces.
+export function shortPayerName(name, order = "nom-prenom") {
   const words = String(name ?? "").trim().split(/\s+/).filter(Boolean);
   if (words.length < 2) return words[0] ?? "";
-  const [initial] = Array.from(words[words.length - 1]);
-  if (!/^\p{L}$/u.test(initial)) return words.join(" ");
-  return `${words[0]} ${initial.toLocaleUpperCase("fr")}.`;
+  const [firstName, familyWord] = order === "prenom-nom" ? [words[0], words[words.length - 1]] : [words[words.length - 1], words[0]];
+  const [initial] = Array.from(familyWord);
+  const [firstLetter] = Array.from(firstName);
+  if (!/^\p{L}$/u.test(initial) || !/^\p{L}$/u.test(firstLetter)) return words.join(" ");
+  return `${firstName} ${initial.toLocaleUpperCase("fr")}.`;
 }
 
-export const payerText = (display, hidePayerName) => (hidePayerName ? TEXTS.clientPayer : shortPayerName(display.payer) || TEXTS.noPayer);
+export const payerText = (display, hidePayerName, nameOrder) => (hidePayerName ? TEXTS.clientPayer : shortPayerName(display.payer, nameOrder) || TEXTS.noPayer);
 
 export const amountText = (display) =>
   display.amount ?? (display.amountState === "unreadable" ? TEXTS.amountUnreadable : TEXTS.amountPending);
@@ -37,13 +44,13 @@ const opaque = (key) => `k${createHash("sha256").update(key).digest("hex").slice
 
 // The JSON of GET /caisse/data. Nothing but what the page shows, plus what the script needs to follow the payments
 // (keys, source, date in milliseconds). No identifier of Cyclos, no session data.
-export function renderCaisseData(view, { hidePayerName, hiddenDescriptions, now }, { formatAmount }) {
+export function renderCaisseData(view, { hidePayerName, nameOrder, hiddenDescriptions, now }, { formatAmount }) {
   const tickets = view.tickets.slice(0, LIST_SIZE + 1).map((ticket) => {
     const d = ticketDisplay(ticket, { now, formatAmount, hiddenDescriptions });
     return {
       keys: ticketKeys(ticket).map(opaque),
       initial: ticket.source === "initial",
-      payer: payerText(d, hidePayerName),
+      payer: payerText(d, hidePayerName, nameOrder),
       amount: amountText(d),
       amountReady: d.amount !== null,
       time: d.time,
