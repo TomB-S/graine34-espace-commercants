@@ -41,7 +41,7 @@ class Node {
 
 async function run(responses, audio = null, notif = null, store = null) {
   const nodes = new Map();
-  for (const id of ["caisse-zone-direct", "caisse-zone-etat", "caisse-zone-contenu", "caisse-zone-son", "caisse-zone-notif", "caisse-actualisation"]) nodes.set(id, new Node());
+  for (const id of ["caisse-zone-direct", "caisse-zone-etat", "caisse-zone-contenu", "caisse-zone-son", "caisse-zone-notif", "caisse-zone-actualiser", "caisse-actualisation"]) nodes.set(id, new Node());
   const root = new Node();
   root.dataset = { pollSeconds: "3", dataUrl: "/caisse/data", loginUrl: "/" };
   nodes.set("caisse", root);
@@ -652,6 +652,111 @@ test("notifications : accordées après un paiement annoncé sans permission, ce
     nextRead(page);
     await flush();
     assert.equal(notif.shown.length, 0);
+  } finally {
+    page.restore();
+  }
+});
+
+// ---- "Actualiser" button ----
+const refreshZone = (page) => page.nodes.get("caisse-zone-actualiser");
+const refreshButton = (page) => refreshZone(page).children[0].children[0];
+
+test("actualiser : le bouton est construit, « Actualiser », actif", async () => {
+  const page = await run([ok(data([ticket(1)]))]);
+  try {
+    assert.equal(refreshButton(page).textContent, "Actualiser");
+    assert.equal(refreshButton(page).disabled, false);
+  } finally {
+    page.restore();
+  }
+});
+
+test("actualiser : un clic relit tout de suite, désactive le bouton « Actualisation... » pendant la lecture, puis le réactive", async () => {
+  let release;
+  const slow = new Promise((resolve) => (release = resolve));
+  const page = await run([ok(data([ticket(1)])), slow.then(() => ok(data([ticket(2), ticket(1)])))]);
+  try {
+    assert.equal(page.calls.length, 1);
+    refreshButton(page).listeners.click();
+    await flush();
+    assert.equal(page.calls.length, 2, "read at once, without waiting for the timer");
+    assert.equal(refreshButton(page).textContent, "Actualisation...");
+    assert.equal(refreshButton(page).disabled, true);
+    // a second click during the reading does nothing
+    refreshButton(page).listeners.click();
+    await flush();
+    assert.equal(page.calls.length, 2);
+    release();
+    await flush();
+    assert.equal(refreshButton(page).textContent, "Actualiser");
+    assert.equal(refreshButton(page).disabled, false);
+    assert.match(page.nodes.get("caisse-zone-contenu").textContent, /P2/, "page updated without reload");
+    assert.equal(page.seen.reloaded, 0);
+  } finally {
+    page.restore();
+  }
+});
+
+test("actualiser : lecture en échec = bannière « Connexion au serveur interrompue. », bouton de nouveau actif", async () => {
+  const page = await run([ok(data([ticket(1)])), new Error("down")]);
+  try {
+    refreshButton(page).listeners.click();
+    await flush();
+    assert.match(page.nodes.get("caisse-zone-etat").textContent, /Connexion au serveur interrompue\./);
+    assert.equal(refreshButton(page).disabled, false);
+    assert.equal(refreshButton(page).textContent, "Actualiser");
+    assert.match(page.nodes.get("caisse-zone-contenu").textContent, /P1/, "display kept");
+  } finally {
+    page.restore();
+  }
+});
+
+test("actualiser : 401 = retour à la connexion, comme la lecture automatique", async () => {
+  const page = await run([ok(data([ticket(1)])), { ok: false, status: 401, json: async () => ({}) }]);
+  try {
+    refreshButton(page).listeners.click();
+    await flush();
+    assert.deepEqual(page.seen.assigned, ["/"]);
+    assert.equal(refreshButton(page).disabled, false);
+  } finally {
+    page.restore();
+  }
+});
+
+test("actualiser : sur des paiements déjà affichés, aucun bip ni notification ; sur un vrai nouveau paiement, un seul bip", async () => {
+  const audio = fakeAudio();
+  const notif = fakeNotifications({ permission: "granted" });
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)]))], audio, notif);
+  try {
+    await tap(page);
+    const before = { notes: audio.notes, shown: notif.shown?.length ?? 0 };
+    refreshButton(page).listeners.click();
+    await flush();
+    assert.equal(audio.notes, before.notes, "already displayed: no bip");
+    assert.equal(notif.shown?.length ?? 0, before.shown, "already displayed: no notification");
+    refreshButton(page).listeners.click();
+    await flush();
+    assert.equal(audio.notes, before.notes + 2, "a really new payment: one bip (two notes)");
+  } finally {
+    page.restore();
+  }
+});
+
+test("actualiser : un clic pendant la lecture automatique attend cette lecture, il n'en lance pas une seconde", async () => {
+  let release;
+  const slow = new Promise((resolve) => (release = resolve));
+  const page = await run([ok(data([ticket(1)])), slow.then(() => ok(data([ticket(1)])))]);
+  try {
+    nextRead(page); // automatic reading under way
+    await flush();
+    assert.equal(page.calls.length, 2);
+    refreshButton(page).listeners.click();
+    await flush();
+    assert.equal(page.calls.length, 2, "no second request");
+    assert.equal(refreshButton(page).disabled, true);
+    release();
+    await flush();
+    assert.equal(refreshButton(page).disabled, false);
   } finally {
     page.restore();
   }

@@ -95,6 +95,7 @@ export function renderCaissePage(view, { refreshSeconds, pollSeconds = 3, hidePa
   </header>
   <div class="page" id="caisse" data-poll-seconds="${e(pollSeconds)}" data-data-url="/caisse/data" data-login-url="/">
   <div class="caisse-zone" id="caisse-zone-son"></div>
+  <div class="caisse-zone" id="caisse-zone-actualiser"></div>
   <div class="caisse-zone" id="caisse-zone-notif"></div>
   <div class="caisse-zone" id="caisse-zone-etat">${stateBlock(view.status, e)}</div>
   <div class="caisse-zone" id="caisse-zone-contenu">

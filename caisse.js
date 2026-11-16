@@ -8,6 +8,7 @@ import { clockOffset } from "./date-line.js";
 import { createSound } from "./sound.js";
 import { shouldBeep, soundLabel } from "./sound-logic.js";
 import { controlsLabel } from "./controls-logic.js";
+import { canStartRefresh, refreshState } from "./refresh-logic.js";
 import { createNotifier } from "./notification.js";
 import { canNotify, createNotificationPlanner, notificationLabel } from "./notification-logic.js";
 
@@ -79,15 +80,39 @@ function start() {
     pollSeconds: pollMs / 1000,
     nowMs: () => Date.now() + offset,
     onSoundToggle: onButton,
+    onRefresh: onRefreshClick,
   });
   refreshControls();
+  view.updateRefresh(refreshState(false));
   const detector = createNewPaymentDetector();
   let timer = null;
-  let running = false;
+  let reading = null; // the reading under way, if any: one at a time, whoever asked for it
+  let refreshing = false; // a reading asked by the "Actualiser" button is under way
 
-  async function poll() {
-    if (running) return;
-    running = true;
+  // A click reads at once. Same reading, same detector as the automatic one: a payment already shown is never new, so the click can
+  // not ring or notify for it. If a reading is already under way, the click waits for that one instead of starting a second.
+  async function onRefreshClick() {
+    if (!canStartRefresh(refreshing)) return;
+    refreshing = true;
+    view.updateRefresh(refreshState(true));
+    try {
+      await poll();
+    } finally {
+      refreshing = false;
+      view.updateRefresh(refreshState(false));
+    }
+  }
+
+  function poll() {
+    if (!reading) {
+      reading = readOnce().finally(() => {
+        reading = null;
+      });
+    }
+    return reading;
+  }
+
+  async function readOnce() {
     clearTimeout(timer);
     try {
       const response = await fetch(dataUrl, { headers: { Accept: "application/json" }, cache: "no-store", credentials: "same-origin" });
@@ -116,7 +141,6 @@ function start() {
     } catch {
       view.setOffline(true);
     } finally {
-      running = false;
       // A timeout chain, not an interval: the next read starts a few seconds after the end of this one.
       // Never paused when the tab is hidden.
       timer = setTimeout(poll, pollMs);

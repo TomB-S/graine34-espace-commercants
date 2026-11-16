@@ -48,7 +48,7 @@ class Node {
 
 function fakeDocument() {
   const byId = new Map();
-  for (const id of ["caisse-zone-direct", "caisse-zone-etat", "caisse-zone-contenu", "caisse-zone-son", "caisse-zone-notif", "caisse-actualisation"]) byId.set(id, new Node("div"));
+  for (const id of ["caisse-zone-direct", "caisse-zone-etat", "caisse-zone-contenu", "caisse-zone-son", "caisse-zone-notif", "caisse-zone-actualiser", "caisse-actualisation"]) byId.set(id, new Node("div"));
   return { getElementById: (id) => byId.get(id) ?? null, createElement: (tag) => new Node(tag), byId };
 }
 
@@ -260,8 +260,36 @@ test("vue : l'affichage reste en place pendant une coupure réseau", () => {
 
 // Intention: the files the browser loads never build HTML from a string, never evaluate text and never use storage or other pages.
 test("fichiers du navigateur : ni innerHTML, ni eval, ni document.write", async () => {
-  for (const name of ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic", "notification", "notification-logic", "controls-logic"]) {
+  for (const name of ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic", "notification", "notification-logic", "controls-logic", "refresh-logic"]) {
     const code = await readFile(new URL(`../${name}.js`, import.meta.url), "utf8");
     assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\s*\(|new Function|setTimeout\(\s*["'`]/.test(code), name);
   }
+});
+
+test("vue : bouton « Actualiser » = texte posé avec textContent, désactivé pendant la lecture, le clic appelle le rappel", () => {
+  let clicks = 0;
+  const { view, document } = setup({ now: NOW }, { onRefresh: () => (clicks += 1) });
+  const zone = document.byId.get("caisse-zone-actualiser");
+  assert.equal(zone.textContent, "", "nothing before the script builds it");
+  view.updateRefresh({ text: "Actualiser", disabled: false });
+  const line = first(zone, "caisse-actualiser");
+  const button = line.children[0];
+  assert.equal(button.tag, "button");
+  assert.equal(button.attributes.type, "button");
+  assert.equal(button.textContent, "Actualiser");
+  assert.equal(button.disabled, false);
+  button.listeners.click();
+  assert.equal(clicks, 1);
+  view.updateRefresh({ text: "Actualisation...", disabled: true });
+  assert.equal(zone.children[0], line, "same button updated in place");
+  assert.equal(button.textContent, "Actualisation...");
+  assert.equal(button.disabled, true);
+});
+
+test("vue : sans zone « actualiser » dans la page, la mise à jour du bouton ne casse rien", () => {
+  const { view, document } = setup({ now: NOW });
+  document.byId.delete("caisse-zone-actualiser");
+  const bare = createCaisseView(document, { pollSeconds: 3, nowMs: () => NOW });
+  bare.updateRefresh({ text: "Actualiser", disabled: false });
+  assert.ok(view);
 });

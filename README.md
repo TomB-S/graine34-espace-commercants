@@ -79,6 +79,7 @@ date-line.js         ligne de date et décalage d'horloge (fonctions pures)
 age.js               « il y a x min » (fonction pure, utilisée par le serveur et le navigateur)
 sound-logic.js       quand sonner et que dire de l'état du son, son voulu par défaut (fonctions pures)
 controls-logic.js    le bouton unique du son et des notifications : libellé et action (fonctions pures)
+refresh-logic.js     le bouton « Actualiser » : libellé et état désactivé (fonctions pures)
 sound.js             le son : Web Audio, bip généré, aucun fichier audio
 notification-logic.js  quoi notifier et que dire de l'état (regroupement, tag, texte : fonctions pures)
 notification.js      notifications du navigateur : le seul fichier qui touche à l'API Notification
@@ -262,6 +263,15 @@ sécurité lit l'historique du compte pour ne rater aucun paiement.
   même geste. Une fois les deux actifs, il devient « Couper le son ». Ce que le navigateur ne peut
   pas activer n'est pas promis : notifications refusées ou hors HTTPS, le bouton dit « Activer le
   son » ; navigateur sans Web Audio, « Activer les notifications ».
+- **Bouton « Actualiser »** : placé sous la ligne du son, il relit tout de suite `/caisse/data`
+  (même session, même contrôle d'inscription) et met la page à jour sans la recharger. La mise à jour
+  automatique continue comme avant. Pendant la lecture le bouton est désactivé et affiche
+  « Actualisation... ». Si la lecture échoue, la bannière « Connexion au serveur interrompue. »
+  apparaît ; une réponse 401 ramène à la connexion. Si une lecture automatique est déjà en cours,
+  le clic attend celle-ci au lieu d'en lancer une seconde. Le clic compte comme un geste de
+  l'utilisateur (il peut débloquer le son comme les autres clics), mais la détection des nouveaux
+  paiements est la même : un paiement déjà affiché ne fait jamais sonner ni notifier. Aucune
+  variable de configuration, aucun changement de la CSP.
 - **Notifications du navigateur** : si l'autorisation est **déjà accordée** au chargement
   (`Notification.permission` vaut `granted`), elles sont actives tout de suite, sans bouton :
   « Notifications activées ». Sinon la demande d'autorisation se fait **uniquement au clic sur le
@@ -369,6 +379,8 @@ identifiant (ceux des tests sont fictifs).
   (`/caisse/data` et fichiers servis).
 - Étape E : `test/controls-logic.test.js` (le bouton unique) ; les tests du son et des notifications
   ci-dessous couvrent aussi l'état « en attente », le geste, la mémorisation et le stockage bloqué.
+- Étape F : `test/refresh-logic.test.js` (libellé du bouton « Actualiser ») ; le bouton dans la vue et dans le
+  script est couvert par `test/caisse-view.test.js` et `test/caisse-script.test.js`.
 - Étape C : `test/sound-logic.test.js` (quand sonner), `test/sound.test.js` (audio, avec un faux
   `AudioContext`) ; le son dans le script est couvert par `test/caisse-script.test.js`.
 - Étape D : `test/notification-logic.test.js` (regroupement, tag, texte, attente du montant),

@@ -17,6 +17,8 @@ export const TEXTS = {
   clientPayer: "Client",
   amountUnreadable: "Montant indisponible",
   amountPending: "Montant en cours de lecture",
+  refreshButton: "Actualiser",
+  refreshing: "Actualisation...",
   soundOn: "Son activé",
   soundOff: "Son désactivé : cliquer pour activer",
   soundUnsupported: "Son non disponible sur ce navigateur",

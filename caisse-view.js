@@ -12,9 +12,9 @@ import { dateLine } from "./date-line.js";
 
 const LIVE = new Set(["live", "fallback"]);
 
-export function createCaisseView(document, { pollSeconds, nowMs, onSoundToggle = () => {}, onNotificationToggle = () => {} }) {
+export function createCaisseView(document, { pollSeconds, nowMs, onSoundToggle = () => {}, onNotificationToggle = () => {}, onRefresh = () => {} }) {
   const zone = (name) => document.getElementById(`caisse-zone-${name}`);
-  const zones = { direct: zone("direct"), state: zone("etat"), content: zone("contenu"), sound: zone("son"), notification: zone("notif") };
+  const zones = { direct: zone("direct"), state: zone("etat"), content: zone("contenu"), sound: zone("son"), notification: zone("notif"), refresh: zone("actualiser") };
   const footer = document.getElementById("caisse-actualisation");
 
   const make = (tag, className, text) => {
@@ -190,8 +190,36 @@ export function createCaisseView(document, { pollSeconds, nowMs, onSoundToggle =
   const renderSound = controlLine(zones.sound, "caisse-son", onSoundToggle);
   const renderNotification = controlLine(zones.notification, "caisse-notif", onNotificationToggle);
 
+  // The "Actualiser" button, built at the first call: `state` is { text, disabled } from refreshState(). While it is disabled the browser
+  // takes the focus away from it, so the focus is given back when it is enabled again (keyboard users keep their place).
+  let refreshButton = null;
+  let refreshSignature = null;
+  let refreshHadFocus = false;
+  function renderRefresh(state) {
+    if (!zones.refresh) return;
+    const next = JSON.stringify(state);
+    if (next === refreshSignature) return;
+    refreshSignature = next;
+    if (!refreshButton) {
+      const line = make("p", "caisse-actualiser");
+      refreshButton = make("button");
+      refreshButton.setAttribute("type", "button");
+      refreshButton.addEventListener("click", () => onRefresh());
+      line.append(refreshButton);
+      zones.refresh.replaceChildren(line);
+    }
+    if (state.disabled) refreshHadFocus = document.activeElement === refreshButton;
+    refreshButton.textContent = state.text;
+    refreshButton.disabled = state.disabled;
+    if (!state.disabled && refreshHadFocus) {
+      refreshHadFocus = false;
+      refreshButton.focus?.();
+    }
+  }
+
   return {
     updateSound: renderSound,
+    updateRefresh: renderRefresh,
     updateNotifications: renderNotification,
 
     // New data. `freshTickets`: the tickets the detector found new in this very update (they get the fading background).

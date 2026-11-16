@@ -437,7 +437,8 @@ form[action="/deconnexion"] {
 
 /* Sound and notifications: the button and, next to it, the state in words (the colour only underlines it). */
 .caisse-son,
-.caisse-notif {
+.caisse-notif,
+.caisse-actualiser {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -446,7 +447,8 @@ form[action="/deconnexion"] {
 }
 
 .caisse-son button,
-.caisse-notif button {
+.caisse-notif button,
+.caisse-actualiser button {
   min-height: var(--tactile);
 }
 
