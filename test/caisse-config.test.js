@@ -91,7 +91,7 @@ test("caisse : valeurs explicites lues, bornes incluses", () => {
 test("caisse : valeur numérique invalide refusée, la variable est nommée", () => {
   const limits = {
     CAISSE_REFRESH_SECONDS: [2, 60],
-    CAISSE_POLL_SECONDS: [1, 60],
+    CAISSE_POLL_SECONDS: [0, 60], // 0 = manual mode
     CAISSE_IDLE_SECONDS: [15, 600],
     CAISSE_STREAM_WATCHDOG_SECONDS: [10, 600],
     CAISSE_RECONNECT_MAX_SECONDS: [1, 600],
@@ -206,4 +206,10 @@ test("node server.js : caisse désactivée, démarre sans identifiant, même sor
     child.kill();
     await exited;
   }
+});
+
+// Intention: CAISSE_POLL_SECONDS=0 is the manual mode (no automatic reading in the script), and 3 stays the default.
+test("caisse : CAISSE_POLL_SECONDS=0 accepté (mode manuel), 3 par défaut", () => {
+  assert.equal(readCaisseConfig({ ...ENABLED, CAISSE_POLL_SECONDS: "0" }).pollSeconds, 0);
+  assert.equal(readCaisseConfig({ ...ENABLED }).pollSeconds, 3);
 });

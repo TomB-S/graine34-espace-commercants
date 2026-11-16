@@ -111,6 +111,15 @@ appTest("caisse : CAISSE_REFRESH_SECONDS (repli sans script) et CAISSE_POLL_SECO
   assert.match(html, /Mise à jour automatique toutes les 7 secondes\./);
 });
 
+// Intention: manual mode (CAISSE_POLL_SECONDS=0): the page tells the script not to read by itself and says so in words.
+appTest("caisse : CAISSE_POLL_SECONDS=0 = mode manuel annoncé à la page", withOptions({ pollSeconds: 0 }), async (app) => {
+  await ready(app);
+  const html = await (await app.request("/caisse")).text();
+  assert.match(html, /data-poll-seconds="0"/);
+  assert.match(html, /Mise à jour manuelle : cliquer sur Actualiser pour relire les paiements\./);
+  assert.ok(!html.includes("Mise à jour automatique"));
+});
+
 // Intention: the HTML follows the strict CSP: no script, no style attribute, no <style>, no <meta refresh>, nothing external,
 // one h1, a French page. (The existing security test keeps passing without change: this page is only added.)
 appTest("caisse : HTML sans script, sans style en ligne, sans meta refresh, un seul h1, lang=fr", OPTIONS, async (app) => {

@@ -39,11 +39,11 @@ class Node {
   }
 }
 
-async function run(responses, audio = null, notif = null, store = null) {
+async function run(responses, audio = null, notif = null, store = null, pollSeconds = "3") {
   const nodes = new Map();
   for (const id of ["caisse-zone-direct", "caisse-zone-etat", "caisse-zone-contenu", "caisse-zone-son", "caisse-zone-notif", "caisse-zone-actualiser", "caisse-actualisation"]) nodes.set(id, new Node());
   const root = new Node();
-  root.dataset = { pollSeconds: "3", dataUrl: "/caisse/data", loginUrl: "/" };
+  root.dataset = { pollSeconds, dataUrl: "/caisse/data", loginUrl: "/" };
   nodes.set("caisse", root);
   const listeners = {};
   const timers = [];
@@ -757,6 +757,67 @@ test("actualiser : un clic pendant la lecture automatique attend cette lecture, 
     release();
     await flush();
     assert.equal(refreshButton(page).disabled, false);
+  } finally {
+    page.restore();
+  }
+});
+
+// ---- manual mode (data-poll-seconds="0") ----
+const timersToRead = (page) => page.timers.filter((t) => !t.every);
+
+test("mode manuel : une seule lecture à l'ouverture, aucune minuterie de lecture, aucun écouteur de retour réseau", async () => {
+  const page = await run([ok(data([ticket(1)]))], null, null, null, "0");
+  try {
+    assert.equal(page.calls.length, 1, "the first reading at the opening is kept");
+    assert.match(page.nodes.get("caisse-zone-contenu").textContent, /P1/);
+    assert.deepEqual(timersToRead(page), [], "no timeout chain");
+    assert.equal(page.listeners["window:online"], undefined, "no reading when the network returns");
+    assert.match(page.nodes.get("caisse-actualisation").textContent, /Mise à jour manuelle/);
+  } finally {
+    page.restore();
+  }
+});
+
+test("mode manuel : retour sur l'onglet = aucune lecture", async () => {
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)]))], null, null, null, "0");
+  try {
+    page.document.visibilityState = "hidden";
+    page.listeners.visibilitychange();
+    page.document.visibilityState = "visible";
+    page.listeners.visibilitychange();
+    await flush();
+    assert.equal(page.calls.length, 1, "no reading");
+    assert.doesNotMatch(page.nodes.get("caisse-zone-contenu").textContent, /P2/);
+  } finally {
+    page.restore();
+  }
+});
+
+test("mode manuel : seul « Actualiser » lit ; après le clic, toujours aucune minuterie ; l'échec affiche la bannière", async () => {
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(2), ticket(1)])), new Error("down")], null, null, null, "0");
+  try {
+    refreshButton(page).listeners.click();
+    await flush();
+    assert.equal(page.calls.length, 2);
+    assert.match(page.nodes.get("caisse-zone-contenu").textContent, /P2/);
+    assert.deepEqual(timersToRead(page), [], "still no timer after a click");
+    refreshButton(page).listeners.click();
+    await flush();
+    assert.match(page.nodes.get("caisse-zone-etat").textContent, /Connexion au serveur interrompue\./);
+    assert.equal(refreshButton(page).disabled, false);
+    assert.deepEqual(timersToRead(page), []);
+    assert.equal(page.calls.length, 3);
+  } finally {
+    page.restore();
+  }
+});
+
+test("mode manuel : 401 à l'ouverture ou au clic = retour à la connexion", async () => {
+  const page = await run([ok(data([ticket(1)])), { ok: false, status: 401, json: async () => ({}) }], null, null, null, "0");
+  try {
+    refreshButton(page).listeners.click();
+    await flush();
+    assert.deepEqual(page.seen.assigned, ["/"]);
   } finally {
     page.restore();
   }

@@ -133,7 +133,7 @@ compte d'écoute : le navigateur arrive directement sur `/caisse`.
 | `CAISSE_CYCLOS_LOGIN` | Identifiant du compte d'écoute (exigé si activée) | aucun |
 | `CAISSE_CYCLOS_PASSWORD` | Mot de passe du compte d'écoute (exigé si activée, jamais journalisé) | aucun |
 | `CAISSE_ACCOUNT_TYPE` | Type de compte à lire (par exemple `MonComptePro`) ; lettres, chiffres, `.`, `-`, `_` | découverte automatique |
-| `CAISSE_POLL_SECONDS` | Rythme de lecture du script (1 à 60) | `3` |
+| `CAISSE_POLL_SECONDS` | Rythme de lecture du script (0 à 60). `0` = mode manuel, voir ci-dessous | `3` |
 | `CAISSE_REFRESH_SECONDS` | Rechargement de la page pour un navigateur **sans** JavaScript (2 à 60) | `5` |
 | `CAISSE_IDLE_SECONDS` | Arrêt de l'écoute sans visite (15 à 600) | `45` |
 | `CAISSE_STREAM_WATCHDOG_SECONDS` | Silence maximal sur le flux avant de le rouvrir (10 à 600) | `60` |
@@ -263,6 +263,16 @@ sécurité lit l'historique du compte pour ne rater aucun paiement.
   même geste. Une fois les deux actifs, il devient « Couper le son ». Ce que le navigateur ne peut
   pas activer n'est pas promis : notifications refusées ou hors HTTPS, le bouton dit « Activer le
   son » ; navigateur sans Web Audio, « Activer les notifications ».
+- **Lectures automatiques du script** : avec `CAISSE_POLL_SECONDS` à N, la page lit `/caisse/data` (1) à
+  l'ouverture, (2) N secondes après la fin de chaque lecture (minuterie), (3) dès que l'onglet redevient
+  visible (retour sur l'onglet ou la fenêtre : un changement de fenêtre pour faire un paiement
+  déclenche donc une lecture), (4) au retour du réseau (événement `online`). Il n'y a pas de lecture
+  au simple focus de la fenêtre. Devant la page, seule la minuterie joue.
+- **Mode manuel (`CAISSE_POLL_SECONDS=0`)** : aucune lecture automatique, ni minuterie, ni retour sur
+  l'onglet, ni retour du réseau. Seules la lecture initiale à l'ouverture et le bouton « Actualiser »
+  lisent les données. Le bas de page dit « Mise à jour manuelle : cliquer sur Actualiser pour relire
+  les paiements. » Pratique pour tester le bouton à la main. Un navigateur sans script recharge
+  toujours la page toutes les `CAISSE_REFRESH_SECONDS` secondes.
 - **Bouton « Actualiser »** : placé sous la ligne du son, il relit tout de suite `/caisse/data`
   (même session, même contrôle d'inscription) et met la page à jour sans la recharger. La mise à jour
   automatique continue comme avant. Pendant la lecture le bouton est désactivé et affiche
@@ -379,7 +389,7 @@ identifiant (ceux des tests sont fictifs).
   (`/caisse/data` et fichiers servis).
 - Étape E : `test/controls-logic.test.js` (le bouton unique) ; les tests du son et des notifications
   ci-dessous couvrent aussi l'état « en attente », le geste, la mémorisation et le stockage bloqué.
-- Étape F : `test/refresh-logic.test.js` (libellé du bouton « Actualiser ») ; le bouton dans la vue et dans le
+- Étape F : `test/refresh-logic.test.js` (libellé du bouton « Actualiser », rythme et mode manuel) ; le bouton dans la vue et dans le
   script est couvert par `test/caisse-view.test.js` et `test/caisse-script.test.js`.
 - Étape C : `test/sound-logic.test.js` (quand sonner), `test/sound.test.js` (audio, avec un faux
   `AudioContext`) ; le son dans le script est couvert par `test/caisse-script.test.js`.

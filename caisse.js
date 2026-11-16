@@ -8,7 +8,7 @@ import { clockOffset } from "./date-line.js";
 import { createSound } from "./sound.js";
 import { shouldBeep, soundLabel } from "./sound-logic.js";
 import { controlsLabel } from "./controls-logic.js";
-import { canStartRefresh, refreshState } from "./refresh-logic.js";
+import { canStartRefresh, pollSettings, refreshState } from "./refresh-logic.js";
 import { createNotifier } from "./notification.js";
 import { canNotify, createNotificationPlanner, notificationLabel } from "./notification-logic.js";
 
@@ -38,7 +38,8 @@ function safeStorage() {
 function start() {
   const root = document.getElementById("caisse");
   if (!root) return;
-  const pollMs = Math.max(1, Number(root.dataset.pollSeconds) || 3) * 1000;
+  // Manual mode (data-poll-seconds="0"): the first reading and the "Actualiser" button are the only readings.
+  const { manual, pollMs } = pollSettings(root.dataset.pollSeconds);
   const dataUrl = root.dataset.dataUrl || "/caisse/data";
   const loginUrl = root.dataset.loginUrl || "/";
 
@@ -143,7 +144,7 @@ function start() {
     } finally {
       // A timeout chain, not an interval: the next read starts a few seconds after the end of this one.
       // Never paused when the tab is hidden.
-      timer = setTimeout(poll, pollMs);
+      if (!manual) timer = setTimeout(poll, pollMs);
     }
   }
 
@@ -151,10 +152,10 @@ function start() {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       refreshControls(); // the browser may have suspended the audio, or the permission changed in the settings
-      poll();
+      if (!manual) poll();
     }
   });
-  window.addEventListener("online", poll);
+  if (!manual) window.addEventListener("online", poll);
   setInterval(() => view.refreshAges(), AGE_REFRESH_MS);
   poll();
 }

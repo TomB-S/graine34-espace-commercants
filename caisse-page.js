@@ -9,6 +9,7 @@
 // by the caller: importing server.js from here would be a circular import.
 import { ticketDisplay } from "./ticket-store.js";
 import { TEXTS } from "./caisse-texts.js";
+import { pollFooterText } from "./refresh-logic.js";
 import { LIST_SIZE, bannerOf, payerText, amountText } from "./caisse-data.js";
 
 const TITLE = "Caisse : paiements reçus";
@@ -101,7 +102,7 @@ export function renderCaissePage(view, { refreshSeconds, pollSeconds = 3, hidePa
   <div class="caisse-zone" id="caisse-zone-contenu">
   ${main}
   </div>
-  <p class="caisse-actualisation" id="caisse-actualisation">Mise à jour automatique toutes les ${e(refreshSeconds)} secondes.</p>
+  <p class="caisse-actualisation" id="caisse-actualisation">${e(pollFooterText(pollSeconds === 0 ? 0 : refreshSeconds))}</p>
   </div>
 </body>
 </html>`;

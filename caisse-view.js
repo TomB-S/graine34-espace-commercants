@@ -9,6 +9,7 @@
 // - the date line is worked out again with the age (refreshAges), without touching anything else.
 import { TEXTS } from "./caisse-texts.js";
 import { dateLine } from "./date-line.js";
+import { pollFooterText } from "./refresh-logic.js";
 
 const LIVE = new Set(["live", "fallback"]);
 
@@ -240,7 +241,7 @@ export function createCaisseView(document, { pollSeconds, nowMs, onSoundToggle =
       }
       renderBanner();
       renderBadge();
-      if (footer) footer.textContent = pollSeconds === 1 ? "Mise à jour automatique toutes les secondes." : `Mise à jour automatique toutes les ${pollSeconds} secondes.`;
+      if (footer) footer.textContent = pollFooterText(pollSeconds);
     },
 
     // The server cannot be reached: the display stays as it is, a banner says so.

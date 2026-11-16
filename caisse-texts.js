@@ -19,6 +19,7 @@ export const TEXTS = {
   amountPending: "Montant en cours de lecture",
   refreshButton: "Actualiser",
   refreshing: "Actualisation...",
+  manualMode: "Mise à jour manuelle : cliquer sur Actualiser pour relire les paiements.",
   soundOn: "Son activé",
   soundOff: "Son désactivé : cliquer pour activer",
   soundUnsupported: "Son non disponible sur ce navigateur",

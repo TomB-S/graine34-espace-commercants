@@ -163,6 +163,12 @@ test("vue : phrase de mise à jour au pluriel, et « toutes les secondes » pour
   assert.equal(one.byId.get("caisse-actualisation").textContent, "Mise à jour automatique toutes les secondes.");
 });
 
+test("vue : mode manuel (0 seconde) = phrase « Mise à jour manuelle », jamais « toutes les 0 secondes »", () => {
+  const document = fakeDocument();
+  createCaisseView(document, { pollSeconds: 0, nowMs: () => NOW }).update(data([ticket(1)]));
+  assert.equal(document.byId.get("caisse-actualisation").textContent, "Mise à jour manuelle : cliquer sur Actualiser pour relire les paiements.");
+});
+
 test("vue : ligne du son = bouton et état en toutes lettres, le clic appelle le rappel", () => {
   let clicks = 0;
   const { view, document } = setup({ now: NOW }, { onSoundToggle: () => (clicks += 1) });

@@ -16,7 +16,7 @@ export const PROTOTYPE_MERCHANT = "prototype";
 const INTEGER_SETTINGS = [
   // Reload of the page for a browser WITHOUT script (<meta refresh> in <noscript>), and reading rhythm of the script.
   ["CAISSE_REFRESH_SECONDS", "refreshSeconds", 5, 2, 60],
-  ["CAISSE_POLL_SECONDS", "pollSeconds", 3, 1, 60],
+  ["CAISSE_POLL_SECONDS", "pollSeconds", 3, 0, 60], // 0 = manual mode, no automatic reading in the script
   ["CAISSE_IDLE_SECONDS", "idleSeconds", 45, 15, 600],
   ["CAISSE_STREAM_WATCHDOG_SECONDS", "streamWatchdogSeconds", 60, 10, 600],
   ["CAISSE_RECONNECT_MAX_SECONDS", "reconnectMaxSeconds", 30, 1, 600],

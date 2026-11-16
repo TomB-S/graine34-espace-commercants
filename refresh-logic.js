@@ -10,3 +10,18 @@ export function refreshState(busy) {
 export function canStartRefresh(busy) {
   return !busy;
 }
+
+// Reading rhythm from the data-poll-seconds attribute. "0" is the manual mode: no automatic reading at all (no timer, no reading when
+// the tab comes back or the network returns), only the first reading at the opening and the "Actualiser" button. Anything unreadable
+// falls back to 3 seconds; the minimum otherwise is 1 second. Returns { manual, pollMs }.
+export function pollSettings(raw) {
+  if (String(raw).trim() === "0") return { manual: true, pollMs: 0 };
+  return { manual: false, pollMs: Math.max(1, Number(raw) || 3) * 1000 };
+}
+
+// The line at the bottom of the page. `seconds` 0 = manual mode.
+export function pollFooterText(seconds) {
+  if (seconds === 0) return TEXTS.manualMode;
+  if (seconds === 1) return "Mise à jour automatique toutes les secondes.";
+  return `Mise à jour automatique toutes les ${seconds} secondes.`;
+}
