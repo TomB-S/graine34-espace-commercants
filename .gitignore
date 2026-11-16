@@ -19,3 +19,4 @@ npm-debug.log*
 # Consignes de travail (données proches de données réelles)
 consignes-code-notification-paiement.md
 consignes-2b-retouches-son-notification.md
+build/

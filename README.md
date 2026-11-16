@@ -57,11 +57,54 @@ commiter).
 | --- | --- |
 | `npm start` | Démarre le serveur (`node --env-file-if-exists=.env server.js`) |
 | `npm test` | Lance les tests (`node --test`), sans appel à un vrai Cyclos |
+| `npm run build:exe` | Fabrique l'exécutable (voir « Exécutable ») |
+
+## Exécutable
+
+Essai : l'application peut être fabriquée en un seul fichier exécutable, sans Node
+installé sur la machine qui le lance (« single executable application » de Node).
+Il en faut un par système : celui fabriqué sur un Mac ne tourne que sur ce type de Mac.
+
+**Fabrication**, en une commande, depuis le dossier du projet (après `npm install`).
+Elle exige un Node 25.5 ou plus récent (option `--build-sea`). Si le Node de votre
+terminal est plus ancien (par exemple 24), indiquer le chemin d'un Node récent dans
+`SEA_NODE`, sans changer votre Node habituel :
+
+```sh
+SEA_NODE=/chemin/vers/node-v26/bin/node npm run build:exe
+```
+
+Avec un Node 25.5 ou plus récent dans le terminal, `npm run build:exe` suffit. Le
+script refuse de continuer si ce Node est trop ancien. Résultat :
+`build/graine34-notif-caisse` (`.exe` sous Windows), environ 146 Mo. Sur macOS, le
+script y ajoute la signature locale (ad hoc) sans laquelle le système tue le
+programme au lancement ; elle ne remplace pas une vraie signature de diffusion.
+`esbuild`, l'outil qui regroupe le code, n'est qu'une dépendance de fabrication : il
+n'est pas dans l'exécutable.
+
+**Lancement.** L'exécutable ne lit pas de fichier `.env` : tout passe par les
+variables d'environnement. Exemple, avec le mot de passe saisi sans trace dans
+l'historique :
+
+```sh
+read -s CAISSE_PW
+PORT=3001 CAISSE_ENABLED=true CAISSE_CYCLOS_LOGIN="..." CAISSE_CYCLOS_PASSWORD="$CAISSE_PW" \
+CYCLOS_CHANNEL=main CYCLOS_BASE_URL="https://laruchedesmonnaieslocales.org/lagraine34/api" \
+./build/graine34-notif-caisse
+unset CAISSE_PW
+```
+
+Puis ouvrir <http://localhost:3001> et se connecter comme décrit dans « Activer et
+lancer la caisse ». Au lancement, Node affiche un avertissement disant que cette
+fonction est expérimentale : c'est normal. `Ctrl+C` arrête proprement l'écoute.
 
 ## Arborescence
 
 ```
 server.js            serveur HTTP : connexion, sessions, /caisse, déconnexion, statiques
+assets.js            lecture des fichiers statiques (disque, ou fichiers embarqués dans l'exécutable)
+main.js              point d'entrée de l'exécutable
+build-sea.js         fabrication de l'exécutable (npm run build:exe)
 caisse-config.js     lecture et validation des variables CAISSE_*
 sse-parser.js        analyseur du flux d'événements Cyclos (SSE), sans accès réseau
 cyclos-push.js       appels Cyclos : flux, transfert, historique, réglage

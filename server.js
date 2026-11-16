@@ -1,5 +1,5 @@
 import http from "node:http";
-import { readFileSync, realpathSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import {
   createHash,
   randomBytes,
@@ -13,6 +13,7 @@ import { describeError } from "./cyclos-listener.js";
 import { createListenerManager } from "./listener-manager.js";
 import { renderCaissePage, renderCaisseRefused } from "./caisse-page.js";
 import { renderCaisseData } from "./caisse-data.js";
+import { inExecutable, readAsset } from "./assets.js";
 
 
 // Cyclos API address. CYCLOS_BASE_URL overrides the public demo (default),
@@ -220,7 +221,7 @@ async function closeCyclosSession(sessionToken) {
 // `cacheControl`: one hour by default; the scripts of the cash register page use "no-cache" (the browser asks again each
 // time and gets a 304 when nothing changed), so that a changed script is never hidden by the cache.
 function staticAsset(file, contentType, cacheControl = "public, max-age=3600") {
-  const body = readFileSync(new URL(file, import.meta.url));
+  const body = readAsset(file);
   const etag = `"${createHash("sha256").update(body).digest("hex").slice(0, 16)}"`;
   return { body, contentType, etag, cacheControl };
 }
@@ -834,11 +835,8 @@ export function startServer(options = {}) {
 // Pure functions exported for the unit tests.
 export { escapeHtml, formatAmount };
 
-// "node server.js" starts the server as before; importing the file does not.
-if (
-  process.argv[1] &&
-  realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
-) {
+// Starts the server from the command line: a clear line on a configuration error, then a clean stop on a signal.
+export async function runFromCommandLine() {
   let port;
   let handle;
   try {
@@ -862,4 +860,13 @@ if (
       });
     }
   }
+}
+
+// "node server.js" starts the server as before; importing the file does not (the executable starts it from main.js).
+if (
+  !inExecutable &&
+  process.argv[1] &&
+  realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+) {
+  runFromCommandLine();
 }
