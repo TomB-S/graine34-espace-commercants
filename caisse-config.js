@@ -51,6 +51,18 @@ function readBoolean(env, name, fallback) {
   throw new Error(`${name} invalide : "true" ou "false" attendu`);
 }
 
+// Order of the words of the payer name as Cyclos writes it in `display`.
+const NAME_ORDERS = ["nom-prenom", "prenom-nom"];
+
+function readNameOrder(env, name, fallback) {
+  const value = env[name];
+  if (value === undefined || value === "") return fallback;
+  if (!NAME_ORDERS.includes(value)) {
+    throw new Error(`${name} invalide : "nom-prenom" ou "prenom-nom" attendu`);
+  }
+  return value;
+}
+
 function readInteger(env, [name, , fallback, min, max]) {
   const value = env[name];
   if (value === undefined || value === "") return fallback;
@@ -75,6 +87,7 @@ export function readCaisseConfig(env = process.env, overrides = {}) {
       config[setting[1]] = readInteger(env, setting);
     }
     config.hidePayerName = readBoolean(env, "CAISSE_HIDE_PAYER_NAME", false);
+    config.nameOrder = readNameOrder(env, "CAISSE_NAME_ORDER", "nom-prenom");
     config.hiddenDescriptions = readList(env, "CAISSE_HIDDEN_DESCRIPTIONS", DEFAULT_HIDDEN_DESCRIPTIONS);
 
     const accountType = env.CAISSE_ACCOUNT_TYPE ?? "";

@@ -144,6 +144,7 @@ compte d'écoute : le navigateur arrive directement sur `/caisse`.
 | `CAISSE_TICKETS_KEPT` | Tickets gardés en mémoire (1 à 500) | `50` |
 | `CAISSE_MAX_LISTENERS` | Écouteurs simultanés (1 à 50) | `5` |
 | `CAISSE_HIDE_PAYER_NAME` | `true` : le nom du payeur est remplacé par « Client » | `false` |
+| `CAISSE_NAME_ORDER` | Ordre des mots du nom du payeur dans Cyclos : `nom-prenom` (« Dupont Marie », le prénom est le dernier mot) ou `prenom-nom` (« Marie Dupont »). Voir « Nom du payeur » | `nom-prenom` |
 | `CAISSE_HIDDEN_DESCRIPTIONS` | Descriptions à ne pas afficher (celle que le type de paiement ajoute quand le payeur n'a rien écrit), séparées par des virgules ; la casse, les accents et les espaces en trop sont ignorés. Une valeur vide ne masque rien | `Virement Mobile Pro` |
 
 Valeur invalide ou identifiants manquants avec `CAISSE_ENABLED=true` : le
@@ -215,9 +216,15 @@ sécurité lit l'historique du compte pour ne rater aucun paiement.
   pour le moment. Prévenir l'équipe La Graine 34. »), sans détail technique.
   Seule la première connexion affiche « Connexion à Cyclos en cours ». Le
   message d'avertissement du mode de secours reste dans le terminal.
-- **Nom du payeur** : affiché en « Prénom + initiale du nom », par exemple « Marie D. » (le premier mot,
-  puis l'initiale du dernier mot). Un seul mot, ou un dernier mot qui ne commence pas par une lettre
-  (« Client 1 »), reste tel quel. `CAISSE_HIDE_PAYER_NAME=true` donne toujours « Client ».
+- **Nom du payeur** : affiché en « Prénom + initiale du nom », par exemple « Marie D. ». `CAISSE_NAME_ORDER`
+  dit dans quel ordre Cyclos écrit le nom. Avec `nom-prenom` (défaut), « Dupont Marie » : le prénom est le
+  **dernier mot**, le nom est tout ce qui le précède et l'initiale est celle de son premier mot (« De La
+  Fontaine Marie » donne « Marie D. »). Avec `prenom-nom`, « Marie Dupont » : le prénom est le premier mot,
+  l'initiale est celle du dernier. Un prénom avec trait d'union est un seul mot (« Martin Jean-Pierre » donne
+  « Jean-Pierre M. »). Un prénom composé séparé par une espace n'est pas reconnu (« Dupont Jean Pierre » donne
+  « Pierre D. »), et un nom d'entreprise est traité comme une personne. Un seul mot, ou un nom dont les deux
+  mots utilisés ne commencent pas par une lettre (« Client 1 »), reste tel quel.
+  `CAISSE_HIDE_PAYER_NAME=true` donne toujours « Client ».
 - **Grand ticket** (dernier paiement), de haut en bas : la marque « NOUVEAU »,
   le payeur, le montant, la date (« Aujourd'hui 10:33 · il y a 2 min », ou
   « 12/11 17:21 » un autre jour, avec « il y a N h » seulement sous 24 heures),

@@ -569,6 +569,7 @@ async function handleCaisse(req, res) {
         refreshSeconds: CAISSE.refreshSeconds,
         pollSeconds: CAISSE.pollSeconds,
         hidePayerName: CAISSE.hidePayerName,
+        nameOrder: CAISSE.nameOrder,
         hiddenDescriptions: CAISSE.hiddenDescriptions,
         now: Date.now(),
         csrfToken: visit.session.csrfToken,
@@ -596,7 +597,7 @@ async function handleCaisseData(req, res) {
     else json(REFUSAL_STATUS[kind], { error: kind }, kind === "busy" ? { "Retry-After": "30" } : {});
   }, { wait: true });
   if (!visit) return;
-  json(200, renderCaisseData(visit.view, { hidePayerName: CAISSE.hidePayerName, hiddenDescriptions: CAISSE.hiddenDescriptions, now: Date.now() }, CAISSE_HELPERS));
+  json(200, renderCaisseData(visit.view, { hidePayerName: CAISSE.hidePayerName, nameOrder: CAISSE.nameOrder, hiddenDescriptions: CAISSE.hiddenDescriptions, now: Date.now() }, CAISSE_HELPERS));
 }
 
 const server = http.createServer(async (req, res) => {
