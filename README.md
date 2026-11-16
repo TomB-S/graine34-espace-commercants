@@ -295,9 +295,19 @@ sécurité lit l'historique du compte pour ne rater aucun paiement.
   le flux accepte le jeton de session avec le canal `main` (jusqu'ici testé depuis
   un navigateur avec un cookie) ; la forme exacte des événements ; que
   `GET /users/self?fields=id` rend bien l'identifiant utilisateur ; les
-  paramètres `direction=credit` et `kinds=payment` de l'historique ; la forme
-  de la réponse de `GET /self/notification-settings/data-for-edit` ; la forme de
+  paramètres `direction=credit` et `kinds=payment` de l'historique ; la forme de
   la réponse de `GET /transactions/{id}`.
+- **Réglage de notification « paiement reçu »** : le prototype le **lit** (jamais
+  modifié) dans `GET /self/notification-settings/data-for-edit`. Sur l'instance
+  réelle, les réglages ne sont ni à la racine ni dans `notificationSettings` : ils
+  sont dans le tableau `settings.notifications`, dont chaque élément a les champs
+  `kind`, `type`, `internal`, `sms`, `email` et `app`. Le réglage voulu est l'élément
+  dont `type` vaut `paymentReceived` (`kind` n'est pas filtré), et seul son booléen
+  `internal` compte (pas `email` ni `app`). S'il y a plusieurs éléments de ce type,
+  le réglage est considéré comme activé dès que l'un a `internal` à `true`. Tableau
+  absent ou vide, élément absent, `internal` qui n'est pas un booléen : réglage
+  « inconnu », donc mode de secours, avec l'avertissement du terminal (sans donnée
+  sensible). Les anciennes formes (racine, `notificationSettings`) ne sont plus lues.
 
 ## Test réel avec le compte de test
 

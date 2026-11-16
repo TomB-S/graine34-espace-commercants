@@ -40,6 +40,20 @@ export function entry(n, { amount = "10.00", date, description, who = "Client" }
   };
 }
 
+// Builds the answer of GET /self/notification-settings/data-for-edit as the real instance sends it: the settings are the array
+// `settings.notifications`, every element has kind, type, internal, sms, email and app. `paymentReceived`: the flags of the
+// "paymentReceived" element ({ internal, ... }, null = no such element); `others` are elements of other types, placed before and after;
+// `extra` are more elements added at the end (a duplicate type, an odd element...).
+export function notificationSettingsBody({ paymentReceived = { internal: true }, others = true, extra = [] } = {}) {
+  const element = (type, kind, flags = {}) => ({ kind, type, internal: false, sms: false, email: false, app: false, ...flags });
+  const notifications = [];
+  if (others) notifications.push(element("paymentAwaitingAuthorization", "payment", { internal: true, email: true }), element("generalMessage", "message", { internal: true, app: true }));
+  if (paymentReceived) notifications.push(element("paymentReceived", "payment", { email: true, app: true, ...paymentReceived }));
+  if (others) notifications.push(element("paymentReceivedChargedBack", "payment", { internal: true }), element("passwordChanged", "user", { email: true }));
+  notifications.push(...extra);
+  return { user: { display: "Boutique de Test" }, settings: { notifications } };
+}
+
 // Builds the answer of GET /transfers/{id} in the shape of the real instance: the description is NOT at the root,
 // it is in `transaction.description`; the amount is a STRING; the date has a time zone. Fictitious values only.
 export function transfer(n, { amount = "1.00", description = `Objet ${n}`, payer = `Payeur ${n}`, date, id = `tr-${n}` } = {}) {
@@ -90,8 +104,9 @@ export async function startFakeCyclos() {
     // Cash register page. `transfers` / `transactions`: id -> body, answered by GET /transfers/{id} and /transactions/{key}.
     transfers: new Map(),
     transactions: new Map(),
-    // Body of GET /self/notification-settings/data-for-edit (the default has "payment received" enabled).
-    notificationSettings: { paymentReceived: { internal: true, email: true, app: true } },
+    // Body of GET /self/notification-settings/data-for-edit, in the shape of the real instance (the default has "payment received"
+    // enabled). Build another one with notificationSettingsBody().
+    notificationSettings: notificationSettingsBody(),
     // Push stream. `lifetimeMs`: the stream is closed by the "server" after this delay (null = stays open until
     // endStreams()). `silent`: no byte at all, not even ":Initialized" (dead connection). `history`: events sent so far,
     // replayed to a client that reconnects with Last-Event-ID, like Cyclos does for a short cut.

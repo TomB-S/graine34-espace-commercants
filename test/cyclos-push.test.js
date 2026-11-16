@@ -5,7 +5,7 @@
 // All values are fictitious. Basic notions: test/statique.test.js.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { startFakeCyclos, USER, entry, transfer, paymentNotification } from "../test-support/fake-cyclos.js";
+import { startFakeCyclos, USER, entry, transfer, paymentNotification, notificationSettingsBody } from "../test-support/fake-cyclos.js";
 import { createCyclosPush, PushAuthError, PushForbiddenError, PushUnavailableError } from "../cyclos-push.js";
 import { createSseParser } from "../sse-parser.js";
 
@@ -108,17 +108,64 @@ test("cyclos-push : getAccount lit le type et la devise, null si rien d'utilisab
     assert.equal(await push.getAccount(token), null);
   }));
 
-// Intention: the setting is true / false, or null when the answer does not say (the caller then uses the fallback mode).
-test("cyclos-push : getPaymentReceivedSetting renvoie true, false ou null", () =>
+// Intention: the setting is read in settings.notifications, in the element whose type is "paymentReceived", from its boolean `internal`.
+// true, false, or null when the answer does not say (the caller then uses the fallback mode).
+test("cyclos-push : getPaymentReceivedSetting lit settings.notifications, élément paymentReceived, champ internal", () =>
   withClient({}, async ({ cyclos, push }) => {
     const token = await login(push);
-    assert.equal(await push.getPaymentReceivedSetting(token), true);
-    cyclos.state.notificationSettings = { paymentReceived: { internal: false, email: true, app: true } };
-    assert.equal(await push.getPaymentReceivedSetting(token), false);
-    cyclos.state.notificationSettings = { autre: {} };
-    assert.equal(await push.getPaymentReceivedSetting(token), null);
-    cyclos.state.notificationSettings = { paymentReceived: { internal: "oui" } };
-    assert.equal(await push.getPaymentReceivedSetting(token), null);
+    const read = async (options) => {
+      cyclos.state.notificationSettings = notificationSettingsBody(options);
+      return push.getPaymentReceivedSetting(token);
+    };
+    assert.equal(await push.getPaymentReceivedSetting(token), true, "the default of the fake Cyclos");
+    assert.equal(await read({ paymentReceived: { internal: true } }), true);
+    assert.equal(await read({ paymentReceived: { internal: false } }), false);
+    assert.equal(await read({ paymentReceived: { internal: true, email: false, app: false, sms: false } }), true, "only `internal` counts, not email or app");
+    assert.equal(await read({ paymentReceived: { internal: false, email: true, app: true, sms: true } }), false);
+    assert.equal(await read({ paymentReceived: null }), null, "no paymentReceived element among others");
+    assert.equal(await read({ paymentReceived: null, others: false }), null, "empty array");
+    assert.equal(await read({ paymentReceived: { internal: "oui" } }), null, "internal is not a boolean");
+    assert.equal(await read({ paymentReceived: { internal: 1 } }), null);
+    assert.equal(await read({ paymentReceived: { internal: null } }), null);
+  }));
+
+// Intention: kind is not a filter, and a duplicated type counts as enabled as soon as one of them has internal true.
+test("cyclos-push : paymentReceived, kind ignoré, doublon de type = activé si au moins un internal est true", () =>
+  withClient({}, async ({ cyclos, push }) => {
+    const token = await login(push);
+    const element = (flags) => ({ kind: "autre", type: "paymentReceived", internal: false, sms: false, email: false, app: false, ...flags });
+    const read = async (options) => {
+      cyclos.state.notificationSettings = notificationSettingsBody(options);
+      return push.getPaymentReceivedSetting(token);
+    };
+    assert.equal(await read({ paymentReceived: null, extra: [element({ internal: true })] }), true, "any kind");
+    assert.equal(await read({ paymentReceived: { internal: false }, extra: [element({ internal: true })] }), true, "one of two is enough");
+    assert.equal(await read({ paymentReceived: { internal: true }, extra: [element({ internal: false })] }), true);
+    assert.equal(await read({ paymentReceived: { internal: false }, extra: [element({ internal: false })] }), false);
+    assert.equal(await read({ paymentReceived: { internal: false }, extra: [element({ internal: "oui" })] }), false);
+    assert.equal(await read({ paymentReceived: null, extra: [element({ internal: "oui" })] }), null, "no boolean at all");
+    assert.equal(await read({ paymentReceived: { internal: "x" }, extra: [element({ internal: true })] }), true);
+  }));
+
+// Intention: the old guesses (the setting at the root, or under notificationSettings) no longer count, and odd answers are "unknown".
+test("cyclos-push : anciennes formes et réponses bizarres = inconnu (null), sans erreur", () =>
+  withClient({}, async ({ cyclos, push }) => {
+    const token = await login(push);
+    const read = async (body) => {
+      cyclos.state.notificationSettings = body;
+      return push.getPaymentReceivedSetting(token);
+    };
+    assert.equal(await read({ paymentReceived: { internal: true, email: true, app: true } }), null, "root: no longer read");
+    assert.equal(await read({ notificationSettings: { paymentReceived: { internal: true } } }), null, "notificationSettings: no longer read");
+    assert.equal(await read({ settings: { paymentReceived: { internal: true } } }), null, "settings.paymentReceived: not the array");
+    assert.equal(await read({ settings: { notifications: { paymentReceived: { internal: true } } } }), null, "an object, not an array");
+    assert.equal(await read({ settings: { notifications: "paymentReceived" } }), null);
+    assert.equal(await read({ settings: { notifications: [null, 3, "x", [], { internal: true }] } }), null, "elements without the type");
+    assert.equal(await read({ settings: { notifications: [null, { type: "paymentReceived", internal: true }] } }), true, "odd elements are skipped");
+    assert.equal(await read({ settings: {} }), null);
+    assert.equal(await read({}), null);
+    assert.equal(await read(null), null);
+    assert.equal(await read([]), null);
   }));
 
 // Intention: the latest credits are asked with the exact query of the instructions, and only credits come back.

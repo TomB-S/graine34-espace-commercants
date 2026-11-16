@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { appTest, EXPECTED_CSP, USER } from "../test-support/harness.js";
 import { envEnfant } from "../test-support/env-propre.js";
-import { startFakeCyclos, entry, transfer, paymentNotification } from "../test-support/fake-cyclos.js";
+import { startFakeCyclos, entry, transfer, paymentNotification, notificationSettingsBody } from "../test-support/fake-cyclos.js";
 import { escapeHtml, formatAmount } from "../server.js";
 import { renderCaissePage, renderCaisseRefused } from "../caisse-page.js";
 import { makeTicket } from "../ticket-store.js";
@@ -294,7 +294,7 @@ appTest("caisse : CAISSE_HIDE_PAYER_NAME=true remplace le payeur par Client part
 // Intention: "payment received" notification switched off at Cyclos (fallback mode): NO banner for the merchant, and a
 // payment still shows up.
 appTest("caisse : mode de secours = aucune bannière, le paiement s'affiche quand même", OPTIONS, async (app) => {
-  app.cyclos.state.notificationSettings = { paymentReceived: { internal: false, email: false, app: false } };
+  app.cyclos.state.notificationSettings = notificationSettingsBody({ paymentReceived: { internal: false, email: false, app: false } });
   await ready(app);
   const html = await pageUntil(app, isLive, "écoute en route");
   assert.ok(!html.includes("Mode de secours") && !html.includes("caisse-bandeau") && !html.includes("avertissement"));

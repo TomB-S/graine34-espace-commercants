@@ -126,12 +126,20 @@ export function createCyclosPush({ baseUrl, channel = "", fetchImpl = globalThis
       return { accountType, currency: first.currency ?? null };
     },
 
-    // Is the internal notification "payment received" enabled? true, false, or null when the
-    // answer does not say (the caller treats null as "not enabled": fallback mode).
+    // Is the internal notification "payment received" enabled? true, false, or null when the answer does not say (the caller
+    // treats null as "not enabled": fallback mode). On the real instance the settings are NOT at the root of the answer: they are
+    // the array `settings.notifications`, whose elements have the fields kind, type, internal, sms, email and app. The one we want
+    // is the element whose `type` is "paymentReceived" (`kind` is not filtered). If several elements have that type, the setting is
+    // enabled as soon as one has `internal === true`. No array, no such element, or no boolean `internal`: null.
     async getPaymentReceivedSetting(token, signal) {
       const body = await getJson("/self/notification-settings/data-for-edit", token, "getPaymentReceivedSetting", signal);
-      const setting = body?.paymentReceived ?? body?.notificationSettings?.paymentReceived ?? null;
-      return typeof setting?.internal === "boolean" ? setting.internal : null;
+      const list = body?.settings?.notifications;
+      if (!Array.isArray(list)) return null;
+      const flags = list
+        .filter((item) => item !== null && typeof item === "object" && item.type === "paymentReceived")
+        .map((item) => item.internal)
+        .filter((value) => typeof value === "boolean");
+      return flags.length === 0 ? null : flags.some(Boolean);
     },
 
     // Latest payments received, most recent first (raw history lines).

@@ -7,7 +7,7 @@
 // payer, amount, description, identifier or token. All values are fictitious. Basic notions: test/statique.test.js.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { startFakeCyclos, USER, entry, transfer, paymentNotification } from "../test-support/fake-cyclos.js";
+import { startFakeCyclos, USER, entry, transfer, paymentNotification, notificationSettingsBody } from "../test-support/fake-cyclos.js";
 import { readCaisseConfig } from "../caisse-config.js";
 import { createCyclosPush } from "../cyclos-push.js";
 import { createTicketStore, isNew } from "../ticket-store.js";
@@ -230,7 +230,7 @@ test("processeur : ticket incomplet jamais complété = trois relances au plus",
 // Intention: the payment notification is OFF at Cyclos: state "fallback", a warning in the log, and the setting is only READ
 // (no call changes anything at Cyclos); a payment is still shown, through account status and the history.
 test("processeur : réglage paymentReceived désactivé = mode de secours, lecture seule, le paiement apparaît quand même", () =>
-  withCaisse({ setup: (c) => (c.state.notificationSettings = { paymentReceived: { internal: false, email: true, app: true } }) }, async ({ cyclos, store, logs, live }) => {
+  withCaisse({ setup: (c) => (c.state.notificationSettings = notificationSettingsBody({ paymentReceived: { internal: false, email: true, app: true } })) }, async ({ cyclos, store, logs, live }) => {
     await live();
     assert.equal(store.status(), "fallback");
     assert.ok(logs.info.some((line) => line.includes("mode de secours")));
@@ -250,6 +250,21 @@ test("processeur : réglage illisible ou introuvable = mode de secours aussi", (
     await live();
     assert.equal(store.status(), "fallback");
   }));
+
+// Intention: the structure of the real instance (settings.notifications, element of type paymentReceived with internal true) is
+// recognised: no fallback mode and no warning. The old shape (the setting at the root) is no longer recognised.
+test("processeur : réglage confirmé dans settings.notifications = état direct, sans avertissement ; ancienne forme = mode de secours", () =>
+  withCaisse({}, async ({ store, logs, live }) => {
+    await live();
+    assert.equal(store.status(), "live");
+    assert.ok(!logs.info.some((line) => line.includes("mode de secours")));
+  }).then(() =>
+    withCaisse({ setup: (c) => (c.state.notificationSettings = { paymentReceived: { internal: true, email: true, app: true } }) }, async ({ store, logs, live }) => {
+      await live();
+      assert.equal(store.status(), "fallback");
+      assert.ok(logs.info.some((line) => line.includes("mode de secours")));
+    }),
+  ));
 
 // Intention: at opening, the latest payments are loaded from the history (not more than historyInitial), marked "initial":
 // never "New", most recent first; then the state is "live".
