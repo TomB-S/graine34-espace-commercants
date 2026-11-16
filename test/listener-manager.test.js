@@ -146,8 +146,9 @@ test("gestionnaire : la première visite démarre l'écoute et répond tout de s
     assert.equal(first.view.status, "starting");
     assert.deepEqual(first.view.tickets, []);
     assert.equal(manager.size, 1);
-    await waitFor(() => cyclos.openStreams() === 1, "flux ouvert");
-    assert.equal(manager.touch(KEY).view.status, "live");
+    // The fake server sees the stream before the listener has handled the answer: wait for the state itself, not for the server side.
+    await waitFor(() => manager.touch(KEY).view.status === "live", "état live");
+    assert.equal(cyclos.openStreams(), 1);
   }));
 
 // Intention: a second visit (another tab, another tablet) does NOT start a second listener: one login, one stream.
