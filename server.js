@@ -498,7 +498,7 @@ const CAISSE_HELPERS = { escapeHtml, formatAmount, htmlPage, errorMessage, logou
 // visit (touch) that keeps the listener alive. `fail(kind, session)` answers a refusal in the format of the caller
 // (an HTML page, or JSON for the script). The merchant is always deduced from the session, never from the URL.
 // Returns { session, view } or null when the answer has been sent.
-async function caisseVisit(req, res, fail) {
+async function caisseVisit(req, res, fail, { wait = false } = {}) {
   const found = getSession(req);
   if (!found) {
     fail("login");
@@ -530,7 +530,7 @@ async function caisseVisit(req, res, fail) {
     fail(decision.status === 403 ? "denied" : "unavailable", session);
     return null;
   }
-  const visit = manager.touch(decision.merchantKey);
+  const visit = wait ? await manager.touchAndWait(decision.merchantKey) : manager.touch(decision.merchantKey);
   if (!visit.ok) {
     fail("busy", session);
     return null;
@@ -569,6 +569,7 @@ async function handleCaisse(req, res) {
         refreshSeconds: CAISSE.refreshSeconds,
         pollSeconds: CAISSE.pollSeconds,
         hidePayerName: CAISSE.hidePayerName,
+        hiddenDescriptions: CAISSE.hiddenDescriptions,
         now: Date.now(),
         csrfToken: visit.session.csrfToken,
       },
@@ -593,9 +594,9 @@ async function handleCaisseData(req, res) {
   const visit = await caisseVisit(req, res, (kind, session, headers = {}) => {
     if (kind === "login") json(401, { error: "Session expirée" }, headers);
     else json(REFUSAL_STATUS[kind], { error: kind }, kind === "busy" ? { "Retry-After": "30" } : {});
-  });
+  }, { wait: true });
   if (!visit) return;
-  json(200, renderCaisseData(visit.view, { hidePayerName: CAISSE.hidePayerName, now: Date.now() }, CAISSE_HELPERS));
+  json(200, renderCaisseData(visit.view, { hidePayerName: CAISSE.hidePayerName, hiddenDescriptions: CAISSE.hiddenDescriptions, now: Date.now() }, CAISSE_HELPERS));
 }
 
 const server = http.createServer(async (req, res) => {

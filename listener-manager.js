@@ -9,6 +9,8 @@
 //   (no stream); the id is kept. A failure is not retried at once, and after `reauthMax`
 //   failures the manager stops trying until the server restarts (no hammering of the login).
 // - Several tabs or tablets = one listener (touch() only renews the delay).
+// - touchAndWait() is the same visit for the JSON of the script: it waits (at most `readyWaitMs`) for a fresh listener to finish its first
+//   load of the history.
 // - Without a visit for `idleSeconds`, the listener is stopped: stream cut, Cyclos session closed,
 //   session and tickets forgotten. The next visit starts again from the history.
 // - At most `maxListeners` at the same time; beyond that, a clear refusal (503).
@@ -25,6 +27,8 @@ export function createListenerManager({
   log = consoleLog(),
   now = Date.now,
   sweepIntervalMs = 10_000,
+  // Longest wait of touchAndWait() for the listening to finish its first load of the history.
+  readyWaitMs = 5000,
   // Test hooks passed to every listener and processor.
   listenerOptions = {},
   processorOptions = {},
@@ -86,6 +90,28 @@ export function createListenerManager({
   const timer = setInterval(() => void sweep(), sweepIntervalMs);
   timer.unref?.();
 
+  const viewOf = (entry) => ({ status: entry.store.status(), tickets: entry.store.list(), loaded: entry.store.loaded });
+
+  // A visit: starts the listener if there is none, renews its delay. Returns { ok: true, view } or { ok: false, status: 503 }.
+  function touch(merchantKey) {
+    if (closed) return { ok: false, status: 503 };
+    let entry = entries.get(merchantKey);
+    if (!entry) {
+      if (entries.size >= config.maxListeners) {
+        log.error(`plafond de ${config.maxListeners} écouteur(s) atteint`);
+        return { ok: false, status: 503 };
+      }
+      const store = createTicketStore({ ticketsKept: config.ticketsKept });
+      const processor = createPaymentProcessor({ config, push, store, log, now, ...processorOptions });
+      const listener = createListener({ merchantKey, config, push, store, log, processor, now, ...listenerOptions });
+      entry = { listener, store, lastTouch: now() };
+      entries.set(merchantKey, entry);
+      listener.start();
+    }
+    entry.lastTouch = now();
+    return { ok: true, view: viewOf(entry) };
+  }
+
   return {
     // Is this visitor the registered merchant? `visitorId`: his Cyclos user id, or null when unreadable.
     // Returns { ok: true, merchantKey } | { ok: false, status: 403 | 503 }.
@@ -97,24 +123,25 @@ export function createListenerManager({
       return visitorId === listenerId ? { ok: true, merchantKey: PROTOTYPE_MERCHANT } : { ok: false, status: 403 };
     },
 
-    // A visit: starts the listener if there is none, renews its delay. Returns { ok: true, view } or { ok: false, status: 503 }.
-    touch(merchantKey) {
-      if (closed) return { ok: false, status: 503 };
-      let entry = entries.get(merchantKey);
-      if (!entry) {
-        if (entries.size >= config.maxListeners) {
-          log.error(`plafond de ${config.maxListeners} écouteur(s) atteint`);
-          return { ok: false, status: 503 };
-        }
-        const store = createTicketStore({ ticketsKept: config.ticketsKept });
-        const processor = createPaymentProcessor({ config, push, store, log, now, ...processorOptions });
-        const listener = createListener({ merchantKey, config, push, store, log, processor, now, ...listenerOptions });
-        entry = { listener, store, lastTouch: now() };
-        entries.set(merchantKey, entry);
-        listener.start();
-      }
-      entry.lastTouch = now();
-      return { ok: true, view: { status: entry.store.status(), tickets: entry.store.list() } };
+    touch,
+
+    // Same visit, but when the listening has just started, waits (at most `readyWaitMs`) for it to finish its first load of the
+    // history, so that the answer holds the tickets instead of an empty "starting" list. Past the delay: the answer as it is.
+    async touchAndWait(merchantKey) {
+      const visit = touch(merchantKey);
+      if (!visit.ok) return visit;
+      const entry = entries.get(merchantKey);
+      if (!entry || entry.store.status() !== "starting") return visit;
+      let timeout;
+      await Promise.race([
+        entry.store.whenSettled(),
+        new Promise((resolve) => {
+          timeout = setTimeout(resolve, readyWaitMs);
+          timeout.unref?.();
+        }),
+      ]);
+      clearTimeout(timeout);
+      return { ok: true, view: viewOf(entry) };
     },
 
     sweep,

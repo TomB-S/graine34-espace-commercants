@@ -129,7 +129,11 @@ function start() {
       if (!response.ok) throw new Error(`status ${response.status}`);
       const data = await response.json();
       offset = clockOffset(data.now, Date.now());
-      const fresh = detector.update(data.tickets);
+      // New = not seen yet by this page, even when it comes from the history (after a pause of the listening). Nothing is reported
+      // before the server says its first load of the history is done (`loaded`), so that the old payments never ring.
+      const nowMs = Date.now() + offset;
+      const fresh = detector.update(data.tickets, { ready: data.loaded !== false, nowMs });
+      detector.markNew(data.tickets, nowMs);
       view.update(data, fresh);
       // One bip per batch of new payments (never for the first load, never when the sound is off or the audio suspended).
       if (shouldBeep(sound.status(), fresh.length)) sound.beep();

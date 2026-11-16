@@ -31,11 +31,11 @@ function liveBadge(status) {
 }
 
 // The page of the merchant. `view`: { status, tickets } from the listener manager. `options`:
-// { refreshSeconds (reload without script), pollSeconds (script), hidePayerName, now }. `helpers`: see the top of the file.
-export function renderCaissePage(view, { refreshSeconds, pollSeconds = 3, hidePayerName, now, csrfToken }, helpers) {
+// { refreshSeconds (reload without script), pollSeconds (script), hidePayerName, hiddenDescriptions, now }. `helpers`: see the top of the file.
+export function renderCaissePage(view, { refreshSeconds, pollSeconds = 3, hidePayerName, hiddenDescriptions, now, csrfToken }, helpers) {
   const { escapeHtml, formatAmount, logoutForm, stylesheetHref = "/style.css" } = helpers;
   const e = escapeHtml;
-  const show = (ticket) => ticketDisplay(ticket, { now, formatAmount });
+  const show = (ticket) => ticketDisplay(ticket, { now, formatAmount, hiddenDescriptions });
   const payerOf = (d) => payerText(d, hidePayerName);
   const amountOf = amountText;
 

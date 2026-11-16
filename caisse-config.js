@@ -30,6 +30,19 @@ const INTEGER_SETTINGS = [
 // Type of account goes into a URL path: plain names only.
 const ACCOUNT_TYPE = /^[A-Za-z0-9_.-]{1,60}$/;
 
+// Descriptions the payment type puts by itself when the payer wrote nothing: not shown on the page.
+const DEFAULT_HIDDEN_DESCRIPTIONS = ["Virement Mobile Pro"];
+
+// A list of texts separated by commas. Not set: the default. Set but empty (or only commas and spaces): the empty list.
+function readList(env, name, fallback) {
+  const value = env[name];
+  if (value === undefined) return [...fallback];
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item !== "");
+}
+
 function readBoolean(env, name, fallback) {
   const value = env[name];
   if (value === undefined || value === "") return fallback;
@@ -62,6 +75,7 @@ export function readCaisseConfig(env = process.env, overrides = {}) {
       config[setting[1]] = readInteger(env, setting);
     }
     config.hidePayerName = readBoolean(env, "CAISSE_HIDE_PAYER_NAME", false);
+    config.hiddenDescriptions = readList(env, "CAISSE_HIDDEN_DESCRIPTIONS", DEFAULT_HIDDEN_DESCRIPTIONS);
 
     const accountType = env.CAISSE_ACCOUNT_TYPE ?? "";
     if (accountType !== "" && !ACCOUNT_TYPE.test(accountType)) {

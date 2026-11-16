@@ -22,12 +22,13 @@ async function waitFor(condition, what, ms = 4000) {
 
 // A fake Cyclos, a client and a manager with a clock the test moves by hand.
 async function withManager(options, fn) {
-  const { config = {}, setup, sweepIntervalMs = 3_600_000 } = options;
+  const { config = {}, setup, sweepIntervalMs = 3_600_000, readyWaitMs, wrapPush } = options;
   const cyclos = await startFakeCyclos();
   cyclos.state.push.lifetimeMs = null;
   cyclos.addUser("autre", "mdp-autre-de-test", { id: "user-2" });
   setup?.(cyclos);
-  const push = createCyclosPush({ baseUrl: cyclos.url, channel: "main" });
+  const realPush = createCyclosPush({ baseUrl: cyclos.url, channel: "main" });
+  const push = wrapPush ? wrapPush(realPush) : realPush;
   const clock = { at: 1_000_000, reads: 0 }; // `reads` counts how many times the manager looked at the clock
   const logs = { info: [], error: [] };
   const log = { info: (m) => logs.info.push(m), error: (m) => logs.error.push(m) };
@@ -54,6 +55,7 @@ async function withManager(options, fn) {
       return clock.at;
     },
     sweepIntervalMs,
+    ...(readyWaitMs === undefined ? {} : { readyWaitMs }),
     listenerOptions: { shortStreamMs: 0 },
     processorOptions: { debounceMs: 50 },
   });
@@ -284,4 +286,66 @@ test("gestionnaire : un écouteur en erreur reste servi (état error) puis s'arr
     clock.at += 46_000;
     await manager.sweep();
     assert.equal(manager.size, 0);
+  }));
+
+// Intention: after a pause (listener stopped, tickets forgotten), the first visit that waits answers with the tickets read from the
+// history, not with an empty "starting" list; the plain touch() keeps answering at once.
+test("gestionnaire : touchAndWait attend la fin de la lecture initiale et répond avec les paiements", () =>
+  withManager({ setup: (c) => (c.state.entries = [entry(1, { amount: "1.00" })]) }, async ({ manager, clock }) => {
+    manager.touch(KEY);
+    await waitFor(() => manager.touch(KEY).view.tickets.length === 1, "premier chargement");
+    clock.at += 46_000;
+    await manager.sweep();
+    assert.equal(manager.size, 0);
+    const visit = await manager.touchAndWait(KEY);
+    assert.equal(visit.ok, true);
+    assert.equal(visit.view.tickets.length, 1, "the history is already there");
+    assert.equal(visit.view.loaded, true);
+    assert.notEqual(visit.view.status, "starting");
+    assert.equal(visit.view.tickets[0].source, "initial");
+  }));
+
+test("gestionnaire : touch() simple répond tout de suite, liste vide, « starting », pas chargé", () =>
+  withManager({ setup: (c) => (c.state.entries = [entry(1, { amount: "1.00" })]) }, async ({ manager }) => {
+    const visit = manager.touch(KEY);
+    assert.equal(visit.view.status, "starting");
+    assert.deepEqual(visit.view.tickets, []);
+    assert.equal(visit.view.loaded, false);
+  }));
+
+// Intention: if the history is too slow, the wait stops at the delay and the answer is the old one (starting, empty).
+let releaseHistory = () => {};
+test("gestionnaire : touchAndWait ne dépasse pas le délai maximum, puis répond comme avant", () =>
+  withManager(
+    { readyWaitMs: 150, wrapPush: (push) => ({ ...push, getRecentCredits: () => new Promise((resolve) => (releaseHistory = () => resolve([]))) }) },
+    async ({ manager }) => {
+      try {
+        const started = Date.now();
+        const visit = await manager.touchAndWait(KEY);
+        const waited = Date.now() - started;
+        assert.ok(waited >= 100 && waited < 2000, `waited ${waited} ms`);
+        assert.equal(visit.ok, true);
+        assert.equal(visit.view.status, "starting");
+        assert.deepEqual(visit.view.tickets, []);
+        assert.equal(visit.view.loaded, false);
+      } finally {
+        releaseHistory(); // the slow history finally answers, so that the listener can stop cleanly
+        await waitFor(() => manager.touch(KEY).view.status === "live", "écoute en route");
+      }
+    },
+  ));
+
+test("gestionnaire : touchAndWait sur un écouteur déjà en route ne retarde pas", () =>
+  withManager({ setup: (c) => (c.state.entries = [entry(1, { amount: "1.00" })]) }, async ({ manager }) => {
+    await manager.touchAndWait(KEY);
+    const started = Date.now();
+    const visit = await manager.touchAndWait(KEY);
+    assert.ok(Date.now() - started < 100);
+    assert.equal(visit.view.tickets.length, 1);
+  }));
+
+test("gestionnaire : touchAndWait refusé quand le serveur s'arrête", () =>
+  withManager({}, async ({ manager }) => {
+    await manager.stopAll();
+    assert.deepEqual(await manager.touchAndWait(KEY), { ok: false, status: 503 });
   }));

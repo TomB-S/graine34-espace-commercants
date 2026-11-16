@@ -51,6 +51,7 @@ test("caisse : activée, valeurs par défaut de la section configuration", () =>
       ticketsKept: 50,
       maxListeners: 5,
       hidePayerName: false,
+      hiddenDescriptions: ["Virement Mobile Pro"],
       accountType: null,
       credentialsFor: undefined,
     },
@@ -212,4 +213,12 @@ test("node server.js : caisse désactivée, démarre sans identifiant, même sor
 test("caisse : CAISSE_POLL_SECONDS=0 accepté (mode manuel), 3 par défaut", () => {
   assert.equal(readCaisseConfig({ ...ENABLED, CAISSE_POLL_SECONDS: "0" }).pollSeconds, 0);
   assert.equal(readCaisseConfig({ ...ENABLED }).pollSeconds, 3);
+});
+
+// Intention: CAISSE_HIDDEN_DESCRIPTIONS: not set = the default, set but empty = nothing hidden, commas separate the values (trimmed).
+test("caisse : CAISSE_HIDDEN_DESCRIPTIONS = défaut, vide, ou liste séparée par des virgules", () => {
+  assert.deepEqual(readCaisseConfig({ ...ENABLED }).hiddenDescriptions, ["Virement Mobile Pro"]);
+  assert.deepEqual(readCaisseConfig({ ...ENABLED, CAISSE_HIDDEN_DESCRIPTIONS: "" }).hiddenDescriptions, []);
+  assert.deepEqual(readCaisseConfig({ ...ENABLED, CAISSE_HIDDEN_DESCRIPTIONS: " , ,, " }).hiddenDescriptions, []);
+  assert.deepEqual(readCaisseConfig({ ...ENABLED, CAISSE_HIDDEN_DESCRIPTIONS: "Un, Deux ,Virement Mobile Pro," }).hiddenDescriptions, ["Un", "Deux", "Virement Mobile Pro"]);
 });

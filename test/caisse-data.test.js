@@ -84,7 +84,7 @@ appTest("caisse/data : jeton refusé par Cyclos = 401 JSON et cookie effacé", O
 
 // ---- content ----
 
-appTest("caisse/data : la première visite démarre l'écoute et répond tout de suite, JSON no-store avec CSP", OPTIONS, async (app) => {
+appTest("caisse/data : la première visite démarre l'écoute, JSON no-store avec CSP", OPTIONS, async (app) => {
   await signIn(app);
   const res = await app.request("/caisse/data");
   assert.equal(res.status, 200);
@@ -93,7 +93,7 @@ appTest("caisse/data : la première visite démarre l'écoute et répond tout de
   assert.equal(res.headers.get("content-security-policy"), EXPECTED_CSP);
   assert.equal(res.headers.get("set-cookie"), null);
   const data = await res.json();
-  assert.deepEqual(Object.keys(data).sort(), ["banner", "now", "status", "tickets"]);
+  assert.deepEqual(Object.keys(data).sort(), ["banner", "loaded", "now", "status", "tickets"]);
   assert.ok(Math.abs(data.now - Date.now()) < 5000);
   assert.ok(Array.isArray(data.tickets));
 });
@@ -218,4 +218,64 @@ test("scripts : le navigateur n'importe que des fichiers servis, jamais le code 
     }
     assert.ok(!/from "node:|require\(/.test(code), `${name}: nothing of Node`);
   }
+});
+
+// Intention: the payer is shown as "first name + initial of the last name", the way a cash desk should show it.
+test("caisse/data : nom du payeur = prénom + initiale du nom", () => {
+  const payer = (name) =>
+    renderCaisseData({ status: "live", loaded: true, tickets: [makeTicket({ transfer: transfer(1, { payer: name }), source: "push", arrivedAt: 1 })] }, { hidePayerName: false, now: 2 }, { formatAmount: String }).tickets[0].payer;
+  assert.equal(payer("Marie Dupont"), "Marie D.");
+  assert.equal(payer("  Marie   dupont "), "Marie D.");
+  assert.equal(payer("Jean-Pierre Martin Durand"), "Jean-Pierre D.");
+  assert.equal(payer("Émilie Éluard"), "Émilie É.");
+  assert.equal(payer("Marie"), "Marie", "one word stays");
+  assert.equal(payer("Client 1"), "Client 1", "last word is not a name: untouched");
+  assert.equal(payer(""), "Payeur inconnu");
+  const hidden = renderCaisseData({ status: "live", tickets: [makeTicket({ transfer: transfer(1, { payer: "Marie Dupont" }), source: "push", arrivedAt: 1 })] }, { hidePayerName: true, now: 2 }, { formatAmount: String });
+  assert.equal(hidden.tickets[0].payer, "Client");
+  assert.ok(!JSON.stringify(hidden).includes("Dupont"));
+});
+
+test("caisse/data : descriptions de la liste à masquer absentes du JSON, `loaded` annoncé", () => {
+  const ticket = makeTicket({ transfer: transfer(1, { description: "Virement Mobile Pro" }), source: "push", arrivedAt: 1 });
+  const render = (hiddenDescriptions) => renderCaisseData({ status: "live", loaded: true, tickets: [ticket] }, { hidePayerName: false, hiddenDescriptions, now: 2 }, { formatAmount: String });
+  assert.equal(render(["virement mobile pro"]).tickets[0].description, "");
+  assert.equal(render([]).tickets[0].description, "Virement Mobile Pro");
+  assert.equal(render(["virement mobile pro"]).loaded, true);
+  assert.equal(renderCaisseData({ status: "starting", tickets: [] }, { hidePayerName: false, now: 2 }, { formatAmount: String }).loaded, false);
+});
+
+// Intention: the real server uses the list of the configuration: the default hides "Virement Mobile Pro", a value set to something
+// else or to nothing changes it, and a description written by the payer stays.
+appTest("caisse/data : liste par défaut = « Virement Mobile Pro » masquée, le texte du payeur conservé", OPTIONS, async (app) => {
+  await signIn(app);
+  app.cyclos.state.entries = [entry(2, { description: "Pain" }), entry(1, { description: "  VIREMENT mobile PRO " })];
+  const data = await dataUntil(app, (d) => d.tickets.length === 2 && d.status === "live", "historique chargé");
+  assert.equal(data.tickets[0].description, "Pain");
+  assert.equal(data.tickets[1].description, "");
+});
+
+appTest("caisse/data : plusieurs valeurs dans CAISSE_HIDDEN_DESCRIPTIONS", withOptions({ hiddenDescriptions: ["Virement Mobile Pro", "Paiement"] }), async (app) => {
+  await signIn(app);
+  app.cyclos.state.entries = [entry(3, { description: "Paiement" }), entry(2, { description: "Virement Mobile Pro" }), entry(1, { description: "Pain" })];
+  const data = await dataUntil(app, (d) => d.tickets.length === 3 && d.status === "live", "historique chargé");
+  assert.deepEqual(data.tickets.map((t) => t.description), ["", "", "Pain"]);
+});
+
+appTest("caisse/data : liste vide = aucune description masquée", withOptions({ hiddenDescriptions: [] }), async (app) => {
+  await signIn(app);
+  app.cyclos.state.entries = [entry(1, { description: "Virement Mobile Pro" })];
+  const data = await dataUntil(app, (d) => d.tickets.length === 1 && d.status === "live", "historique chargé");
+  assert.equal(data.tickets[0].description, "Virement Mobile Pro");
+});
+
+// Intention: the very first visit after a pause already carries the history (the server waited for it).
+appTest("caisse/data : la première visite attend la lecture initiale et répond avec les paiements", OPTIONS, async (app) => {
+  await signIn(app);
+  app.cyclos.state.entries = [entry(2, { amount: "12.00" }), entry(1, { amount: "0.50" })];
+  const res = await app.request("/caisse/data");
+  const data = await res.json();
+  assert.equal(data.loaded, true);
+  assert.equal(data.tickets.length, 2, "no empty starting list");
+  assert.notEqual(data.status, "starting");
 });

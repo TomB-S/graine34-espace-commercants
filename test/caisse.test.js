@@ -397,6 +397,15 @@ test("page : description dans la liste (échappée), ligne absente si vide", () 
   assert.ok(!/<b>/.test(rows[0]));
 });
 
+// Intention: the page without script hides the descriptions of the list too, and keeps the ones the payer wrote.
+test("page : descriptions de la liste à masquer absentes du HTML, texte du payeur conservé", () => {
+  const view = { status: "live", tickets: [makeTicket({ transfer: transfer(2, { description: "Pain" }), source: "initial", arrivedAt: NOW }), makeTicket({ transfer: transfer(1, { description: "virement mobile pro" }), source: "initial", arrivedAt: NOW - 1000 })] };
+  const html = render(view, { hiddenDescriptions: ["Virement Mobile Pro"] });
+  assert.ok(html.includes("Description : Pain"));
+  assert.ok(!/virement mobile pro/i.test(html));
+  assert.ok(/virement mobile pro/i.test(render(view, { hiddenDescriptions: [] })));
+});
+
 // Intention: the CSS keeps the date on one line and the description on one cut line (no inline style possible).
 test("page : CSS = heure sur une ligne, description en une ligne avec points de suspension", async () => {
   const { readFile } = await import("node:fs/promises");

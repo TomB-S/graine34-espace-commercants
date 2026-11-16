@@ -17,7 +17,17 @@ export function bannerOf(status) {
   return { level: "info", text: TEXTS.starting };
 }
 
-export const payerText = (display, hidePayerName) => (hidePayerName ? TEXTS.clientPayer : display.payer || TEXTS.noPayer);
+// "Marie Dupont" -> "Marie D.": the first word and the initial of the last one. A single word stays as it is, and so does a name
+// whose last word does not start with a letter ("Client 1"). Letters only: nothing else is ever cut into pieces.
+export function shortPayerName(name) {
+  const words = String(name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (words.length < 2) return words[0] ?? "";
+  const [initial] = Array.from(words[words.length - 1]);
+  if (!/^\p{L}$/u.test(initial)) return words.join(" ");
+  return `${words[0]} ${initial.toLocaleUpperCase("fr")}.`;
+}
+
+export const payerText = (display, hidePayerName) => (hidePayerName ? TEXTS.clientPayer : shortPayerName(display.payer) || TEXTS.noPayer);
 
 export const amountText = (display) =>
   display.amount ?? (display.amountState === "unreadable" ? TEXTS.amountUnreadable : TEXTS.amountPending);
@@ -27,9 +37,9 @@ const opaque = (key) => `k${createHash("sha256").update(key).digest("hex").slice
 
 // The JSON of GET /caisse/data. Nothing but what the page shows, plus what the script needs to follow the payments
 // (keys, source, date in milliseconds). No identifier of Cyclos, no session data.
-export function renderCaisseData(view, { hidePayerName, now }, { formatAmount }) {
+export function renderCaisseData(view, { hidePayerName, hiddenDescriptions, now }, { formatAmount }) {
   const tickets = view.tickets.slice(0, LIST_SIZE + 1).map((ticket) => {
-    const d = ticketDisplay(ticket, { now, formatAmount });
+    const d = ticketDisplay(ticket, { now, formatAmount, hiddenDescriptions });
     return {
       keys: ticketKeys(ticket).map(opaque),
       initial: ticket.source === "initial",
@@ -44,5 +54,6 @@ export function renderCaisseData(view, { hidePayerName, now }, { formatAmount })
       isNew: d.isNew,
     };
   });
-  return { status: view.status, banner: bannerOf(view.status), now, tickets };
+  // `loaded`: the first load of the history is done, so the page may take what it sees as "already there" (see new-payments.js).
+  return { status: view.status, banner: bannerOf(view.status), now, loaded: view.loaded === true, tickets };
 }

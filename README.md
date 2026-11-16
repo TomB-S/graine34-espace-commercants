@@ -144,6 +144,7 @@ compte d'écoute : le navigateur arrive directement sur `/caisse`.
 | `CAISSE_TICKETS_KEPT` | Tickets gardés en mémoire (1 à 500) | `50` |
 | `CAISSE_MAX_LISTENERS` | Écouteurs simultanés (1 à 50) | `5` |
 | `CAISSE_HIDE_PAYER_NAME` | `true` : le nom du payeur est remplacé par « Client » | `false` |
+| `CAISSE_HIDDEN_DESCRIPTIONS` | Descriptions à ne pas afficher (celle que le type de paiement ajoute quand le payeur n'a rien écrit), séparées par des virgules ; la casse, les accents et les espaces en trop sont ignorés. Une valeur vide ne masque rien | `Virement Mobile Pro` |
 
 Valeur invalide ou identifiants manquants avec `CAISSE_ENABLED=true` : le
 serveur s'arrête au démarrage avec un message qui nomme la variable (sans
@@ -173,7 +174,10 @@ sécurité lit l'historique du compte pour ne rater aucun paiement.
   visite pendant 45 secondes (`CAISSE_IDLE_SECONDS`) elle s'arrête : flux
   coupé, session Cyclos fermée, tickets et session effacés de la mémoire. À la
   réouverture, les derniers paiements sont relus dans l'historique (aucun n'est
-  perdu). Au plus 5 écouteurs en même temps (`CAISSE_MAX_LISTENERS`), au-delà
+  perdu). Si l'écoute vient de redémarrer, `GET /caisse/data` **attend la fin de cette
+  première lecture** (5 secondes au plus) avant de répondre, pour renvoyer les paiements et non une liste
+  vide « Connexion à Cyclos en cours ». Passé ce délai, la réponse est celle d'avant (liste vide, état
+  « starting »). `GET /caisse` n'attend pas. Au plus 5 écouteurs en même temps (`CAISSE_MAX_LISTENERS`), au-delà
   la page répond 503. À l'arrêt du serveur (Ctrl+C ou `SIGTERM`), tous les
   écouteurs sont arrêtés proprement.
 - **Le flux** : Cyclos le ferme tout seul après environ 41 secondes, c'est
@@ -193,9 +197,10 @@ sécurité lit l'historique du compte pour ne rater aucun paiement.
   quand le détail d'un transfert n'a pas pu être lu (3 relances au plus).
 - **Le ticket** : le montant reste une **chaîne** (aucun calcul en flottants),
   affiché avec la virgule, le suffixe de la devise et ses décimales. L'heure est
-  celle de Paris. La mention **Nouveau** (en texte) marque un paiement arrivé
-  pendant l'écoute depuis moins de 60 secondes, jamais ceux chargés à
-  l'ouverture. Si le montant n'est pas lisible, la page l'écrit
+  celle de Paris. La mention **Nouveau** (en texte) marque un paiement
+  que **cette page n'avait pas encore vu**, depuis moins de 60 secondes : arrivé en direct, rattrapé
+  par le filet de sécurité, ou **lu dans l'historique après une pause de l'écoute** (voir
+  « Nouveau paiement » plus bas). Si le montant n'est pas lisible, la page l'écrit
   (« Montant en cours de lecture » ou « Montant indisponible ») au lieu
   d'inventer un chiffre. Le texte du message de la notification n'est jamais
   utilisé.
@@ -210,10 +215,13 @@ sécurité lit l'historique du compte pour ne rater aucun paiement.
   pour le moment. Prévenir l'équipe La Graine 34. »), sans détail technique.
   Seule la première connexion affiche « Connexion à Cyclos en cours ». Le
   message d'avertissement du mode de secours reste dans le terminal.
+- **Nom du payeur** : affiché en « Prénom + initiale du nom », par exemple « Marie D. » (le premier mot,
+  puis l'initiale du dernier mot). Un seul mot, ou un dernier mot qui ne commence pas par une lettre
+  (« Client 1 »), reste tel quel. `CAISSE_HIDE_PAYER_NAME=true` donne toujours « Client ».
 - **Grand ticket** (dernier paiement), de haut en bas : la marque « NOUVEAU »,
   le payeur, le montant, la date (« Aujourd'hui 10:33 · il y a 2 min », ou
   « 12/11 17:21 » un autre jour, avec « il y a N h » seulement sous 24 heures),
-  « Description : ... » (absente si vide), puis le numéro de transaction en petit.
+  « Description : ... » (absente si vide, ou si elle figure dans la liste `CAISSE_HIDDEN_DESCRIPTIONS`), puis le numéro de transaction en petit.
 - **Paiements précédents** : une ligne par paiement avec la date et l'heure sur
   une seule ligne, le payeur en gras, sa description en petit gris dessous (une
   ligne, coupée par « … » si elle est longue) et le montant à droite.
@@ -238,10 +246,21 @@ sécurité lit l'historique du compte pour ne rater aucun paiement.
   premier plan. **Limite connue** : les navigateurs ralentissent les minuteurs d'un onglet
   caché (souvent une lecture par seconde au plus, et jusqu'à une par minute après
   plusieurs minutes de masquage sur certains navigateurs) ; le délai réel est à mesurer
-  (voir le test à la main). Le premier chargement ne déclenche aucune détection de « nouveau
-  paiement » ; le fond coloré et la marque « Nouveau » ne concernent que les paiements arrivés ensuite.
+  (voir le test à la main).
   Si le serveur ne répond plus, l'affichage reste en place avec la bannière « Connexion au
   serveur interrompue. » ; une réponse 401 (session expirée) ramène à la connexion.
+- **Nouveau paiement (son, notification, fond et marque « Nouveau »)** : un paiement est nouveau quand
+  **la page ne l'a pas encore vu**, quelle que soit son origine (direct, filet de sécurité, historique relu
+  après un redémarrage de l'écoute). La page retient les clés (numéros de transaction) déjà vues, en
+  mémoire seulement : un rechargement de la page oublie tout. Le **premier chargement** n'annonce rien : tout
+  ce qui est là est seulement appris, même si le serveur n'a pas fini de lire l'historique (`loaded: false`
+  dans `/caisse/data` : la page apprend en silence jusqu'à ce que l'historique soit chargé, pour que les
+  anciens paiements ne sonnent jamais). **Risques connus** : (1) deux onglets ouverts ont chacun
+  leur mémoire, chacun annonce ; (2) un rechargement de la page efface la mémoire, les paiements
+  encore affichés ne sonnent pas (premier chargement) mais un paiement reçu pendant le rechargement est appris
+  sans sonner ; (3) si la lecture initiale de l'historique échoue côté serveur (`loaded` reste faux), la
+  page apprend en silence jusqu'à son succès ; (4) un ticket sans numéro de transaction ni identifiant de
+  notification n'a pas de clé stable et peut être annoncé de nouveau après un redémarrage de l'écoute.
 - **Son (actif par défaut)** : le son est **voulu par défaut**. Les navigateurs interdisent
   pourtant tout son avant un geste de l'utilisateur sur la page, à **chaque chargement** : tant
   que l'audio ne tourne pas vraiment, la page écrit « Son en attente : toucher la page pour
@@ -253,8 +272,7 @@ sécurité lit l'historique du compte pour ne rater aucun paiement.
   choix est **mémorisé** dans le navigateur (`localStorage`, toujours dans un `try/catch` : un
   stockage bloqué ou absent n'empêche rien, le son reste alors actif par défaut). Le bip est
   **généré** par Web Audio (deux notes brèves, moins d'une demi-seconde, volume modéré), sans fichier
-  audio. Un seul bip par lot de nouveaux paiements, jamais pour le chargement initial ni pour
-  l'historique. Un navigateur sans Web Audio affiche « Son non disponible sur ce navigateur ».
+  audio. Un seul bip par lot de nouveaux paiements, jamais pour le premier chargement de la page. Un navigateur sans Web Audio affiche « Son non disponible sur ce navigateur ».
   Sur certains navigateurs (téléphones surtout), le son d'un onglet caché ou d'un écran verrouillé
   peut être coupé : à vérifier sur le matériel réel.
 - **Un seul bouton pour le son et les notifications** : tant que l'un des deux n'est pas actif et
@@ -294,8 +312,7 @@ sécurité lit l'historique du compte pour ne rater aucun paiement.
   verrouillé). Le `tag` est propre à chaque paiement : le même paiement ne s'affiche jamais deux
   fois. L'icône est carrée (`/icon.png`). Plus de 3 paiements d'un coup : une seule notification « N nouveaux paiements », sans nom ni montant. Si le montant
   d'un paiement n'est pas encore lu, la notification attend (15 secondes au plus) pour l'afficher
-  avec le montant. Elle utilise la même détection que le son : **jamais** pour le chargement initial ni
-  pour l'historique. Un clic sur la notification ramène l'onglet au premier plan.
+  avec le montant. Elle utilise la même détection que le son : **jamais** pour le premier chargement de la page. Un clic sur la notification ramène l'onglet au premier plan.
   **Limites** :
   - elles ne fonctionnent **que tant que la page est ouverte** (onglet ouvert, même en arrière-plan
     ou réduit) : pas de Web Push, pas de service worker, pas d'appli ;
@@ -389,6 +406,9 @@ identifiant (ceux des tests sont fictifs).
   (`/caisse/data` et fichiers servis).
 - Étape E : `test/controls-logic.test.js` (le bouton unique) ; les tests du son et des notifications
   ci-dessous couvrent aussi l'état « en attente », le geste, la mémorisation et le stockage bloqué.
+- Mode manuel, détection « vu par la page », attente de la lecture initiale, nom du payeur, description :
+  `test/new-payments.test.js`, `test/listener-manager.test.js` (`touchAndWait`), `test/ticket-store.test.js`,
+  `test/caisse-data.test.js`, `test/caisse-script.test.js`.
 - Étape F : `test/refresh-logic.test.js` (libellé du bouton « Actualiser », rythme et mode manuel) ; le bouton dans la vue et dans le
   script est couvert par `test/caisse-view.test.js` et `test/caisse-script.test.js`.
 - Étape C : `test/sound-logic.test.js` (quand sonner), `test/sound.test.js` (audio, avec un faux

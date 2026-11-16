@@ -370,3 +370,46 @@ test("magasin : état affiché (starting, live, fallback, reconnecting, degraded
   store.setConnection("live");
   assert.equal(store.status(), "live");
 });
+
+// ---- type name, loaded flag, waiting for the listening ----
+
+// Intention: the descriptions of the hidden list (CAISSE_HIDDEN_DESCRIPTIONS) are not shown, whatever the case, the accents or the extra
+// spaces; a description written by the payer is kept; several values; an empty list hides nothing.
+test("ticket : descriptions de la liste à masquer = masquées, texte écrit par le payeur = conservé", () => {
+  const show = (description, hiddenDescriptions) =>
+    ticketDisplay(makeTicket({ historyEntry: { ...entry(1), description }, source: "history", arrivedAt: NOW }), { now: NOW, formatAmount, hiddenDescriptions }).description;
+  const hidden = ["Virement Mobile Pro"];
+  assert.equal(show("Virement Mobile Pro", hidden), "");
+  assert.equal(show("  virement   MOBILE pro  ", hidden), "", "case and extra spaces");
+  assert.equal(show("Virement Mobile Pro", ["virément mobile PRO"]), "", "accents");
+  assert.equal(show("Pain et fromage", hidden), "Pain et fromage");
+  assert.equal(show("Virement Mobile Pro pour le pain", hidden), "Virement Mobile Pro pour le pain", "only an identical text");
+  assert.equal(show("Paiement", ["Virement Mobile Pro", "Paiement", "Autre"]), "", "several values");
+  assert.equal(show("Autre", ["Virement Mobile Pro", "Paiement", "Autre"]), "");
+  assert.equal(show("Virement Mobile Pro", []), "Virement Mobile Pro", "empty list: nothing hidden");
+  assert.equal(show("Virement Mobile Pro", undefined), "Virement Mobile Pro", "no list given: nothing hidden");
+  // The transfer shape (description in transaction.description) is treated the same way.
+  const viaTransfer = makeTicket({ transfer: transfer(1, { description: "Virement Mobile Pro" }), source: "push", arrivedAt: NOW });
+  assert.equal(ticketDisplay(viaTransfer, { now: NOW, formatAmount, hiddenDescriptions: hidden }).description, "");
+});
+
+test("ticket : le nom du type de paiement n'est plus lu (type.name ne masque rien)", () => {
+  const ticket = makeTicket({ historyEntry: { ...entry(1), description: "Achat", type: { name: "Achat" } }, source: "history", arrivedAt: NOW });
+  assert.equal("typeName" in ticket, false);
+  assert.equal(ticketDisplay(ticket, { now: NOW, formatAmount }).description, "Achat");
+});
+
+test("magasin : whenSettled attend la sortie de « starting » ; loaded se pose et se lit", async () => {
+  const store = createTicketStore();
+  assert.equal(store.loaded, false);
+  let settled = false;
+  const waiting = store.whenSettled().then(() => (settled = true));
+  await Promise.resolve();
+  assert.equal(settled, false);
+  store.setLoaded(true);
+  assert.equal(store.loaded, true);
+  store.setConnection("live");
+  await waiting;
+  assert.equal(settled, true);
+  await store.whenSettled(); // already settled: resolves at once
+});

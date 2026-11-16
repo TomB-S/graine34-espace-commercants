@@ -554,7 +554,7 @@ test("notifications : permission accordée, un nouveau paiement = une notificati
   }
 });
 
-test("notifications : jamais pour le premier chargement ni pour l'historique d'ouverture", async () => {
+test("notifications : jamais pour le premier chargement ; un paiement de l'historique que la page n'a pas vu sonne et notifie une fois", async () => {
   const notif = fakeNotifications({ permission: "granted" });
   const audio = fakeAudio();
   const page = await run(
@@ -565,12 +565,53 @@ test("notifications : jamais pour le premier chargement ni pour l'historique d'o
   );
   try {
     await tap(page);
+    assert.equal(audio.notes, 0, "first load: no sound");
+    assert.equal(notif.shown.length, 0, "first load: no notification");
     nextRead(page);
     await flush();
+    assert.equal(notif.shown.length, 1, "the history payment this page had not seen is announced");
+    assert.equal(audio.notes, 2, "one bip");
     nextRead(page);
     await flush();
-    assert.equal(notif.shown.length, 0);
-    assert.equal(audio.notes, 0, "no sound either");
+    assert.equal(notif.shown.length, 1, "never twice");
+    assert.equal(audio.notes, 2);
+  } finally {
+    page.restore();
+  }
+});
+
+test("notifications : premier chargement « pas prêt » (loaded: false) puis historique = rien ne sonne, l'ancien paiement est seulement appris", async () => {
+  const notif = fakeNotifications({ permission: "granted" });
+  const audio = fakeAudio();
+  const page = await run(
+    [ok({ ...data([]), status: "starting", loaded: false }), ok({ ...data([ticket(2, { initial: true }), ticket(1, { initial: true })]), loaded: true }), ok({ ...data([ticket(3), ticket(2, { initial: true }), ticket(1, { initial: true })]), loaded: true })],
+    audio,
+    notif,
+    fakeStore(),
+  );
+  try {
+    await tap(page);
+    nextRead(page);
+    await flush();
+    assert.equal(notif.shown.length, 0, "the old payments show up after the first answer: silent");
+    assert.equal(audio.notes, 0);
+    nextRead(page);
+    await flush();
+    assert.equal(notif.shown.length, 1, "a real new payment still sounds");
+  } finally {
+    page.restore();
+  }
+});
+
+test("« Nouveau » : un paiement de l'historique trouvé nouveau par la page porte la marque et le fond", async () => {
+  const page = await run([ok(data([ticket(1)])), ok(data([ticket(9, { initial: true, isNew: false }), ticket(1)]))]);
+  try {
+    nextRead(page);
+    await flush();
+    const content = page.nodes.get("caisse-zone-contenu");
+    const big = content.children[0].children[0];
+    assert.match(big.className, /caisse-gros-neuf/);
+    assert.equal(big.children[0].hidden, false, "« Nouveau » mark shown");
   } finally {
     page.restore();
   }

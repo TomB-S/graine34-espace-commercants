@@ -35,6 +35,7 @@ export const VARIABLES_DU_PROGRAMME = [
   "CAISSE_TICKETS_KEPT",
   "CAISSE_MAX_LISTENERS",
   "CAISSE_HIDE_PAYER_NAME",
+  "CAISSE_HIDDEN_DESCRIPTIONS",
 ];
 
 // What the terminal had before the cleaning (kept only so that the isolation test can prove the variables were really there).

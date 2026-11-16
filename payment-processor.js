@@ -81,6 +81,7 @@ export function createPaymentProcessor({
       else if (result.action === "replaced") completed += 1;
     }
     initialPending = false;
+    store.setLoaded(true);
     if (source === "initial") log.info(`chargement initial : ${added} paiement(s)`);
     else if (added + completed > 0) log.info(`filet de sécurité : ${added} paiement(s) rattrapé(s), ${completed} ticket(s) complété(s)`);
   }

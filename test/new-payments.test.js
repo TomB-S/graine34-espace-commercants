@@ -28,13 +28,39 @@ test("détection : plusieurs paiements d'un coup = un lot, dans l'ordre reçu", 
   assert.deepEqual(detector.update([x, y, ticket("a")]), [x, y]);
 });
 
-test("détection : premier chargement vide, puis un paiement = nouveau ; l'historique d'ouverture ne l'est pas", () => {
+test("détection : premier chargement pas prêt (historique pas encore lu) = rien appris, rien annoncé, puis le premier chargement prêt est silencieux", () => {
   const detector = createNewPaymentDetector();
-  assert.deepEqual(detector.update([]), []);
-  // The listening was still starting: its history arrives after the first answer. Not payments.
-  assert.deepEqual(detector.update([ticket("h1", { initial: true }), ticket("h2", { initial: true })]), []);
+  assert.deepEqual(detector.update([], { ready: false }), []);
+  assert.equal(detector.started, false);
+  // The history arrives: it is the first ready answer, so it is only learned, however old the payments are.
+  assert.deepEqual(detector.update([ticket("h1", { initial: true }), ticket("h2", { initial: true })], { ready: true }), []);
+  assert.equal(detector.started, true);
   const fresh = ticket("n1");
   assert.deepEqual(detector.update([fresh, ticket("h1", { initial: true })]), [fresh]);
+});
+
+test("détection : un ticket de l'historique que la page n'a jamais vu est nouveau, un déjà vu ne l'est pas", () => {
+  const detector = createNewPaymentDetector();
+  detector.update([ticket("a", { initial: true })]); // first load: learned
+  // The listening was stopped during a pause and restarted: its history holds the old payment and a payment made meanwhile.
+  const meanwhile = ticket("z", { initial: true });
+  assert.deepEqual(detector.update([meanwhile, ticket("a", { initial: true })]), [meanwhile]);
+  assert.deepEqual(detector.update([meanwhile, ticket("a", { initial: true })]), [], "announced once");
+});
+
+test("marque « Nouveau » : posée sur ce que la page a trouvé nouveau pendant une minute, même venu de l'historique", () => {
+  const detector = createNewPaymentDetector();
+  detector.update([ticket("a")], { nowMs: 0 });
+  const found = ticket("z", { initial: true, isNew: false });
+  detector.update([found], { nowMs: 1000 });
+  const again = ticket("z", { initial: true, isNew: false });
+  const old = ticket("a", { isNew: false });
+  detector.markNew([again, old], 30_000);
+  assert.equal(again.isNew, true);
+  assert.equal(old.isNew, false, "learned at the first load, never marked");
+  const later = ticket("z", { initial: true, isNew: false });
+  detector.markNew([later], 61_001);
+  assert.equal(later.isNew, false, "the mark goes after a minute");
 });
 
 test("détection : un ticket complété (il gagne une clé) n'est pas un nouveau paiement", () => {
@@ -46,10 +72,11 @@ test("détection : un ticket complété (il gagne une clé) n'est pas un nouveau
   assert.deepEqual(detector.update([ticket(["tx-1"])]), [], "known by its number later");
 });
 
-test("détection : redémarrage de l'écoute côté serveur = l'historique rechargé ne sonne pas", () => {
+test("détection : redémarrage de l'écoute côté serveur = l'historique rechargé ne sonne que pour ce que la page n'a pas vu", () => {
   const detector = createNewPaymentDetector();
   detector.update([ticket("a"), ticket("b")]);
-  assert.deepEqual(detector.update([ticket("a", { initial: true }), ticket("z", { initial: true })]), []);
+  const z = ticket("z", { initial: true });
+  assert.deepEqual(detector.update([ticket("a", { initial: true }), ticket("b", { initial: true }), z]), [z]);
 });
 
 test("détection : ticket sans clé ou données bizarres ignorés sans erreur", () => {

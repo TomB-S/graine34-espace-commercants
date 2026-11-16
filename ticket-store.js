@@ -119,9 +119,25 @@ export function ticketKeys(ticket) {
   return keys;
 }
 
+// Text compared without case, accents or extra spaces ("  Virement   MOBILE pro " and "virement mobile pro" are the same).
+export const normalizeText = (value) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("fr");
+
+// Descriptions the instance puts on a payment when the payer wrote nothing: not shown (CAISSE_HIDDEN_DESCRIPTIONS).
+function isHiddenDescription(description, hidden) {
+  if (!description || !hidden?.length) return false;
+  const value = normalizeText(description);
+  return hidden.some((item) => normalizeText(item) === value);
+}
+
 // Strings shown for a ticket, not escaped (the page escapes them). `formatAmount` is the one of
 // server.js, given by the caller (it works on strings, no floating point).
-export function ticketDisplay(ticket, { now, formatAmount }) {
+export function ticketDisplay(ticket, { now, formatAmount, hiddenDescriptions = [] }) {
   const at = DateTime.fromMillis(timeOf(ticket), { zone: ZONE });
   const today = DateTime.fromMillis(now, { zone: ZONE });
   const sameDay = at.hasSame(today, "day");
@@ -138,7 +154,7 @@ export function ticketDisplay(ticket, { now, formatAmount }) {
     amount: ticket.amount === null ? null : `${formatAmount(ticket.amount, ticket.decimals)}${ticket.currencySuffix}`,
     amountState: ticket.amountState,
     payer: ticket.payer,
-    description: ticket.description,
+    description: isHiddenDescription(ticket.description, hiddenDescriptions) ? "" : ticket.description,
     number: ticket.transactionNumber ?? "",
     isNew: isNew(ticket, now),
     // Only while the fade lasts: a reload after it must not replay it.
@@ -169,6 +185,8 @@ export function createTicketStore({ ticketsKept = 50, seenKept = 200 } = {}) {
   let anonymous = 0;
   let connection = "starting"; // starting, live, reconnecting, degraded, error
   let fallback = false; // the "payment received" notification is off at Cyclos
+  let loaded = false; // the first load of the history succeeded (what the page may take as "what was already there")
+  let settleWaiters = []; // resolved when the connection leaves "starting"
 
   const keyOfNumber = (number) => `tx:${number}`;
   const keyOfEntity = (id) => `entity:${id}`;
@@ -292,6 +310,19 @@ export function createTicketStore({ ticketsKept = 50, seenKept = 200 } = {}) {
     // State of the listening, for the page.
     setConnection(value) {
       connection = value;
+      if (value !== "starting") {
+        const waiters = settleWaiters;
+        settleWaiters = [];
+        for (const resolve of waiters) resolve();
+      }
+    },
+    // Resolves once the listening is no longer "starting" (first load of the history done and the stream open, or failed).
+    whenSettled: () => (connection !== "starting" ? Promise.resolve() : new Promise((resolve) => settleWaiters.push(resolve))),
+    setLoaded(value) {
+      loaded = Boolean(value);
+    },
+    get loaded() {
+      return loaded;
     },
     setFallback(value) {
       fallback = Boolean(value);
