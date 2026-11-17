@@ -93,6 +93,18 @@ test("vue : les textes venant de Cyclos sont posés comme du texte, jamais comme
   assert.equal(first(row, "caisse-description").textContent, evil);
 });
 
+test("vue : numéro de transaction dans la ligne, entre le payeur et le montant, rien s'il n'y en a pas", () => {
+  const { view, content } = setup();
+  view.update(data([ticket(1), ticket(2), ticket(3, { number: "" })]));
+  const [withNumber, without] = findAll(content, "caisse-ligne");
+  assert.equal(first(withNumber, "caisse-numero").textContent, "N° T00002");
+  const names = withNumber.children.map((child) => child.className);
+  assert.deepEqual(names, ["caisse-heure", "caisse-qui", "caisse-numero", "caisse-montant"]);
+  assert.deepEqual(without.children.map((child) => child.className), ["caisse-heure", "caisse-qui", "caisse-montant"], "no element, no text");
+  view.update(data([ticket(1), ticket(2, { number: "" }), ticket(3)]));
+  assert.equal(findAll(content, "caisse-numero").length, 1, "the list follows the new data");
+});
+
 test("vue : gros ticket complet, ligne d'âge, description et numéro masqués quand ils sont vides", () => {
   const { view, content } = setup();
   view.update(data([ticket(1, { isNew: true })]));
