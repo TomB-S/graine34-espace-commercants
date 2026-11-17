@@ -487,6 +487,23 @@ test("page : ticket incomplet = 'Montant en cours de lecture', illisible = 'Mont
 });
 
 // Intention: the amount of the big ticket is in very large type (3 rem at least), and the CSS holds the new classes (no inline style).
+// Intention: the transaction number of the list: under the name on a phone, and from 48 rem a column of its own with a fixed
+// width (so that the numbers line up from one row to the next), centred between the name and the amount, small, grey, monospace.
+test("page : colonne du numéro de transaction, sous le nom sur téléphone, centrée et de largeur fixe en large", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const css = await readFile(new URL("../style.css", import.meta.url), "utf8");
+  const rule = (selector) => css.match(new RegExp(`${selector.replace(/[.]/g, "\\.")} \\{([^}]*)\\}`))?.[1] ?? "";
+  assert.match(rule(".caisse-ligne"), /"heure qui montant"\s+"\. numero \."/, "phone: the number under the name");
+  const numero = rule(".caisse-numero");
+  assert.match(numero, /color: var\(--texte-secondaire\)/);
+  assert.match(numero, /font-family: ui-monospace/);
+  assert.match(numero, /font-size: 0\.85rem/);
+  const wide = css.match(/@media \(min-width: 48rem\) \{[\s\S]*?\n\}\n/)?.[0] ?? "";
+  assert.match(wide, /grid-template-columns: 8\.5rem minmax\(0, 1fr\) 8rem minmax\(0, 1fr\) 8rem;/, "fixed number and amount columns, equal free columns around the number");
+  assert.match(wide, /"heure qui numero \. montant"/);
+  assert.match(wide, /\.caisse-numero \{\s*text-align: center;/);
+});
+
 test("page : le montant est en très grand (3 rem au moins), classes dans style.css", async () => {
   const { readFile } = await import("node:fs/promises");
   const css = await readFile(new URL("../style.css", import.meta.url), "utf8");
