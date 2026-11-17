@@ -59,7 +59,7 @@ export function renderCaissePage(view, { refreshSeconds, pollSeconds = 3, hidePa
         <span class="caisse-payeur">${e(payerOf(r))}${r.isNew ? ` <span class="caisse-nouveau-petit">${TEXTS.newMark}</span>` : ""}</span>
         ${r.description ? `<span class="caisse-description">${e(r.description)}</span>` : ""}
       </span>
-      <span class="caisse-montant">${e(amountOf(r))}</span>
+      ${r.number ? `<span class="caisse-numero">${TEXTS.numberLabel}${e(r.number)}</span>\n      ` : ""}<span class="caisse-montant">${e(amountOf(r))}</span>
     </li>`;
     });
     if (rows.length > 0) {

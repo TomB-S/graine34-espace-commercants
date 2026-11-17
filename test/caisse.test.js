@@ -397,6 +397,23 @@ test("page : description dans la liste (échappée), ligne absente si vide", () 
   assert.ok(!/<b>/.test(rows[0]));
 });
 
+// Intention: each previous payment shows its transaction number, small and grey, between the payer and the amount, with the same
+// text as the ticket of the last payment ("N° ..."); a payment without a number shows nothing (no "undefined", no dash, no empty element).
+test("page : numéro de transaction dans la liste, entre le payeur et le montant, rien s'il n'y en a pas", () => {
+  const top = makeTicket({ transfer: transfer(1), source: "initial", arrivedAt: NOW });
+  const numbered = makeTicket({ transfer: transfer(2, { amount: "12.00", description: "" }), source: "initial", arrivedAt: NOW - 1000 });
+  const bare = makeTicket({ transfer: { ...transfer(3), transactionNumber: undefined }, source: "initial", arrivedAt: NOW - 2000 });
+  const html = render({ status: "live", tickets: [top, numbered, bare] });
+  const rows = html.match(/<li class="caisse-ligne">[\s\S]*?<\/li>/g);
+  assert.equal(rows.length, 2);
+  assert.match(rows[0], /<span class="caisse-numero">N° T00002<\/span>/);
+  const order = ["caisse-payeur", "caisse-numero", "caisse-montant"].map((c) => rows[0].indexOf(c));
+  assert.ok(order.every((n, i) => n >= 0 && (i === 0 || n > order[i - 1])), `order ${order}`);
+  assert.match(html.match(/<section class="caisse-gros"[\s\S]*?<\/section>/)[0], /N° T00001/, "same text as the big ticket");
+  assert.ok(!rows[1].includes("caisse-numero"), "no element without a number");
+  assert.ok(!/undefined|null|N° ?<|—|–/.test(rows[1]), "nothing written in its place");
+});
+
 // Intention: the page without script hides the descriptions of the list too, and keeps the ones the payer wrote.
 test("page : descriptions de la liste à masquer absentes du HTML, texte du payeur conservé", () => {
   const view = { status: "live", tickets: [makeTicket({ transfer: transfer(2, { description: "Pain" }), source: "initial", arrivedAt: NOW }), makeTicket({ transfer: transfer(1, { description: "virement mobile pro" }), source: "initial", arrivedAt: NOW - 1000 })] };

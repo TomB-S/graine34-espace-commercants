@@ -130,7 +130,10 @@ export function createCaisseView(document, { pollSeconds, nowMs, onSoundToggle =
     const who = make("span", "caisse-qui");
     who.append(payer);
     if (ticket.description) who.append(make("span", "caisse-description", ticket.description));
-    row.append(make("span", "caisse-heure", ticket.time), who, make("span", "caisse-montant", ticket.amount));
+    row.append(make("span", "caisse-heure", ticket.time), who);
+    // Transaction number between the payer and the amount; nothing at all when the payment has none.
+    if (ticket.number) row.append(make("span", "caisse-numero", `${TEXTS.numberLabel}${ticket.number}`));
+    row.append(make("span", "caisse-montant", ticket.amount));
     return row;
   }
 

@@ -603,7 +603,8 @@ form[action="/deconnexion"] {
   font-size: 0.85rem;
 }
 
-/* Previous payments: time | payer and, under it, the description | amount. */
+/* Previous payments: time | payer and, under it, the description | transaction number | amount.
+   Narrow screen (phone): the number moves under the payer and the description. */
 .caisse-precedents {
   margin: 0;
   padding: 0;
@@ -613,6 +614,9 @@ form[action="/deconnexion"] {
 .caisse-ligne {
   display: grid;
   grid-template-columns: 6.25rem minmax(0, 1fr) auto;
+  grid-template-areas:
+    "heure qui montant"
+    ". numero .";
   column-gap: 0.75rem;
   align-items: baseline;
   padding: 0.6rem 0.5rem;
@@ -626,6 +630,7 @@ form[action="/deconnexion"] {
 
 /* Date and time on ONE line, "12/11 17:21" included. */
 .caisse-heure {
+  grid-area: heure;
   color: var(--texte-secondaire);
   font-size: 0.95rem;
   font-variant-numeric: tabular-nums;
@@ -633,6 +638,7 @@ form[action="/deconnexion"] {
 }
 
 .caisse-qui {
+  grid-area: qui;
   min-width: 0;
 }
 
@@ -651,7 +657,17 @@ form[action="/deconnexion"] {
   white-space: nowrap;
 }
 
+/* Transaction number: small, grey, same look as the one of the last payment. Absent from the page when there is none. */
+.caisse-numero {
+  grid-area: numero;
+  color: var(--texte-secondaire);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
 .caisse-montant {
+  grid-area: montant;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -691,7 +707,8 @@ form[action="/deconnexion"] {
   }
 
   .caisse-ligne {
-    grid-template-columns: 8.5rem minmax(0, 1fr) auto;
+    grid-template-columns: 8.5rem minmax(0, 1fr) auto auto;
+    grid-template-areas: "heure qui numero montant";
     column-gap: 1rem;
     font-size: 1.3rem;
   }
