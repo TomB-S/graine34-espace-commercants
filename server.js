@@ -409,7 +409,7 @@ function redirect(res, location, headers = {}) {
   res.end();
 }
 
-// Opens the local session for a Cyclos session token (form login or one-time link) and sends the visitor to /caisse.
+// Opens the local session for a Cyclos session token (form login) and sends the visitor to /caisse.
 // `credentials` ({ login, password }, only when the login starts the listening) live in the session record and nowhere
 // else: they disappear with it (logout, 20 minutes without use, maximum duration, refusal by Cyclos).
 function openSession(res, sessionToken, credentials = null) {
@@ -425,54 +425,6 @@ function openSession(res, sessionToken, credentials = null) {
   redirect(res, "/caisse", {
     "Set-Cookie": cookieHeader(id, Math.floor(MAX_MS / 1000)),
   });
-}
-
-// One-time login link (single executable on a local address only). startServer({ autoLogin: true }) turns it on;
-// the handle then gives issueLoginCode(). The code is random (128 bits), valid LOGIN_CODE_TTL_MS, usable once, and only its
-// hash is kept. It is never written to a log (the paths logged elsewhere have no query string). Any problem
-// (unknown, expired or used code, request not from this machine, Cyclos refusing) sends the visitor to the normal login
-// form, with no hint about the reason.
-const LOGIN_CODE_TTL_MS = 15_000;
-let LOGIN_CODES = null; // null = disabled; otherwise Map(hash of the code -> expiry time)
-let LOGIN_CODE_TTL = LOGIN_CODE_TTL_MS;
-const hashLoginCode = (code) => createHash("sha256").update(code).digest("hex");
-
-function isLoopbackAddress(address) {
-  return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
-}
-
-function issueLoginCode(now = Date.now()) {
-  if (!LOGIN_CODES) throw new Error("Connexion automatique non activée");
-  const code = randomBytes(16).toString("hex");
-  LOGIN_CODES.set(hashLoginCode(code), now + LOGIN_CODE_TTL);
-  return code;
-}
-
-// Removes the code from the list (whatever happens next) and tells whether it was valid.
-function takeLoginCode(code, now = Date.now()) {
-  if (!LOGIN_CODES || !/^[0-9a-f]{32}$/.test(code)) return false;
-  const key = hashLoginCode(code);
-  const expiresAt = LOGIN_CODES.get(key);
-  LOGIN_CODES.delete(key);
-  return expiresAt !== undefined && now <= expiresAt;
-}
-
-async function handleLoginLink(req, res, url) {
-  const valid = takeLoginCode(url.searchParams.get("t") ?? "");
-  const credentials = valid && isLoopbackAddress(req.socket.remoteAddress) ? CAISSE.credentialsFor(PROTOTYPE_MERCHANT) : null;
-  if (!credentials) {
-    redirect(res, "/");
-    return;
-  }
-  let sessionToken;
-  try {
-    sessionToken = await createCyclosSession(credentials.login, credentials.password);
-  } catch {
-    console.error("Caisse : connexion automatique impossible, le formulaire de connexion est proposé");
-    redirect(res, "/");
-    return;
-  }
-  openSession(res, sessionToken);
 }
 
 // Credentials for the listener, taken from the freshest live page session of the registered merchant (same Cyclos
@@ -667,11 +619,6 @@ function getSession(req) {
 // Cleanup of expired sessions and of old login-failure counters, run
 // periodically by startServer() (and callable directly, tests do).
 function sweep(now = Date.now()) {
-  if (LOGIN_CODES) {
-    for (const [key, expiresAt] of LOGIN_CODES) {
-      if (now > expiresAt) LOGIN_CODES.delete(key);
-    }
-  }
   for (const [id, session] of sessions) {
     if (isExpired(session, now)) expireSession(id, session);
   }
@@ -848,11 +795,6 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (route === "GET /ouvrir" && LOGIN_CODES) {
-      await handleLoginLink(req, res, url);
-      return;
-    }
-
     switch (route) {
       case "GET /":
         send(res, 200, "text/html", renderLoginForm());
@@ -993,8 +935,8 @@ export function startServer(options = {}) {
   if (server.listening) {
     return Promise.reject(new Error("Le serveur est déjà démarré"));
   }
-  if (options.listenOnLogin && (options.autoLogin || !["127.0.0.1", "::1", "localhost"].includes(options.host))) {
-    // Local address only (the password typed on the page must not cross a network), and not with the one-time link.
+  if (options.listenOnLogin && !["127.0.0.1", "::1", "localhost"].includes(options.host)) {
+    // Local address only: the password typed on the page must not cross a network.
     return Promise.reject(new Error("La connexion qui démarre l'écoute exige l'écoute locale"));
   }
   try {
@@ -1014,16 +956,6 @@ export function startServer(options = {}) {
     Object.assign(pageLogin, { inFlight: false, refusals: 0, lockedUntil: 0 });
   }
   ALLOWED_HOSTS = null;
-  if (options.autoLogin) {
-    // Only for a local address: on a network, anyone who sees the link could use it.
-    if (!CAISSE.enabled || !["127.0.0.1", "::1", "localhost"].includes(options.host)) {
-      return Promise.reject(new Error("La connexion automatique exige la caisse activée et l'écoute locale"));
-    }
-    LOGIN_CODES = new Map();
-    LOGIN_CODE_TTL = options.loginCodeTtlMs ?? LOGIN_CODE_TTL_MS;
-  } else {
-    LOGIN_CODES = null;
-  }
   BASE = baseUrl(options.cyclosBaseUrl ?? process.env.CYCLOS_BASE_URL);
   COOKIE_SECURE = options.cookieSecure ?? process.env.COOKIE_SECURE === "true";
   IDLE_MS = options.idleMs ?? envNumber("SESSION_IDLE_MINUTES", 20) * 60_000;
@@ -1051,11 +983,8 @@ export function startServer(options = {}) {
         port: server.address().port,
         sweep,
         caisseEnabled: CAISSE.enabled,
-        // One-time login link code (only when started with autoLogin).
-        issueLoginCode: options.autoLogin ? () => issueLoginCode() : undefined,
         async close() {
           clearInterval(timer);
-          LOGIN_CODES = null;
           ALLOWED_HOSTS = null;
           LISTEN_ON_LOGIN = false;
           // Listeners first: streams cut, Cyclos sessions closed, tickets forgotten.

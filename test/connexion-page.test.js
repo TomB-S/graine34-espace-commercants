@@ -230,7 +230,6 @@ appTest("hébergé : les identifiants viennent toujours de la configuration, la 
 test("démarrage : la connexion qui démarre l'écoute exige l'adresse locale", async () => {
   await assert.rejects(startServer({ port: 0, host: "0.0.0.0", listenOnLogin: true }), /écoute locale/);
   await assert.rejects(startServer({ port: 0, listenOnLogin: true }), /écoute locale/);
-  await assert.rejects(startServer({ port: 0, host: "127.0.0.1", listenOnLogin: true, autoLogin: true }), /écoute locale/);
 });
 
 test("configuration : avec credentialsFromLogin, rien n'est exigé ni lu (même si l'environnement ou une valeur en donne)", () => {

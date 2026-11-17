@@ -1,15 +1,12 @@
 // Start-up of the single executable, for a merchant who is not a technician (see "Exécutable" in README.md).
-// What it does, in order: built-in default settings (all can be changed by environment variables), the login
-// and the password asked in the window when the environment does not give them (the password is typed hidden
-// and kept in memory only: never written to a file, to the log, or to the environment), ONE check of the
-// credentials with Cyclos, the server on the local address only, then the page opened in the default browser
-// with a one-time link that logs in without the form (not when the network is opened).
+// What it does, in order: built-in default settings (all can be changed by environment variables), the server on the
+// local address only, then the page opened in the default browser. The login and the password are typed on that page,
+// never in the window and never in the environment: they do not pass through this file.
 //
 // Nothing here is used by "npm start" or "node server.js". The functions take their streams and helpers as
 // parameters, so that the tests need no terminal, no network and no browser.
 
 import { spawn as nodeSpawn } from "node:child_process";
-import { PushAuthError, PushForbiddenError, PushUnavailableError } from "./cyclos-push.js";
 
 // Address of La Graine 34 on the Cyclos instance, channel of the professional accounts, first port tried.
 // None of this is secret.
@@ -23,10 +20,6 @@ export const PORT_TRIES = 10;
 
 // An error whose message is meant to be shown as it is to the merchant.
 export class LaunchError extends Error {}
-// The window is not a real console: the password cannot be typed hidden, so it is not asked.
-export class NotConsoleError extends LaunchError {}
-// Ctrl+C (or end of the input) while typing.
-export class CancelledError extends Error {}
 
 // Longest life of a page session in the executable (the server's own default is 8 hours).
 export const SESSION_MAX_MS = 12 * 3_600_000;
@@ -35,31 +28,7 @@ export const MESSAGES = Object.freeze({
   networkRefused:
     "Cette version du programme ne s'ouvre pas au réseau local : CAISSE_OPEN_NETWORK n'est pas accepté.\n" +
     "Retirez cette variable, puis relancez le programme.",
-  notConsole:
-    "Ce programme doit être ouvert dans une vraie fenêtre de terminal pour demander le mot de passe sans l'afficher.\n" +
-    "Windows : Invite de commandes, PowerShell ou Windows Terminal (pas Git Bash).\n" +
-    "Mac et Linux : l'application Terminal.\n" +
-    "Le mot de passe n'a pas été demandé.",
-  refused:
-    "Cyclos a refusé l'identifiant ou le mot de passe.\n" +
-    "Le programme ne réessaie pas, pour éviter que Cyclos bloque le compte ou l'adresse.\n" +
-    "Vérifiez-les, puis relancez le programme une seule fois. Si le refus continue, contactez La Graine 34.",
-  forbidden:
-    "Cyclos reconnaît le compte mais n'autorise pas cet accès.\n" +
-    "Le programme ne réessaie pas. Contactez La Graine 34.",
-  unreachable:
-    "Impossible de joindre Cyclos. Vérifiez la connexion internet, puis relancez le programme.",
-  busy:
-    "Cyclos demande de patienter (trop de demandes). N'insistez pas : attendez quelques minutes avant de relancer le programme.",
-  unavailable: (status) =>
-    `Cyclos ne répond pas correctement pour le moment${status ? ` (code ${status})` : ""}. ` +
-    "Attendez quelques minutes avant de relancer le programme.",
-  noAccount:
-    "Cyclos n'a pas donné l'identifiant du compte, l'outil ne peut pas s'en servir. Contactez La Graine 34.",
-  cancelled: "Annulé.",
   closeAfterError: "Appuyez sur Entrée pour fermer.",
-  emptyLogin: "L'identifiant est vide.",
-  emptyPassword: "Le mot de passe est vide.",
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -95,115 +64,26 @@ export function readLaunchSettings(env) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Typing in the window
+// Keeping the window open
 
-const isConsole = (input, output) => Boolean(input?.isTTY && output?.isTTY && typeof input.setRawMode === "function");
+const isConsole = (input, output) => Boolean(input?.isTTY && output?.isTTY);
 
-// Reads one line typed in the window, key by key. `hidden`: nothing is shown (password). Throws NotConsoleError when
-// the input is not a real console (never falls back to an echoed password), CancelledError on Ctrl+C or end of input.
-export function readLine({ input, output, prompt, hidden = false }) {
-  if (!isConsole(input, output)) return Promise.reject(new NotConsoleError(MESSAGES.notConsole));
-  return new Promise((resolve, reject) => {
-    let value = "";
-    let escape = 0; // 1: after ESC, 2: inside an escape sequence (arrow keys...)
-    output.write(prompt);
-    input.setEncoding("utf8");
-    input.setRawMode(true);
-    input.resume();
-
-    const finish = (done, result) => {
-      input.off("data", onData);
-      input.off("end", onEnd);
-      input.setRawMode(false);
+// Waits for the Enter key after an error, so that a window opened by a double click does not vanish with its message.
+// Nothing typed is read or kept. Without a real console there is nothing to wait for.
+export function waitForEnter({ input, output, message = MESSAGES.closeAfterError }) {
+  if (!isConsole(input, output)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      input.off("data", done);
+      input.off("end", done);
       input.pause();
-      output.write("\n");
-      done(result);
+      resolve();
     };
-    const onEnd = () => finish(reject, new CancelledError());
-    const onData = (chunk) => {
-      for (const ch of chunk) {
-        if (escape === 1) {
-          escape = ch === "[" || ch === "O" ? 2 : 0;
-          continue;
-        }
-        if (escape === 2) {
-          if (ch >= "@" && ch <= "~") escape = 0;
-          continue;
-        }
-        if (ch === "\u001b") {
-          escape = 1;
-        } else if (ch === "\r" || ch === "\n") {
-          return finish(resolve, value);
-        } else if (ch === "\u0003" || ch === "\u0004") {
-          return finish(reject, new CancelledError());
-        } else if (ch === "\u007f" || ch === "\b") {
-          if (value !== "") {
-            value = Array.from(value).slice(0, -1).join("");
-            if (!hidden) output.write("\b \b");
-          }
-        } else if (ch >= " ") {
-          value += ch;
-          if (!hidden) output.write(ch);
-        }
-      }
-    };
-    input.on("data", onData);
-    input.on("end", onEnd);
+    output.write(`${message} `);
+    input.once("data", done);
+    input.once("end", done);
+    input.resume();
   });
-}
-
-// Waits for the Enter key, so that a window opened by a double click does not vanish with its message.
-// Without a real console there is nothing to wait for.
-export async function waitForEnter({ input, output, message = MESSAGES.closeAfterError }) {
-  if (!isConsole(input, output)) return;
-  try {
-    await readLine({ input, output, prompt: `${message} `, hidden: true });
-  } catch {
-    // Ctrl+C or end of input: closing anyway.
-  }
-}
-
-// Login, then password, only for what the environment does not give. Empty answers are asked again (no call to
-// Cyclos is made here). Returns { login, password }.
-export async function askCredentials({ env, input, output }) {
-  let login = env.CAISSE_CYCLOS_LOGIN ?? "";
-  let password = env.CAISSE_CYCLOS_PASSWORD ?? "";
-  if (login.trim() !== "" && password !== "") return { login, password };
-  if (!isConsole(input, output)) throw new NotConsoleError(MESSAGES.notConsole);
-  while (login.trim() === "") {
-    login = (await readLine({ input, output, prompt: "Identifiant : " })).trim();
-    if (login === "") output.write(`${MESSAGES.emptyLogin}\n`);
-  }
-  while (password === "") {
-    password = await readLine({ input, output, prompt: "Mot de passe (rien ne s'affiche) : ", hidden: true });
-    if (password === "") output.write(`${MESSAGES.emptyPassword}\n`);
-  }
-  return { login, password };
-}
-
-// ---------------------------------------------------------------------------------------------------------------
-// The single check of the credentials
-
-// Opens a Cyclos session once, reads the account id, closes the session. Never repeated. Returns null when all
-// is well, otherwise the message to show (a fixed text: no login, no password, no address, only a status code).
-export async function checkCredentials(push, { login, password }) {
-  let token = null;
-  try {
-    token = await push.createSession(login, password);
-    const id = await push.getUserId(token);
-    return id ? null : MESSAGES.noAccount;
-  } catch (error) {
-    if (error instanceof PushAuthError) return MESSAGES.refused;
-    if (error instanceof PushForbiddenError) return MESSAGES.forbidden;
-    if (error instanceof PushUnavailableError) {
-      if (error.status === 429) return MESSAGES.busy;
-      if (error.status) return MESSAGES.unavailable(error.status);
-      return /^(network error|timeout)/.test(error.message) ? MESSAGES.unreachable : MESSAGES.unavailable();
-    }
-    return MESSAGES.unavailable();
-  } finally {
-    if (token) await push.closeSession(token).catch(() => {});
-  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -245,26 +125,21 @@ export function openBrowser(url, { platform = process.platform, spawn = nodeSpaw
 // ---------------------------------------------------------------------------------------------------------------
 // Server
 
-// Starts the server on the first free port (or only on the imposed one). `start(options)` is startServer().
-export function listenOnFreePort(start, settings, caisse) {
-  return listenOnPorts(start, settings, (port) => ({
-    port,
-    host: settings.host,
-    cyclosBaseUrl: settings.baseUrl,
-    cyclosChannel: settings.channel,
-    // One-time login link: only on the local address (the server refuses it otherwise).
-    autoLogin: !settings.openNetwork,
-    caisse,
-  }));
-}
-
-// Tries the ports one after the other (only the imposed one when PORT is set). `optionsFor(port)`: options of start().
-async function listenOnPorts(start, settings, optionsFor) {
+// Starts the server on the first free port (or only on the imposed one). `start(options)` is startServer(). The login is
+// typed on the page and starts the listening (option `listenOnLogin`, reserved to this entry point): no credentials are passed.
+export async function listenOnFreePort(start, settings) {
   const first = settings.port;
   const count = settings.portImposed ? 1 : PORT_TRIES;
   for (let i = 0; i < count; i += 1) {
     try {
-      return await start(optionsFor(first + i));
+      return await start({
+        port: first + i,
+        host: settings.host,
+        cyclosBaseUrl: settings.baseUrl,
+        cyclosChannel: settings.channel,
+        listenOnLogin: true,
+        maxMs: SESSION_MAX_MS,
+      });
     } catch (error) {
       if (error?.code !== "EADDRINUSE") throw error;
     }
@@ -276,67 +151,15 @@ async function listenOnPorts(start, settings, optionsFor) {
   );
 }
 
-// The whole start-up. `deps`: { env, input, output, start (startServer), createPush (settings -> Cyclos client),
-// open (url -> Promise<boolean>) }. Returns { code: 0, handle, url } once the server runs, or { code: 1 } after an
-// error whose message has been shown (the caller then waits for Enter and exits).
-export async function launch({ env, input, output, start, createPush, open }) {
-  const say = (text) => output.write(`${text}\n`);
-  let settings;
-  let credentials;
-  try {
-    settings = readLaunchSettings(env);
-    credentials = await askCredentials({ env, input, output });
-  } catch (error) {
-    if (error instanceof CancelledError) {
-      say(MESSAGES.cancelled);
-      return { code: 1, cancelled: true };
-    }
-    if (error instanceof LaunchError) {
-      say(error.message);
-      return { code: 1 };
-    }
-    throw error;
-  }
-
-  say("Vérification de l'identifiant auprès de Cyclos...");
-  const problem = await checkCredentials(createPush(settings), credentials);
-  if (problem) {
-    say(problem);
-    return { code: 1 };
-  }
-
-  let handle;
-  try {
-    // The credentials go to the server by its options, never by the environment (which programs started later inherit).
-    handle = await listenOnFreePort(start, settings, { enabled: true, ...credentials });
-  } catch (error) {
-    // Invalid CAISSE_* variable (the message names it, never its value) or no free port.
-    say(error.message);
-    return { code: 1 };
-  }
-  const url = `http://127.0.0.1:${handle.port}`;
-  say(`La caisse est prête : ${url}`);
-  if (settings.openNetwork) {
-    say("Attention : l'accès est ouvert à tout le réseau local (CAISSE_OPEN_NETWORK=true).");
-  }
-  say("Laissez cette fenêtre ouverte. Pour arrêter : Ctrl+C, ou fermez la fenêtre.");
-  // The page is opened with a one-time link (valid a few seconds) that logs in without the form. Only the plain address
-  // is ever shown to the merchant: the code is never printed.
-  const link = typeof handle.issueLoginCode === "function" && !settings.openNetwork ? `${url}/ouvrir?t=${handle.issueLoginCode()}` : url;
-  if (!(await open(link))) {
-    say(`Le navigateur n'a pas pu être ouvert. Ouvrez vous-même cette adresse : ${url}`);
-  }
-  return { code: 0, handle, url };
-}
-
 // ---------------------------------------------------------------------------------------------------------------
-// Start-up with the login typed on the page of the browser
+// Start-up
 
-// The start-up of the executable: nothing is asked in the window. The server starts on the local address with the
-// login typed on its page starting the listening (option `listenOnLogin`, used by this entry point only), and the
-// page is opened in the default browser at the plain address. The credentials never pass here.
-// `deps`: { env, output, start (startServer), open (url -> Promise<boolean>) }. Same result as launch().
-export async function launchWithPageLogin({ env, output, start, open }) {
+// The whole start-up of the executable: nothing is asked in the window. The server starts on the local address, the page
+// is opened in the default browser at the plain address, and the merchant types the login there. The credentials never
+// pass through this file. `deps`: { env, output, start (startServer), open (url -> Promise<boolean>) }. Returns
+// { code: 0, handle, url } once the server runs, or { code: 1 } after an error whose message has been shown (the caller
+// then waits for Enter and exits).
+export async function launch({ env, output, start, open }) {
   const say = (text) => output.write(`${text}\n`);
   let settings;
   try {
@@ -355,14 +178,7 @@ export async function launchWithPageLogin({ env, output, start, open }) {
 
   let handle;
   try {
-    handle = await listenOnPorts(start, settings, (port) => ({
-      port,
-      host: settings.host,
-      cyclosBaseUrl: settings.baseUrl,
-      cyclosChannel: settings.channel,
-      listenOnLogin: true,
-      maxMs: SESSION_MAX_MS,
-    }));
+    handle = await listenOnFreePort(start, settings);
   } catch (error) {
     say(error.message);
     return { code: 1 };

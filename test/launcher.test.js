@@ -1,6 +1,6 @@
-// Start-up of the single executable (launcher.js): defaults, typing in the window, the one check of the credentials,
-// the browser, the free port, and the whole sequence. No real terminal, no real browser, no real Cyclos: the streams
-// and helpers are fakes. FICTITIOUS values only; the sentinel password below must appear nowhere in what is shown.
+// Start-up of the single executable (launcher.js): defaults, the browser, the free port, the whole sequence with the login
+// typed on the page. No real terminal, no real browser, no real Cyclos for most tests: the streams and helpers are fakes.
+// FICTITIOUS values only; the sentinel password must appear nowhere in what is shown or logged.
 import "../test-support/env-propre.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -8,42 +8,22 @@ import { EventEmitter } from "node:events";
 import { networkInterfaces } from "node:os";
 import net from "node:net";
 import { startServer } from "../server.js";
-import { createCyclosPush, PushAuthError, PushForbiddenError, PushUnavailableError } from "../cyclos-push.js";
 import { startFakeCyclos, USER } from "../test-support/fake-cyclos.js";
+import { rawRequest } from "../test-support/harness.js";
 import {
   DEFAULTS,
   MESSAGES,
+  SESSION_MAX_MS,
   LaunchError,
-  NotConsoleError,
-  CancelledError,
   readLaunchSettings,
-  readLine,
   waitForEnter,
-  askCredentials,
-  checkCredentials,
   browserCommand,
   openBrowser,
   listenOnFreePort,
   launch,
 } from "../launcher.js";
 
-const SECRET = "Mot2Passe-Secret-fictif";
-
-// A fake window: `typed(...)` sends keys, `output.text` is everything shown.
-function fakeConsole({ tty = true, raw = true } = {}) {
-  const input = new EventEmitter();
-  input.isTTY = tty;
-  if (raw) {
-    input.setRawMode = (on) => input.rawHistory.push(on);
-  }
-  input.rawHistory = [];
-  input.setEncoding = () => {};
-  input.resume = () => {};
-  input.pause = () => {};
-  input.typed = (text) => input.emit("data", text);
-  const output = { isTTY: tty, text: "", write(chunk) { this.text += chunk; } };
-  return { input, output };
-}
+const fakeOutput = () => ({ text: "", write(chunk) { this.text += chunk; } });
 
 // ---- settings
 
@@ -86,152 +66,28 @@ test("lanceur : variable invalide refusée, message en français sans la valeur"
   }
 });
 
-// ---- typing in the window
 
-test("saisie : le mot de passe n'est jamais affiché, le mode brut est rendu", async () => {
-  const { input, output } = fakeConsole();
-  const pending = readLine({ input, output, prompt: "Mot de passe : ", hidden: true });
-  input.typed(`${SECRET}\r`);
-  assert.equal(await pending, SECRET);
-  assert.ok(!output.text.includes(SECRET));
-  assert.equal(output.text, "Mot de passe : \n", "nothing but the prompt and the final line break");
-  assert.deepEqual(input.rawHistory, [true, false]);
-});
+// ---- keeping the window open
 
-test("saisie : l'identifiant est affiché au fil de la frappe, Retour arrière efface", async () => {
-  const { input, output } = fakeConsole();
-  const pending = readLine({ input, output, prompt: "Identifiant : " });
-  input.typed("abx");
-  input.typed("\u007fc\r");
-  assert.equal(await pending, "abc");
-  assert.ok(output.text.includes("\b \b"));
-});
-
-test("saisie : touches fléchées ignorées, accents et lettres hors Latin-1 gardés, retour arrière sur un caractère entier", async () => {
-  const { input, output } = fakeConsole();
-  const pending = readLine({ input, output, prompt: "> ", hidden: true });
-  input.typed("é\u001b[A\u001b[1;5Cè");
-  input.typed("😀\u007f");
-  input.typed("ß\n");
-  assert.equal(await pending, "éèß");
-});
-
-test("saisie : un mot de passe collé avec sa fin de ligne, le reste est ignoré", async () => {
-  const { input, output } = fakeConsole();
-  const pending = readLine({ input, output, prompt: "> ", hidden: true });
-  input.typed("abc\r\nreste");
-  assert.equal(await pending, "abc");
-  assert.equal(input.listenerCount("data"), 0, "listeners removed");
-});
-
-test("saisie : Ctrl+C et fin de l'entrée annulent, sans rien renvoyer", async () => {
-  for (const stop of ["abc\u0003", "\u0004"]) {
-    const { input, output } = fakeConsole();
-    const pending = readLine({ input, output, prompt: "> ", hidden: true });
-    input.typed(stop);
-    await assert.rejects(pending, CancelledError);
-    assert.deepEqual(input.rawHistory, [true, false]);
-  }
-  const { input, output } = fakeConsole();
-  const pending = readLine({ input, output, prompt: "> ", hidden: true });
-  input.emit("end");
-  await assert.rejects(pending, CancelledError);
-});
-
-test("saisie : une fenêtre qui n'est pas une vraie console est refusée, rien n'est demandé ni affiché en clair", async () => {
-  for (const options of [{ tty: false }, { tty: true, raw: false }]) {
-    const { input, output } = fakeConsole(options);
-    await assert.rejects(readLine({ input, output, prompt: "Mot de passe : ", hidden: true }), NotConsoleError);
-    assert.equal(output.text, "", "the prompt is not even written");
-    await assert.rejects(askCredentials({ env: {}, input, output }), NotConsoleError);
-  }
-  await assert.rejects(readLine({ input: undefined, output: undefined, prompt: "> " }), NotConsoleError);
-});
-
-test("saisie : « Appuyez sur Entrée » attend Entrée, et ne bloque jamais sans console", async () => {
-  const { input, output } = fakeConsole();
-  const pending = waitForEnter({ input, output });
-  input.typed("x");
-  input.typed("\r");
-  await pending;
-  assert.ok(output.text.includes("Appuyez sur Entrée pour fermer."));
-  const none = fakeConsole({ tty: false });
-  await waitForEnter(none);
-  assert.equal(none.output.text, "");
-});
-
-test("identifiants : donnés par l'environnement, rien n'est demandé (même sans console)", async () => {
-  const { input, output } = fakeConsole({ tty: false });
-  const result = await askCredentials({ env: { CAISSE_CYCLOS_LOGIN: "commerce", CAISSE_CYCLOS_PASSWORD: SECRET }, input, output });
-  assert.deepEqual(result, { login: "commerce", password: SECRET });
-  assert.equal(output.text, "");
-});
-
-test("identifiants : seul ce qui manque est demandé, une réponse vide est redemandée", async () => {
-  const { input, output } = fakeConsole();
-  const pending = askCredentials({ env: { CAISSE_CYCLOS_LOGIN: "commerce" }, input, output });
-  input.typed("\r");
+test("fenêtre : « Appuyez sur Entrée » attend une touche sans rien lire ni garder, et ne bloque jamais sans console", async () => {
+  const input = new EventEmitter();
+  input.isTTY = true;
+  input.resume = () => {};
+  input.pause = () => {};
+  const output = { isTTY: true, text: "", write(chunk) { this.text += chunk; } };
+  let done = false;
+  const pending = waitForEnter({ input, output }).then(() => { done = true; });
   await new Promise((resolve) => setImmediate(resolve));
-  input.typed(`${SECRET}\r`);
-  assert.deepEqual(await pending, { login: "commerce", password: SECRET });
-  assert.ok(output.text.includes(MESSAGES.emptyPassword));
-  assert.ok(!output.text.includes("Identifiant :"));
-  assert.ok(!output.text.includes(SECRET));
-});
+  assert.equal(done, false, "waits");
+  assert.equal(output.text, `${MESSAGES.closeAfterError} `);
+  input.emit("data", "texte tapé");
+  await pending;
+  assert.equal(input.listenerCount("data"), 0, "listeners removed");
+  assert.ok(!output.text.includes("texte tapé"), "what is typed is never echoed");
 
-// ---- the one check of the credentials
-
-const fakePush = (overrides = {}) => {
-  const calls = [];
-  return {
-    calls,
-    async createSession(login, password) {
-      calls.push(["createSession", login, password]);
-      return "jeton-fictif";
-    },
-    async getUserId() {
-      calls.push(["getUserId"]);
-      return "user-1";
-    },
-    async closeSession(token) {
-      calls.push(["closeSession", token]);
-    },
-    ...overrides,
-  };
-};
-
-test("vérification : identifiants acceptés = une session ouverte, lue, fermée", async () => {
-  const push = fakePush();
-  assert.equal(await checkCredentials(push, { login: "commerce", password: SECRET }), null);
-  assert.deepEqual(push.calls.map((c) => c[0]), ["createSession", "getUserId", "closeSession"]);
-});
-
-test("vérification : un échec = un seul appel à Cyclos, un message précis en français sans donnée saisie", async () => {
-  const cases = [
-    [new PushAuthError("401"), MESSAGES.refused],
-    [new PushForbiddenError("403"), MESSAGES.forbidden],
-    [new PushUnavailableError("network error (ENOTFOUND)"), MESSAGES.unreachable],
-    [new PushUnavailableError("timeout"), MESSAGES.unreachable],
-    [new PushUnavailableError("x", { status: 429 }), MESSAGES.busy],
-    [new PushUnavailableError("x", { status: 503 }), MESSAGES.unavailable(503)],
-    [new PushUnavailableError("unreadable answer on createSession"), MESSAGES.unavailable()],
-    [new Error("autre"), MESSAGES.unavailable()],
-  ];
-  for (const [error, expected] of cases) {
-    const push = fakePush({ async createSession(login, password) { push.calls.push(["createSession", login, password]); throw error; } });
-    const message = await checkCredentials(push, { login: "commerce", password: SECRET });
-    assert.equal(message, expected);
-    assert.equal(push.calls.filter((c) => c[0] === "createSession").length, 1, "never repeated");
-    assert.ok(!message.includes(SECRET) && !message.includes("commerce"));
-  }
-  assert.match(MESSAGES.refused, /ne réessaie pas/);
-  assert.match(MESSAGES.refused, /une seule fois/);
-});
-
-test("vérification : compte sans identifiant lisible = message, et la session est fermée", async () => {
-  const push = fakePush({ async getUserId() { return null; } });
-  assert.equal(await checkCredentials(push, { login: "commerce", password: SECRET }), MESSAGES.noAccount);
-  assert.deepEqual(push.calls.at(-1), ["closeSession", "jeton-fictif"]);
+  const notConsole = new EventEmitter();
+  notConsole.isTTY = false;
+  await waitForEnter({ input: notConsole, output: { isTTY: false, write() { assert.fail("nothing written"); } } });
 });
 
 // ---- browser
@@ -272,133 +128,107 @@ test("navigateur : commande absente, code non nul ou exception = false, jamais d
   assert.equal(await openBrowser("u", { platform: "darwin", waitMs: 10, spawn: fakeSpawn(() => {}) }), true, "still running after the delay");
 });
 
+
 // ---- free port
 
-test("port : le premier libre est pris, l'écoute est locale, les identifiants passent par les options", async () => {
+test("port : le premier libre est pris, l'écoute est locale, aucun identifiant ne passe par les options", async () => {
   const tried = [];
   const start = async (options) => {
     tried.push(options.port);
     if (options.port < 3003) throw Object.assign(new Error("occupé"), { code: "EADDRINUSE" });
     return { port: options.port, options };
   };
-  const settings = readLaunchSettings({});
-  const handle = await listenOnFreePort(start, settings, { enabled: true, login: "commerce", password: SECRET });
+  const handle = await listenOnFreePort(start, readLaunchSettings({}));
   assert.deepEqual(tried, [3001, 3002, 3003]);
-  assert.equal(handle.options.host, "127.0.0.1");
-  assert.equal(handle.options.cyclosChannel, "main");
-  assert.equal(handle.options.cyclosBaseUrl, DEFAULTS.baseUrl);
-  assert.deepEqual(handle.options.caisse, { enabled: true, login: "commerce", password: SECRET });
+  const { options } = handle;
+  assert.equal(options.host, "127.0.0.1");
+  assert.equal(options.cyclosChannel, "main");
+  assert.equal(options.cyclosBaseUrl, DEFAULTS.baseUrl);
+  assert.equal(options.listenOnLogin, true, "the login of the page starts the listening");
+  assert.equal(options.maxMs, 12 * 3_600_000);
+  assert.equal(SESSION_MAX_MS, 12 * 3_600_000);
+  assert.equal(options.caisse, undefined, "no credentials");
+  assert.equal(options.autoLogin, undefined, "no one-time link");
 });
 
 test("port : imposé et occupé, ou tous occupés = message en français ; une autre erreur est transmise", async () => {
   const busy = async () => { throw Object.assign(new Error("occupé"), { code: "EADDRINUSE" }); };
-  await assert.rejects(listenOnFreePort(busy, readLaunchSettings({ PORT: "4000" }), {}), /Le port 4000 est déjà utilisé/);
-  await assert.rejects(listenOnFreePort(busy, readLaunchSettings({}), {}), /Aucun port libre entre 3001 et 3010/);
+  await assert.rejects(listenOnFreePort(busy, readLaunchSettings({ PORT: "4000" })), /Le port 4000 est déjà utilisé/);
+  await assert.rejects(listenOnFreePort(busy, readLaunchSettings({})), /Aucun port libre entre 3001 et 3010/);
   const bug = new Error("CAISSE_POLL_SECONDS invalide");
-  await assert.rejects(listenOnFreePort(async () => { throw bug; }, readLaunchSettings({}), {}), (error) => error === bug);
+  await assert.rejects(listenOnFreePort(async () => { throw bug; }, readLaunchSettings({})), (error) => error === bug);
 });
 
 // ---- whole sequence
 
-function sequence(overrides = {}) {
-  const { input, output } = fakeConsole({ tty: false });
-  const events = [];
-  const push = fakePush();
-  const deps = {
-    env: { CAISSE_CYCLOS_LOGIN: "commerce", CAISSE_CYCLOS_PASSWORD: SECRET },
-    input,
+test("lancement : rien n'est demandé, serveur local avec l'option réservée, adresse simple ouverte, identifiants de l'environnement ignorés", async () => {
+  const output = fakeOutput();
+  const started = [];
+  const opened = [];
+  const result = await launch({
+    env: { CAISSE_CYCLOS_LOGIN: "depuis-env", CAISSE_CYCLOS_PASSWORD: "depuis-env-fictif" },
     output,
     start: async (options) => {
-      events.push(["start", options]);
-      return { port: options.port };
+      started.push(options);
+      return { port: options.port, close: async () => {} };
     },
-    createPush: () => push,
     open: async (url) => {
-      events.push(["open", url]);
+      opened.push(url);
       return true;
     },
-    ...overrides,
-  };
-  return { deps, output, events, push };
-}
-
-test("lancement : tout va bien = vérification, serveur local, page ouverte, rien de secret affiché", async () => {
-  const { deps, output, events, push } = sequence();
-  const result = await launch(deps);
+  });
   assert.equal(result.code, 0);
-  assert.equal(result.url, "http://127.0.0.1:3001");
-  assert.deepEqual(events.map((e) => e[0]), ["start", "open"]);
-  assert.equal(push.calls.filter((c) => c[0] === "createSession").length, 1);
-  assert.ok(output.text.includes("La caisse est prête : http://127.0.0.1:3001"));
-  assert.ok(!output.text.includes(SECRET));
-  assert.ok(!output.text.includes("réseau local"), "no warning when the network is not opened");
-  assert.equal(events[0][1].host, "127.0.0.1");
+  assert.equal(started.length, 1);
+  assert.ok(!JSON.stringify(started[0]).includes("depuis-env"), "the environment credentials are never passed on");
+  assert.deepEqual(opened, ["http://127.0.0.1:3001"], "plain address, no code");
+  assert.match(output.text, /La caisse est prête : http:\/\/127\.0\.0\.1:3001/);
+  assert.match(output.text, /Rien n'est demandé dans cette fenêtre/);
+  assert.ok(!output.text.includes("depuis-env"));
 });
 
-test("lancement : le mot de passe ne passe jamais par l'environnement du programme", async () => {
-  const before = JSON.stringify(process.env);
-  const { deps } = sequence();
-  await launch(deps);
-  assert.equal(JSON.stringify(process.env), before);
-  assert.ok(!JSON.stringify(process.env).includes(SECRET));
-});
-
-test("lancement : identifiants refusés = un seul appel, ni serveur ni navigateur, code 1", async () => {
-  const push = fakePush({ async createSession() { push.calls.push(["createSession"]); throw new PushAuthError("401"); } });
-  const { deps, output, events } = sequence({ createPush: () => push });
-  const result = await launch(deps);
+test("lancement : CAISSE_OPEN_NETWORK est refusé, le serveur n'est pas démarré", async () => {
+  const output = fakeOutput();
+  let started = false;
+  const result = await launch({
+    env: { CAISSE_OPEN_NETWORK: "true" },
+    output,
+    start: async () => {
+      started = true;
+      return { port: 1 };
+    },
+    open: async () => true,
+  });
   assert.equal(result.code, 1);
-  assert.deepEqual(events, []);
-  assert.equal(push.calls.length, 1);
-  assert.ok(output.text.includes(MESSAGES.refused));
-  assert.ok(!output.text.includes(SECRET));
+  assert.equal(started, false);
+  assert.ok(output.text.includes(MESSAGES.networkRefused));
 });
 
-test("lancement : sans console et sans identifiants = refus, Cyclos n'est pas appelé", async () => {
-  const { deps, output, events, push } = sequence({ env: {} });
-  const result = await launch(deps);
-  assert.equal(result.code, 1);
-  assert.deepEqual(events, []);
-  assert.equal(push.calls.length, 0);
-  assert.ok(output.text.includes(MESSAGES.notConsole));
-});
+test("lancement : réglage invalide = message sans valeur ; port introuvable = message ; navigateur impossible = adresse affichée", async () => {
+  const bad = fakeOutput();
+  assert.equal((await launch({ env: { PORT: "abc" }, output: bad, start: async () => ({}), open: async () => true })).code, 1);
+  assert.match(bad.text, /PORT invalide/);
+  assert.ok(!bad.text.includes("abc"));
 
-test("lancement : annulation pendant la saisie, variable invalide, port introuvable", async () => {
-  const win = fakeConsole();
-  const sequenceTyped = sequence({ env: {}, input: win.input, output: win.output });
-  const pending = launch(sequenceTyped.deps);
-  win.input.typed("commerce\r");
-  await new Promise((resolve) => setImmediate(resolve));
-  win.input.typed("\u0003");
-  const cancelled = await pending;
-  assert.equal(cancelled.code, 1);
-  assert.equal(cancelled.cancelled, true);
-  assert.ok(win.output.text.includes(MESSAGES.cancelled));
-  assert.equal(sequenceTyped.push.calls.length, 0);
+  const busy = fakeOutput();
+  const busyStart = async () => { throw Object.assign(new Error("occupé"), { code: "EADDRINUSE" }); };
+  assert.equal((await launch({ env: { PORT: "4000" }, output: busy, start: busyStart, open: async () => true })).code, 1);
+  assert.match(busy.text, /Le port 4000 est déjà utilisé/);
 
-  const invalid = sequence({ env: { PORT: "abc", CAISSE_CYCLOS_LOGIN: "c", CAISSE_CYCLOS_PASSWORD: SECRET } });
-  assert.equal((await launch(invalid.deps)).code, 1);
-  assert.ok(invalid.output.text.includes("PORT invalide"));
-  assert.equal(invalid.push.calls.length, 0);
-
-  const noPort = sequence({ start: async () => { throw new LaunchError("Aucun port libre entre 3001 et 3010."); } });
-  assert.equal((await launch(noPort.deps)).code, 1);
-  assert.ok(noPort.output.text.includes("Aucun port libre"));
-  assert.ok(!noPort.events.some((e) => e[0] === "open"));
-});
-
-test("lancement : navigateur impossible à ouvrir = l'adresse est affichée, le programme continue", async () => {
-  const { deps, output } = sequence({ open: async () => false });
-  const result = await launch(deps);
-  assert.equal(result.code, 0);
-  assert.ok(output.text.includes("Ouvrez vous-même cette adresse : http://127.0.0.1:3001"));
-});
-
-test("lancement : accès réseau ouvert = écoute sur toutes les interfaces et avertissement", async () => {
-  const { deps, output, events } = sequence({ env: { CAISSE_CYCLOS_LOGIN: "c", CAISSE_CYCLOS_PASSWORD: SECRET, CAISSE_OPEN_NETWORK: "true" } });
-  await launch(deps);
-  assert.equal(events[0][1].host, undefined);
-  assert.ok(output.text.includes("ouvert à tout le réseau local"));
+  const output = fakeOutput();
+  const tried = [];
+  const result = await launch({
+    env: {},
+    output,
+    start: async (options) => {
+      tried.push(options.port);
+      if (options.port === 3001) throw Object.assign(new Error("occupé"), { code: "EADDRINUSE" });
+      return { port: options.port, close: async () => {} };
+    },
+    open: async () => false,
+  });
+  assert.equal(result.code, 0, "the program goes on");
+  assert.deepEqual(tried, [3001, 3002]);
+  assert.match(output.text, /Ouvrez vous-même cette adresse : http:\/\/127\.0\.0\.1:3002/);
 });
 
 // ---- with the real server and the fake Cyclos
@@ -412,56 +242,51 @@ const freePort = () =>
     });
   });
 
-test("lancement : avec le vrai serveur et un faux Cyclos, la caisse répond sur l'adresse locale seulement", async () => {
+test("lancement : avec le vrai serveur, la connexion sur la page démarre l'écoute, local seulement, mot de passe nulle part", async () => {
   const cyclos = await startFakeCyclos();
-  const { input, output } = fakeConsole({ tty: false });
-  let opened = null;
-  const result = await launch({
-    env: { CYCLOS_BASE_URL: cyclos.url, PORT: String(await freePort()), CAISSE_CYCLOS_LOGIN: USER.login, CAISSE_CYCLOS_PASSWORD: USER.password },
-    input,
-    output,
-    start: startServer,
-    createPush: ({ baseUrl, channel }) => createCyclosPush({ baseUrl, channel }),
-    open: async (url) => {
-      opened = url;
-      return true;
-    },
-  });
+  const port = await freePort();
+  const output = fakeOutput();
+  const logs = [];
+  const original = { log: console.log, error: console.error, info: console.info };
+  for (const level of Object.keys(original)) console[level] = (...args) => logs.push(args.join(" "));
+  let result;
   try {
+    result = await launch({
+      env: { CYCLOS_BASE_URL: cyclos.url, CYCLOS_CHANNEL: "", PORT: String(port) },
+      output,
+      start: startServer,
+      open: async () => true,
+    });
     assert.equal(result.code, 0, output.text);
-    assert.ok(opened.startsWith(`${result.url}/ouvrir?t=`), "the browser gets the one-time link");
-    assert.equal(cyclos.calls("POST", "/auth/session").length, 1, "one login for the check");
-    const css = await fetch(`${result.url}/style.css`);
-    assert.equal(css.status, 200);
-    assert.equal((await fetch(`${result.url}/caisse`, { redirect: "manual" })).status, 303, "the page is behind the login");
+    const base = result.url;
+    assert.equal(cyclos.calls("POST", "/auth/session").length, 0, "nothing is sent to Cyclos by the start-up");
+    const form = await fetch(`${base}/`);
+    assert.equal(form.status, 200);
+    assert.match(await form.text(), /type="password"/, "the login form is the page");
+    assert.equal((await fetch(`${base}/caisse`, { redirect: "manual" })).status, 303, "the page is behind the login");
+    assert.equal((await fetch(`${base}/ouvrir?t=${"0".repeat(32)}`, { redirect: "manual" })).status, 404, "no one-time link any more");
+
+    const login = await fetch(`${base}/connexion`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { Origin: base, "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ login: USER.login, password: USER.password }).toString(),
+    });
+    assert.equal(login.status, 303);
+    assert.match(login.headers.get("set-cookie"), /Max-Age=43200/, "12 hours");
+    const cookie = login.headers.get("set-cookie").split(";")[0];
+    assert.equal((await fetch(`${base}/caisse/data`, { headers: { Cookie: cookie } })).status, 200, "the listening is started by the login");
+
+    assert.equal((await rawRequest(base, { path: "/", headers: { Host: "evil.example" } })).status, 403);
     const external = Object.values(networkInterfaces()).flat().find((a) => a && a.family === "IPv4" && !a.internal);
     if (external) {
       await assert.rejects(fetch(`http://${external.address}:${result.handle.port}/style.css`), "not reachable from the network");
     }
     assert.ok(!output.text.includes(USER.password));
+    assert.ok(!logs.join("\n").includes(USER.password), "the password is in no log");
   } finally {
-    await result.handle?.close();
+    await result?.handle?.close();
     await cyclos.close();
-  }
-});
-
-test("lancement : avec le vrai serveur, un mauvais mot de passe = un seul essai, serveur jamais démarré", async () => {
-  const cyclos = await startFakeCyclos();
-  const { input, output } = fakeConsole({ tty: false });
-  const result = await launch({
-    env: { CYCLOS_BASE_URL: cyclos.url, PORT: String(await freePort()), CAISSE_CYCLOS_LOGIN: USER.login, CAISSE_CYCLOS_PASSWORD: "mauvais-mot-de-passe-fictif" },
-    input,
-    output,
-    start: startServer,
-    createPush: ({ baseUrl, channel }) => createCyclosPush({ baseUrl, channel }),
-    open: async () => assert.fail("no browser"),
-  });
-  try {
-    assert.equal(result.code, 1);
-    assert.equal(cyclos.calls("POST", "/auth/session").length, 1);
-    assert.ok(output.text.includes(MESSAGES.refused));
-    assert.ok(!output.text.includes("mauvais-mot-de-passe-fictif"));
-  } finally {
-    await cyclos.close();
+    Object.assign(console, original);
   }
 });

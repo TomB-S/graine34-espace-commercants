@@ -87,47 +87,54 @@ Le programme :
 
 1. applique des réglages intégrés, tous modifiables par variables d'environnement : adresse de La Graine 34
    (`CYCLOS_BASE_URL`), canal `main` (`CYCLOS_CHANNEL`), port 3001 (`PORT`) ;
-2. demande l'**identifiant** puis le **mot de passe** (rien ne s'affiche pendant la frappe) quand
-   `CAISSE_CYCLOS_LOGIN` et `CAISSE_CYCLOS_PASSWORD` ne sont pas dans l'environnement. Ils restent en mémoire :
-   jamais écrits dans un fichier, ni dans les journaux, ni dans l'environnement du programme ;
-3. vérifie l'identifiant **une seule fois** auprès de Cyclos ;
-4. démarre la caisse sur l'adresse locale (`127.0.0.1`) seulement, puis ouvre la page dans le navigateur par défaut
-   avec un **lien à usage unique** : la page `/caisse` s'affiche sans formulaire de connexion. Le code du lien est
-   aléatoire, valable **15 secondes**, utilisable une seule fois, et n'est écrit dans aucun journal ni affiché à l'écran.
-   S'il est expiré ou déjà utilisé (navigateur trop lent à démarrer, lien rouvert), ou si la session expire
-   (20 minutes sans visite, 8 heures au plus), le formulaire de connexion habituel s'affiche : on s'y connecte avec le
-   même compte. Si le navigateur ne s'ouvre pas, l'adresse simple est affichée (sans code), avec le formulaire.
+2. démarre la caisse sur l'adresse locale (`127.0.0.1`) seulement ;
+3. ouvre la page de connexion dans le navigateur par défaut. **L'identifiant et le mot de passe se saisissent sur cette
+   page. Rien n'est demandé dans la fenêtre.** Si le navigateur ne s'ouvre pas, l'adresse est affichée : l'ouvrir soi-même.
 
-Exemple, sans rien demander (mot de passe saisi sans trace dans l'historique) :
+La connexion réussie démarre l'écoute des paiements. Le premier compte qui se connecte devient le commerçant de cette
+exécution : un autre compte est refusé (pour en changer, arrêter puis relancer le programme).
 
-```sh
-read -s CAISSE_PW
-CAISSE_CYCLOS_LOGIN="..." CAISSE_CYCLOS_PASSWORD="$CAISSE_PW" CYCLOS_CHANNEL=main \
-./build/graine34-notif-caisse
-unset CAISSE_PW
-```
+**Mot de passe.** Il n'est lu qu'à la connexion, saisi sur la page. Il est gardé **en mémoire seulement**, dans la session
+de la page, pour que l'écoute puisse se reconnecter à Cyclos quand son jeton expire. Il n'est écrit ni dans un fichier,
+ni dans les journaux, ni dans un message, ni dans l'environnement du programme. Il disparaît avec la session : à la
+déconnexion, après 20 minutes sans visite, au bout de **12 heures** au plus, ou si Cyclos le refuse. Les variables
+`CAISSE_CYCLOS_LOGIN` et `CAISSE_CYCLOS_PASSWORD` sont ignorées par l'exécutable. Une session expirée renvoie au formulaire :
+on s'y reconnecte avec le même compte. L'écoute s'arrête d'elle-même environ 45 secondes après la fermeture de la page.
+
+**Une seule tentative.** Pour ne pas faire bloquer le compte ou l'adresse par Cyclos :
+
+- un envoi du formulaire = un seul appel à Cyclos, jamais répété par le programme ;
+- un deuxième envoi pendant qu'un premier est vérifié est refusé ;
+- après un refus d'identifiant : pause de **30 secondes** ; après un deuxième refus de suite : **15 minutes**. Une connexion
+  réussie remet le compte à zéro ;
+- si Cyclos répond « trop de demandes » : 15 minutes tout de suite ; autre panne de Cyclos : 30 secondes ;
+- si Cyclos refuse l'identifiant quand l'écoute se reconnecte (mot de passe changé entre-temps) : un seul essai, puis le
+  formulaire est de nouveau demandé.
+
+**Sécurité en local.** La page est en HTTP, sans HTTPS : le mot de passe ne quitte pas l'ordinateur (adresse locale),
+mais il n'est pas chiffré sur cette liaison. Pour cette raison l'exécutable **refuse `CAISSE_OPEN_NETWORK`** (message, le
+programme ne démarre pas) et ne répond qu'aux noms `127.0.0.1`, `localhost` et `[::1]` avec son port (en-tête `Host`),
+ce qui écarte une page web qui chercherait à atteindre le programme sous un autre nom.
 
 | Variable | Rôle | Valeur par défaut |
 | --- | --- | --- |
 | `CYCLOS_BASE_URL` | Adresse de l'API Cyclos (jamais la démo : une valeur vide donne l'adresse de La Graine 34) | `https://laruchedesmonnaieslocales.org/lagraine34/api` |
 | `CYCLOS_CHANNEL` | Canal Cyclos (vide : aucun canal) | `main` |
 | `PORT` | Port d'écoute. Sans `PORT`, si 3001 est pris, 3002 à 3010 sont essayés. Avec `PORT`, seul ce port est essayé | `3001` |
-| `CAISSE_OPEN_NETWORK` | `true` : la page est aussi accessible depuis les autres appareils du réseau local (à n'utiliser que si c'est voulu : toute personne du réseau voit la page de connexion). Désactive le lien à usage unique : le formulaire est alors toujours demandé | `false` |
+| `CAISSE_OPEN_NETWORK` | Refusé par l'exécutable : le programme s'arrête avec un message (le mot de passe est saisi sur une page sans HTTPS, il ne doit pas traverser le réseau). Toujours possible avec `npm start`, voir « Activer et lancer la caisse » | non accepté |
 
-Les autres variables `CAISSE_*` (voir « Activer et lancer la caisse ») s'appliquent aussi. L'exécutable ne lit
-pas de fichier `.env`. L'écoute est toujours activée (pas besoin de `CAISSE_ENABLED`).
+Les autres variables `CAISSE_*` (voir « Activer et lancer la caisse ») s'appliquent aussi, sauf les deux identifiants
+(voir plus haut). L'exécutable ne lit pas de fichier `.env`. L'écoute est toujours activée (pas besoin de `CAISSE_ENABLED`).
 
-**Erreurs.** Si Cyclos refuse l'identifiant, ne répond pas ou n'est pas joignable, le programme affiche un
-message en français et attend « Entrée » avant de fermer la fenêtre. Il **ne réessaie jamais** et ne redemande pas
-le mot de passe : plusieurs échecs de suite peuvent faire bloquer le compte ou l'adresse par Cyclos. Il faut le
-relancer soi-même, une seule fois. Si la fenêtre n'est pas une vraie console (Git Bash sous Windows, entrée
-redirigée), le mot de passe n'est pas demandé et le programme s'arrête avec un message.
+**Erreurs au démarrage.** Un réglage invalide, un port déjà pris ou `CAISSE_OPEN_NETWORK` donnent un message en français,
+sans valeur saisie. Le programme attend « Entrée » avant de fermer la fenêtre (rien de ce qui est tapé n'est lu ni gardé).
+Les erreurs de connexion (identifiant refusé, Cyclos injoignable, trop de demandes) s'affichent sur la page, avec
+l'attente à respecter avant un nouvel essai.
 
 Pour arrêter : `Ctrl+C` (la fermeture de la fenêtre arrête aussi le programme).
 
-**État des essais.** Testé sur macOS (terminal simulé avec un faux Cyclos, port occupé, mauvais mot de passe,
-absence de console). **Non testé** sur Windows et Linux : saisie masquée (cmd, PowerShell, Windows Terminal),
-ouverture du navigateur (`rundll32` sous Windows, `xdg-open` sous Linux), double clic, pare-feu, SmartScreen.
+**État des essais.** Testé sur macOS avec un faux Cyclos (démarrage, port occupé, connexion sur la page, mauvais mot de passe,
+pauses). **Non testé** sur Windows et Linux : ouverture du navigateur (`rundll32` sous Windows, `xdg-open` sous Linux), double clic, pare-feu, SmartScreen.
 
 ## Arborescence
 
@@ -135,7 +142,7 @@ ouverture du navigateur (`rundll32` sous Windows, `xdg-open` sous Linux), double
 server.js            serveur HTTP : connexion, sessions, /caisse, déconnexion, statiques
 assets.js            lecture des fichiers statiques (disque, ou fichiers embarqués dans l'exécutable)
 main.js              point d'entrée de l'exécutable
-launcher.js          démarrage de l'exécutable : réglages, saisie masquée, vérification, navigateur
+launcher.js          démarrage de l'exécutable : réglages, port libre, navigateur
 build-sea.js         fabrication de l'exécutable (npm run build:exe)
 caisse-config.js     lecture et validation des variables CAISSE_*
 sse-parser.js        analyseur du flux d'événements Cyclos (SSE), sans accès réseau
@@ -511,8 +518,9 @@ identifiant (ceux des tests sont fictifs).
 
 ## Sécurité en bref
 
-- **Pas de mot de passe conservé par la page** : l'identifiant et le mot de passe
-  servent une seule fois, à la connexion, pour obtenir un jeton de session Cyclos.
+- **Pas de mot de passe conservé par la page** (mode `npm start`) : l'identifiant et le mot de passe
+  servent une seule fois, à la connexion, pour obtenir un jeton de session Cyclos. Dans l'exécutable,
+  le mot de passe est gardé en mémoire, dans la session, le temps de celle-ci (voir « Exécutable »).
   Le navigateur reçoit un identifiant de session aléatoire sans rapport avec le
   jeton, dans un cookie `HttpOnly` + `SameSite=Lax`.
 - **Sessions** : fermées à la déconnexion (le jeton est aussi fermé côté Cyclos),

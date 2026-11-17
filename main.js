@@ -1,12 +1,12 @@
 // Entry point of the single executable: starts the server on the local address and opens the page, where the merchant
 // types the login (see launcher.js).
 import { startServer } from "./server.js";
-import { launchWithPageLogin, openBrowser, waitForEnter } from "./launcher.js";
+import { launch, openBrowser, waitForEnter } from "./launcher.js";
 
 async function main() {
   const input = process.stdin;
   const output = process.stdout;
-  const result = await launchWithPageLogin({
+  const result = await launch({
     env: process.env,
     output,
     start: startServer,
@@ -14,7 +14,7 @@ async function main() {
   });
 
   if (result.code !== 0) {
-    if (!result.cancelled) await waitForEnter({ input, output });
+    await waitForEnter({ input, output });
     process.exit(result.code);
   }
 
