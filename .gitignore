@@ -16,7 +16,8 @@ npm-debug.log*
 *~
 .DS_Store
 
-# Consignes de travail (données proches de données réelles)
-consignes-code-notification-paiement.md
-consignes-2b-retouches-son-notification.md
+# Notes de travail (données proches de données réelles) : tout le dossier
+docs/
+
+# Fichiers fabriqués
 build/

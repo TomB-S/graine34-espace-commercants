@@ -176,7 +176,6 @@ test/                tests (node:test), un fichier par sujet : *.test.js
 tools/               outils hors serveur
   build-sea.js         fabrication de l'exécutable (npm run build:exe)
   push-smoke.js        script de vérification du flux, à lancer à la main
-docs/                consignes de travail (ignorées par git)
 .env.example         modèle du fichier `.env`
 ```
 
