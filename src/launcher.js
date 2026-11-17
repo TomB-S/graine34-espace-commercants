@@ -59,8 +59,13 @@ export function readLaunchSettings(env) {
     throw new LaunchError('CAISSE_OPEN_NETWORK invalide : "true" ou "false" attendu');
   }
   const openNetwork = network === "true";
+  // Meant for automated checks: the page is not opened, only its address is shown.
+  const noBrowser = env.CAISSE_NO_BROWSER;
+  if (noBrowser !== undefined && noBrowser !== "" && noBrowser !== "true" && noBrowser !== "false") {
+    throw new LaunchError('CAISSE_NO_BROWSER invalide : "true" ou "false" attendu');
+  }
   // Local address only, unless the network is opened on purpose (undefined = every interface).
-  return { baseUrl, channel, port, portImposed, openNetwork, host: openNetwork ? undefined : "127.0.0.1" };
+  return { baseUrl, channel, port, portImposed, openNetwork, noBrowser: noBrowser === "true", host: openNetwork ? undefined : "127.0.0.1" };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -187,6 +192,7 @@ export async function launch({ env, output, start, open }) {
   say(`La caisse est prête : ${url}`);
   say("Dans la page qui s'ouvre, saisissez votre identifiant et votre mot de passe. Rien n'est demandé dans cette fenêtre.");
   say("Laissez cette fenêtre ouverte. Pour arrêter : Ctrl+C, ou fermez la fenêtre.");
+  if (settings.noBrowser) return { code: 0, handle, url };
   if (!(await open(url))) {
     say(`Le navigateur n'a pas pu être ouvert. Ouvrez vous-même cette adresse : ${url}`);
   }

@@ -122,6 +122,7 @@ ce qui écarte une page web qui chercherait à atteindre le programme sous un au
 | `CYCLOS_CHANNEL` | Canal Cyclos (vide : aucun canal) | `main` |
 | `PORT` | Port d'écoute. Sans `PORT`, si 3001 est pris, 3002 à 3010 sont essayés. Avec `PORT`, seul ce port est essayé | `3001` |
 | `CAISSE_OPEN_NETWORK` | Refusé par l'exécutable : le programme s'arrête avec un message (le mot de passe est saisi sur une page sans HTTPS, il ne doit pas traverser le réseau). Toujours possible avec `npm start`, voir « Activer et lancer la caisse » | non accepté |
+| `CAISSE_NO_BROWSER` | `true` : le navigateur n'est pas ouvert, seule l'adresse est affichée (contrôles automatiques). `false` ou absent : comportement normal | non défini |
 
 Les autres variables `CAISSE_*` (voir « Activer et lancer la caisse ») s'appliquent aussi, sauf les deux identifiants
 (voir plus haut). L'exécutable ne lit pas de fichier `.env`. L'écoute est toujours activée (pas besoin de `CAISSE_ENABLED`).

@@ -36,6 +36,7 @@ test("lanceur : valeurs par défaut intégrées, écoute locale", () => {
   assert.equal(settings.portImposed, false);
   assert.equal(settings.host, "127.0.0.1");
   assert.equal(settings.openNetwork, false);
+  assert.equal(settings.noBrowser, false);
 });
 
 test("lanceur : les variables d'environnement l'emportent sur les valeurs par défaut", () => {
@@ -48,6 +49,9 @@ test("lanceur : les variables d'environnement l'emportent sur les valeurs par d�
   assert.equal(readLaunchSettings({ CYCLOS_CHANNEL: "" }).channel, "", "set but empty: no channel");
   assert.equal(readLaunchSettings({ CYCLOS_BASE_URL: "" }).baseUrl, DEFAULTS.baseUrl, "empty address: never the demo");
   assert.equal(readLaunchSettings({ CAISSE_OPEN_NETWORK: "false" }).host, "127.0.0.1");
+  assert.equal(readLaunchSettings({ CAISSE_NO_BROWSER: "true" }).noBrowser, true);
+  assert.equal(readLaunchSettings({ CAISSE_NO_BROWSER: "false" }).noBrowser, false);
+  assert.equal(readLaunchSettings({ CAISSE_NO_BROWSER: "" }).noBrowser, false, "set but empty: same as not set");
 });
 
 test("lanceur : variable invalide refusée, message en français sans la valeur", () => {
@@ -57,6 +61,7 @@ test("lanceur : variable invalide refusée, message en français sans la valeur"
     [{ PORT: "99999" }, /PORT invalide/, "99999"],
     [{ PORT: "abc" }, /PORT invalide/, "abc"],
     [{ CAISSE_OPEN_NETWORK: "oui" }, /CAISSE_OPEN_NETWORK invalide/, "oui"],
+    [{ CAISSE_NO_BROWSER: "peut-etre" }, /CAISSE_NO_BROWSER invalide/, "peut-etre"],
   ];
   for (const [env, pattern, value] of cases) {
     assert.throws(
@@ -184,6 +189,39 @@ test("lancement : rien n'est demandé, serveur local avec l'option réservée, a
   assert.match(output.text, /La caisse est prête : http:\/\/127\.0\.0\.1:3001/);
   assert.match(output.text, /Rien n'est demandé dans cette fenêtre/);
   assert.ok(!output.text.includes("depuis-env"));
+});
+
+test("lancement : CAISSE_NO_BROWSER=true n'ouvre pas le navigateur, l'adresse reste affichée", async () => {
+  const output = fakeOutput();
+  let opened = 0;
+  const result = await launch({
+    env: { CAISSE_NO_BROWSER: "true" },
+    output,
+    start: async (options) => ({ port: options.port, close: async () => {} }),
+    open: async () => {
+      opened += 1;
+      return true;
+    },
+  });
+  assert.equal(result.code, 0);
+  assert.equal(result.url, "http://127.0.0.1:3001");
+  assert.equal(opened, 0, "the browser is not opened");
+  assert.match(output.text, /La caisse est prête : http:\/\/127\.0\.0\.1:3001/);
+  assert.ok(!/navigateur n'a pas pu/.test(output.text), "not shown as a failure");
+});
+
+test("lancement : CAISSE_NO_BROWSER invalide, message en français, serveur non démarré", async () => {
+  const output = fakeOutput();
+  let started = 0;
+  const result = await launch({
+    env: { CAISSE_NO_BROWSER: "non" },
+    output,
+    start: async () => { started += 1; return {}; },
+    open: async () => true,
+  });
+  assert.equal(result.code, 1);
+  assert.equal(started, 0);
+  assert.match(output.text, /CAISSE_NO_BROWSER invalide/);
 });
 
 test("lancement : CAISSE_OPEN_NETWORK est refusé, le serveur n'est pas démarré", async () => {
