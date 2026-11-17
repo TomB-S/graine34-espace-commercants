@@ -707,8 +707,7 @@ form[action="/deconnexion"] {
   }
 
   .caisse-ligne {
-    grid-template-columns: 8.5rem minmax(0, 1fr) auto auto;
-    grid-template-areas: "heure qui numero montant";
+    grid-template-columns: 8.5rem minmax(0, 1fr) auto;
     column-gap: 1rem;
     font-size: 1.3rem;
   }
@@ -733,6 +732,21 @@ form[action="/deconnexion"] {
   input[type="password"],
   input[type="datetime-local"] {
     max-width: 22rem;
+  }
+}
+
+/* ---------- Wide enough (tablet in landscape, computer): the transaction number gets a column of its own ----------
+   Fixed widths for the number and for the amount, so that the numbers line up from one row to the next. The two 1fr columns
+   (name and empty space) are equal: the number sits in the middle of the free space between the name and the amount.
+   Narrower than this, the number stays under the name. */
+@media (min-width: 48rem) {
+  .caisse-ligne {
+    grid-template-columns: 8.5rem minmax(0, 1fr) 8rem minmax(0, 1fr) 8rem;
+    grid-template-areas: "heure qui numero . montant";
+  }
+
+  .caisse-numero {
+    text-align: center;
   }
 }
 
