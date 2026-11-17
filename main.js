@@ -1,18 +1,15 @@
-// Entry point of the single executable: asks what the environment does not give, checks it once, starts the server
-// on the local address and opens the page (see launcher.js).
+// Entry point of the single executable: starts the server on the local address and opens the page, where the merchant
+// types the login (see launcher.js).
 import { startServer } from "./server.js";
-import { createCyclosPush } from "./cyclos-push.js";
-import { launch, openBrowser, waitForEnter } from "./launcher.js";
+import { launchWithPageLogin, openBrowser, waitForEnter } from "./launcher.js";
 
 async function main() {
   const input = process.stdin;
   const output = process.stdout;
-  const result = await launch({
+  const result = await launchWithPageLogin({
     env: process.env,
-    input,
     output,
     start: startServer,
-    createPush: ({ baseUrl, channel }) => createCyclosPush({ baseUrl, channel }),
     open: openBrowser,
   });
 

@@ -113,6 +113,17 @@ export function createListenerManager({
   }
 
   return {
+    // Identity given by the login of the page (executable): the first account that logged in is THE merchant. Never
+    // replaced afterwards. No login to Cyclos is made for it (resolveListenerId is not needed any more).
+    bindIdentity(id) {
+      if (typeof id === "string" && id !== "" && !identity.id) identity.id = id;
+    },
+
+    // Cyclos id of the registered merchant, or null while it is not known (read only, never triggers a login).
+    get listenerId() {
+      return identity.id;
+    },
+
     // Is this visitor the registered merchant? `visitorId`: his Cyclos user id, or null when unreadable.
     // Returns { ok: true, merchantKey } | { ok: false, status: 403 | 503 }.
     async authorize(visitorId) {

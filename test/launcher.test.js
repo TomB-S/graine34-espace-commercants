@@ -429,7 +429,7 @@ test("lancement : avec le vrai serveur et un faux Cyclos, la caisse répond sur 
   });
   try {
     assert.equal(result.code, 0, output.text);
-    assert.equal(opened, result.url);
+    assert.ok(opened.startsWith(`${result.url}/ouvrir?t=`), "the browser gets the one-time link");
     assert.equal(cyclos.calls("POST", "/auth/session").length, 1, "one login for the check");
     const css = await fetch(`${result.url}/style.css`);
     assert.equal(css.status, 200);

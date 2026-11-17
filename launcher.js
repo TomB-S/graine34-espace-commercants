@@ -2,7 +2,8 @@
 // What it does, in order: built-in default settings (all can be changed by environment variables), the login
 // and the password asked in the window when the environment does not give them (the password is typed hidden
 // and kept in memory only: never written to a file, to the log, or to the environment), ONE check of the
-// credentials with Cyclos, the server on the local address only, then the page opened in the default browser.
+// credentials with Cyclos, the server on the local address only, then the page opened in the default browser
+// with a one-time link that logs in without the form (not when the network is opened).
 //
 // Nothing here is used by "npm start" or "node server.js". The functions take their streams and helpers as
 // parameters, so that the tests need no terminal, no network and no browser.
@@ -27,7 +28,13 @@ export class NotConsoleError extends LaunchError {}
 // Ctrl+C (or end of the input) while typing.
 export class CancelledError extends Error {}
 
+// Longest life of a page session in the executable (the server's own default is 8 hours).
+export const SESSION_MAX_MS = 12 * 3_600_000;
+
 export const MESSAGES = Object.freeze({
+  networkRefused:
+    "Cette version du programme ne s'ouvre pas au réseau local : CAISSE_OPEN_NETWORK n'est pas accepté.\n" +
+    "Retirez cette variable, puis relancez le programme.",
   notConsole:
     "Ce programme doit être ouvert dans une vraie fenêtre de terminal pour demander le mot de passe sans l'afficher.\n" +
     "Windows : Invite de commandes, PowerShell ou Windows Terminal (pas Git Bash).\n" +
@@ -239,18 +246,25 @@ export function openBrowser(url, { platform = process.platform, spawn = nodeSpaw
 // Server
 
 // Starts the server on the first free port (or only on the imposed one). `start(options)` is startServer().
-export async function listenOnFreePort(start, settings, caisse) {
+export function listenOnFreePort(start, settings, caisse) {
+  return listenOnPorts(start, settings, (port) => ({
+    port,
+    host: settings.host,
+    cyclosBaseUrl: settings.baseUrl,
+    cyclosChannel: settings.channel,
+    // One-time login link: only on the local address (the server refuses it otherwise).
+    autoLogin: !settings.openNetwork,
+    caisse,
+  }));
+}
+
+// Tries the ports one after the other (only the imposed one when PORT is set). `optionsFor(port)`: options of start().
+async function listenOnPorts(start, settings, optionsFor) {
   const first = settings.port;
   const count = settings.portImposed ? 1 : PORT_TRIES;
   for (let i = 0; i < count; i += 1) {
     try {
-      return await start({
-        port: first + i,
-        host: settings.host,
-        cyclosBaseUrl: settings.baseUrl,
-        cyclosChannel: settings.channel,
-        caisse,
-      });
+      return await start(optionsFor(first + i));
     } catch (error) {
       if (error?.code !== "EADDRINUSE") throw error;
     }
@@ -305,6 +319,57 @@ export async function launch({ env, input, output, start, createPush, open }) {
   if (settings.openNetwork) {
     say("Attention : l'accès est ouvert à tout le réseau local (CAISSE_OPEN_NETWORK=true).");
   }
+  say("Laissez cette fenêtre ouverte. Pour arrêter : Ctrl+C, ou fermez la fenêtre.");
+  // The page is opened with a one-time link (valid a few seconds) that logs in without the form. Only the plain address
+  // is ever shown to the merchant: the code is never printed.
+  const link = typeof handle.issueLoginCode === "function" && !settings.openNetwork ? `${url}/ouvrir?t=${handle.issueLoginCode()}` : url;
+  if (!(await open(link))) {
+    say(`Le navigateur n'a pas pu être ouvert. Ouvrez vous-même cette adresse : ${url}`);
+  }
+  return { code: 0, handle, url };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Start-up with the login typed on the page of the browser
+
+// The start-up of the executable: nothing is asked in the window. The server starts on the local address with the
+// login typed on its page starting the listening (option `listenOnLogin`, used by this entry point only), and the
+// page is opened in the default browser at the plain address. The credentials never pass here.
+// `deps`: { env, output, start (startServer), open (url -> Promise<boolean>) }. Same result as launch().
+export async function launchWithPageLogin({ env, output, start, open }) {
+  const say = (text) => output.write(`${text}\n`);
+  let settings;
+  try {
+    settings = readLaunchSettings(env);
+  } catch (error) {
+    if (error instanceof LaunchError) {
+      say(error.message);
+      return { code: 1 };
+    }
+    throw error;
+  }
+  if (settings.openNetwork) {
+    say(MESSAGES.networkRefused);
+    return { code: 1 };
+  }
+
+  let handle;
+  try {
+    handle = await listenOnPorts(start, settings, (port) => ({
+      port,
+      host: settings.host,
+      cyclosBaseUrl: settings.baseUrl,
+      cyclosChannel: settings.channel,
+      listenOnLogin: true,
+      maxMs: SESSION_MAX_MS,
+    }));
+  } catch (error) {
+    say(error.message);
+    return { code: 1 };
+  }
+  const url = `http://127.0.0.1:${handle.port}`;
+  say(`La caisse est prête : ${url}`);
+  say("Dans la page qui s'ouvre, saisissez votre identifiant et votre mot de passe. Rien n'est demandé dans cette fenêtre.");
   say("Laissez cette fenêtre ouverte. Pour arrêter : Ctrl+C, ou fermez la fenêtre.");
   if (!(await open(url))) {
     say(`Le navigateur n'a pas pu être ouvert. Ouvrez vous-même cette adresse : ${url}`);

@@ -7,7 +7,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { readCaisseConfig } from "./caisse-config.js";
+import { readCaisseConfig, PROTOTYPE_MERCHANT } from "./caisse-config.js";
 import { createCyclosPush, PushAuthError } from "./cyclos-push.js";
 import { describeError } from "./cyclos-listener.js";
 import { createListenerManager } from "./listener-manager.js";
@@ -69,6 +69,22 @@ const MAX_BODY_BYTES = 10_000;
 // from the same IP address, further attempts get a 429 until the window ends.
 const LOGIN_MAX_FAILURES = 5;
 const LOGIN_WINDOW_MS = 15 * 60_000;
+
+// Login typed on the page that STARTS the listening (single executable only: startServer({ listenOnLogin: true })).
+// Rule of one attempt, so that Cyclos never blocks the address or the account:
+// - one submitted form = exactly one call to Cyclos, never repeated by the server (not even after a network error);
+// - a second form arriving while one is being checked is refused (double click, Enter pressed twice);
+// - after a refusal (401): a short pause; after a second refusal in a row: a long one. A success starts over;
+// - Cyclos asking to slow down (429): the long pause at once. Any other failure: the short pause.
+// The counter is global (every request comes from the same machine). Nothing here holds a login or a password.
+const LOGIN_SHORT_PAUSE_MS = 30_000;
+const LOGIN_LONG_PAUSE_MS = 15 * 60_000;
+let LISTEN_ON_LOGIN = false;
+let SHORT_PAUSE_MS = LOGIN_SHORT_PAUSE_MS;
+let LONG_PAUSE_MS = LOGIN_LONG_PAUSE_MS;
+const pageLogin = { inFlight: false, refusals: 0, lockedUntil: 0 };
+// Host header accepted when the login is typed on the page (null = not checked): only this machine's own names.
+let ALLOWED_HOSTS = null;
 
 // Local session store: our session id (the cookie value) ->
 // { sessionToken, csrfToken, createdAt, lastSeenAt }.
@@ -197,7 +213,9 @@ async function createCyclosSession(login, password) {
     throw new AccessDeniedError("403 on /auth/session");
   }
   if (!response.ok) {
-    throw new CyclosUnavailableError(`${response.status} on /auth/session`);
+    const error = new CyclosUnavailableError(`${response.status} on /auth/session`);
+    error.status = response.status;
+    throw error;
   }
 
   const { sessionToken } = await response.json();
@@ -391,6 +409,177 @@ function redirect(res, location, headers = {}) {
   res.end();
 }
 
+// Opens the local session for a Cyclos session token (form login or one-time link) and sends the visitor to /caisse.
+// `credentials` ({ login, password }, only when the login starts the listening) live in the session record and nowhere
+// else: they disappear with it (logout, 20 minutes without use, maximum duration, refusal by Cyclos).
+function openSession(res, sessionToken, credentials = null) {
+  const id = randomUUID();
+  const now = Date.now();
+  sessions.set(id, {
+    sessionToken,
+    csrfToken: randomBytes(32).toString("hex"),
+    createdAt: now,
+    lastSeenAt: now,
+    ...(credentials ? { credentials } : {}),
+  });
+  redirect(res, "/caisse", {
+    "Set-Cookie": cookieHeader(id, Math.floor(MAX_MS / 1000)),
+  });
+}
+
+// One-time login link (single executable on a local address only). startServer({ autoLogin: true }) turns it on;
+// the handle then gives issueLoginCode(). The code is random (128 bits), valid LOGIN_CODE_TTL_MS, usable once, and only its
+// hash is kept. It is never written to a log (the paths logged elsewhere have no query string). Any problem
+// (unknown, expired or used code, request not from this machine, Cyclos refusing) sends the visitor to the normal login
+// form, with no hint about the reason.
+const LOGIN_CODE_TTL_MS = 15_000;
+let LOGIN_CODES = null; // null = disabled; otherwise Map(hash of the code -> expiry time)
+let LOGIN_CODE_TTL = LOGIN_CODE_TTL_MS;
+const hashLoginCode = (code) => createHash("sha256").update(code).digest("hex");
+
+function isLoopbackAddress(address) {
+  return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
+}
+
+function issueLoginCode(now = Date.now()) {
+  if (!LOGIN_CODES) throw new Error("Connexion automatique non activée");
+  const code = randomBytes(16).toString("hex");
+  LOGIN_CODES.set(hashLoginCode(code), now + LOGIN_CODE_TTL);
+  return code;
+}
+
+// Removes the code from the list (whatever happens next) and tells whether it was valid.
+function takeLoginCode(code, now = Date.now()) {
+  if (!LOGIN_CODES || !/^[0-9a-f]{32}$/.test(code)) return false;
+  const key = hashLoginCode(code);
+  const expiresAt = LOGIN_CODES.get(key);
+  LOGIN_CODES.delete(key);
+  return expiresAt !== undefined && now <= expiresAt;
+}
+
+async function handleLoginLink(req, res, url) {
+  const valid = takeLoginCode(url.searchParams.get("t") ?? "");
+  const credentials = valid && isLoopbackAddress(req.socket.remoteAddress) ? CAISSE.credentialsFor(PROTOTYPE_MERCHANT) : null;
+  if (!credentials) {
+    redirect(res, "/");
+    return;
+  }
+  let sessionToken;
+  try {
+    sessionToken = await createCyclosSession(credentials.login, credentials.password);
+  } catch {
+    console.error("Caisse : connexion automatique impossible, le formulaire de connexion est proposé");
+    redirect(res, "/");
+    return;
+  }
+  openSession(res, sessionToken);
+}
+
+// Credentials for the listener, taken from the freshest live page session of the registered merchant (same Cyclos
+// account as the first login). Looked up at each use and never kept elsewhere. null when none is known.
+function pageCredentials(merchantKey) {
+  const listenerId = CAISSE_RUNTIME?.manager.listenerId;
+  if (merchantKey !== PROTOTYPE_MERCHANT || !listenerId) return null;
+  const now = Date.now();
+  let best = null;
+  for (const session of sessions.values()) {
+    if (!session.credentials || session.cyclosUserId !== listenerId || isExpired(session, now)) continue;
+    if (!best || session.lastSeenAt > best.lastSeenAt) best = session;
+  }
+  return best ? { login: best.credentials.login, password: best.credentials.password } : null;
+}
+
+// Cyclos refused the credentials the listener tried: forget them (their sessions end, the visitors get the form again).
+function dropPageCredentials() {
+  const listenerId = CAISSE_RUNTIME?.manager.listenerId;
+  for (const [id, session] of sessions) {
+    if (!session.credentials || session.cyclosUserId !== listenerId) continue;
+    sessions.delete(id);
+    closeCyclosSession(session.sessionToken);
+  }
+}
+
+// "30 secondes", "15 minutes": a wait in words, rounded up.
+function waitInWords(ms) {
+  const seconds = Math.max(1, Math.ceil(ms / 1000));
+  if (seconds <= 90) return `${seconds} seconde${seconds > 1 ? "s" : ""}`;
+  const minutes = Math.ceil(seconds / 60);
+  return `${minutes} minute${minutes > 1 ? "s" : ""}`;
+}
+
+function renderLoginProblem(title, text, { retry = true } = {}) {
+  return htmlPage(
+    title,
+    `<h1>${escapeHtml(title)}</h1>
+  ${errorMessage(escapeHtml(text))}
+  ${retry ? `<p><a href="/">Retour au formulaire</a></p>` : ""}`,
+  );
+}
+
+// POST /connexion when the login starts the listening: the gate of the rule of one attempt (see above), then ONE
+// call to Cyclos. The login and the password stay in this function and in the session record, nowhere else (no log, no message).
+async function handlePageLogin(res, login, password) {
+  const now = Date.now();
+  if (pageLogin.inFlight) {
+    send(res, 429, "text/html", renderLoginProblem("Connexion en cours", "Une connexion est déjà en cours de vérification. Patientez quelques secondes, sans renvoyer le formulaire."), { "Retry-After": "5" });
+    return;
+  }
+  if (pageLogin.lockedUntil > now) {
+    const wait = pageLogin.lockedUntil - now;
+    send(res, 429, "text/html", renderLoginProblem("Patientez avant de réessayer", `Pour ne pas bloquer votre compte chez Cyclos, une nouvelle tentative sera possible dans ${waitInWords(wait)}.`), { "Retry-After": String(Math.ceil(wait / 1000)) });
+    return;
+  }
+  if (!login || !password) {
+    send(res, 401, "text/html", renderLoginFailed());
+    return;
+  }
+
+  const pauseFor = (ms) => {
+    pageLogin.lockedUntil = Date.now() + ms;
+  };
+  pageLogin.inFlight = true;
+  let sessionToken;
+  try {
+    sessionToken = await createCyclosSession(login, password);
+  } catch (error) {
+    if (error instanceof LoginError) {
+      pageLogin.refusals += 1;
+      const ms = pageLogin.refusals >= 2 ? LONG_PAUSE_MS : SHORT_PAUSE_MS;
+      pauseFor(ms);
+      send(res, 401, "text/html", renderLoginProblem(
+        "Connexion échouée",
+        `Identifiant ou mot de passe incorrect. Pour ne pas bloquer votre compte chez Cyclos, une nouvelle tentative sera possible dans ${waitInWords(ms)}. ` +
+          (pageLogin.refusals >= 2 ? "Si le refus continue, contactez La Graine 34." : "Vérifiez votre saisie : après un deuxième refus de suite, l'attente sera de 15 minutes."),
+      ));
+      return;
+    }
+    if (error instanceof AccessDeniedError) {
+      pauseFor(SHORT_PAUSE_MS);
+      send(res, 403, "text/html", renderAccessDenied());
+      return;
+    }
+    if (error instanceof CyclosUnavailableError) {
+      console.error(`Cyclos injoignable ou en erreur : ${error.message}`);
+      const busy = error.status === 429;
+      pauseFor(busy ? LONG_PAUSE_MS : SHORT_PAUSE_MS);
+      send(res, busy ? 503 : 502, "text/html", renderLoginProblem(
+        busy ? "Cyclos demande de patienter" : "Cyclos ne répond pas",
+        busy
+          ? `Cyclos reçoit trop de demandes. N'insistez pas : réessayez dans ${waitInWords(LONG_PAUSE_MS)}.`
+          : `Impossible de joindre Cyclos pour le moment. Vérifiez la connexion internet, puis réessayez dans ${waitInWords(SHORT_PAUSE_MS)}.`,
+      ));
+      return;
+    }
+    throw error;
+  } finally {
+    pageLogin.inFlight = false;
+  }
+
+  pageLogin.refusals = 0;
+  pageLogin.lockedUntil = 0;
+  openSession(res, sessionToken, { login, password });
+}
+
 // Reads a POST body as text, refusing anything above `limit` bytes.
 // Rejects with BodyTooLargeError, from the declared Content-Length when there
 // is one, or while streaming (chunked bodies). Nothing above the limit is kept.
@@ -478,6 +667,11 @@ function getSession(req) {
 // Cleanup of expired sessions and of old login-failure counters, run
 // periodically by startServer() (and callable directly, tests do).
 function sweep(now = Date.now()) {
+  if (LOGIN_CODES) {
+    for (const [key, expiresAt] of LOGIN_CODES) {
+      if (now > expiresAt) LOGIN_CODES.delete(key);
+    }
+  }
   for (const [id, session] of sessions) {
     if (isExpired(session, now)) expireSession(id, session);
   }
@@ -525,6 +719,9 @@ async function caisseVisit(req, res, fail, { wait = false } = {}) {
     }
     if (session.cyclosUserId === null) console.error("Caisse : identifiant utilisateur du visiteur illisible, accès refusé");
   }
+
+  // The login starts the listening: the first account that logged in is the registered merchant.
+  if (LISTEN_ON_LOGIN && session.credentials) manager.bindIdentity(session.cyclosUserId);
 
   const decision = await manager.authorize(session.cyclosUserId);
   if (!decision.ok) {
@@ -602,6 +799,13 @@ async function handleCaisseData(req, res) {
 }
 
 const server = http.createServer(async (req, res) => {
+  // Login typed on the page: only this machine's own names are served. A web page that makes the browser reach this port
+  // under another name (DNS rebinding) is refused, before anything is read or any URL is built from the header.
+  if (ALLOWED_HOSTS && !ALLOWED_HOSTS.has(String(req.headers.host ?? "").toLowerCase())) {
+    res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store" });
+    res.end("Adresse non autorisée");
+    return;
+  }
   const url = new URL(req.url, `http://${req.headers.host}`);
   const { pathname } = url;
   const route = `${req.method} ${pathname}`;
@@ -644,6 +848,11 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (route === "GET /ouvrir" && LOGIN_CODES) {
+      await handleLoginLink(req, res, url);
+      return;
+    }
+
     switch (route) {
       case "GET /":
         send(res, 200, "text/html", renderLoginForm());
@@ -657,6 +866,12 @@ const server = http.createServer(async (req, res) => {
             "text/html",
             renderForbidden("Origine de la requête non autorisée."),
           );
+          return;
+        }
+
+        if (LISTEN_ON_LOGIN) {
+          const typed = new URLSearchParams(await readBody(req));
+          await handlePageLogin(res, typed.get("login") ?? "", typed.get("password") ?? "");
           return;
         }
 
@@ -696,17 +911,7 @@ const server = http.createServer(async (req, res) => {
           throw error;
         }
 
-        const id = randomUUID();
-        const now = Date.now();
-        sessions.set(id, {
-          sessionToken,
-          csrfToken: randomBytes(32).toString("hex"),
-          createdAt: now,
-          lastSeenAt: now,
-        });
-        redirect(res, "/caisse", {
-          "Set-Cookie": cookieHeader(id, Math.floor(MAX_MS / 1000)),
-        });
+        openSession(res, sessionToken);
         return;
       }
 
@@ -788,11 +993,36 @@ export function startServer(options = {}) {
   if (server.listening) {
     return Promise.reject(new Error("Le serveur est déjà démarré"));
   }
+  if (options.listenOnLogin && (options.autoLogin || !["127.0.0.1", "::1", "localhost"].includes(options.host))) {
+    // Local address only (the password typed on the page must not cross a network), and not with the one-time link.
+    return Promise.reject(new Error("La connexion qui démarre l'écoute exige l'écoute locale"));
+  }
   try {
     CHANNEL = channelName(options.cyclosChannel ?? process.env.CYCLOS_CHANNEL);
-    CAISSE = readCaisseConfig(process.env, options.caisse);
+    CAISSE = options.listenOnLogin
+      ? readCaisseConfig(process.env, { ...options.caisse, enabled: true, credentialsFromLogin: true })
+      : readCaisseConfig(process.env, options.caisse);
   } catch (error) {
     return Promise.reject(error);
+  }
+  LISTEN_ON_LOGIN = Boolean(options.listenOnLogin);
+  if (LISTEN_ON_LOGIN) {
+    // The only difference with the hosted mode: where the listener's credentials come from.
+    CAISSE = Object.freeze({ ...CAISSE, credentialsFor: pageCredentials, credentialsRefused: dropPageCredentials });
+    SHORT_PAUSE_MS = options.loginPauseMs ?? LOGIN_SHORT_PAUSE_MS;
+    LONG_PAUSE_MS = options.loginLongPauseMs ?? LOGIN_LONG_PAUSE_MS;
+    Object.assign(pageLogin, { inFlight: false, refusals: 0, lockedUntil: 0 });
+  }
+  ALLOWED_HOSTS = null;
+  if (options.autoLogin) {
+    // Only for a local address: on a network, anyone who sees the link could use it.
+    if (!CAISSE.enabled || !["127.0.0.1", "::1", "localhost"].includes(options.host)) {
+      return Promise.reject(new Error("La connexion automatique exige la caisse activée et l'écoute locale"));
+    }
+    LOGIN_CODES = new Map();
+    LOGIN_CODE_TTL = options.loginCodeTtlMs ?? LOGIN_CODE_TTL_MS;
+  } else {
+    LOGIN_CODES = null;
   }
   BASE = baseUrl(options.cyclosBaseUrl ?? process.env.CYCLOS_BASE_URL);
   COOKIE_SECURE = options.cookieSecure ?? process.env.COOKIE_SECURE === "true";
@@ -807,6 +1037,10 @@ export function startServer(options = {}) {
     server.once("error", reject);
     server.listen(options.port ?? PORT, options.host, () => {
       server.off("error", reject);
+      if (LISTEN_ON_LOGIN) {
+        const { port } = server.address();
+        ALLOWED_HOSTS = new Set([`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`]);
+      }
       const timer = setInterval(sweep, SWEEP_INTERVAL_MS);
       timer.unref();
       if (CAISSE.enabled) {
@@ -817,8 +1051,13 @@ export function startServer(options = {}) {
         port: server.address().port,
         sweep,
         caisseEnabled: CAISSE.enabled,
+        // One-time login link code (only when started with autoLogin).
+        issueLoginCode: options.autoLogin ? () => issueLoginCode() : undefined,
         async close() {
           clearInterval(timer);
+          LOGIN_CODES = null;
+          ALLOWED_HOSTS = null;
+          LISTEN_ON_LOGIN = false;
           // Listeners first: streams cut, Cyclos sessions closed, tickets forgotten.
           const runtime = CAISSE_RUNTIME;
           CAISSE_RUNTIME = null;

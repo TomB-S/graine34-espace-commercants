@@ -100,12 +100,18 @@ export function readCaisseConfig(env = process.env, overrides = {}) {
     password = env.CAISSE_CYCLOS_PASSWORD ?? "";
   }
 
-  const { login: loginOverride, password: passwordOverride, ...rest } = overrides;
+  // `credentialsFromLogin` (executable only, see startServer): the credentials are not configured at all, they come
+  // from the login form of the page. Whatever the environment holds is then ignored, never used.
+  const { login: loginOverride, password: passwordOverride, credentialsFromLogin = false, ...rest } = overrides;
   Object.assign(config, rest);
   login = loginOverride ?? login;
   password = passwordOverride ?? password;
+  if (credentialsFromLogin) {
+    login = "";
+    password = "";
+  }
 
-  if (config.enabled && (login.trim() === "" || password === "")) {
+  if (config.enabled && !credentialsFromLogin && (login.trim() === "" || password === "")) {
     throw new Error(
       "CAISSE_ENABLED=true exige CAISSE_CYCLOS_LOGIN et CAISSE_CYCLOS_PASSWORD (compte d'écoute Cyclos)",
     );

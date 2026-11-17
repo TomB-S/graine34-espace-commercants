@@ -260,6 +260,9 @@ export function createListener({
           const duringLogin = !token;
           if (duringLogin) {
             loginFailures += 1;
+            // Optional (executable): the credentials come from the page and are forgotten at the first refusal, so the
+            // next try finds none and the loop stops: a refused login is never repeated.
+            config.credentialsRefused?.(merchantKey);
             if (!everLoggedIn) {
               giveUp("identifiants refusés par Cyclos (401)");
               break;

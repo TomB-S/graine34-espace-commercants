@@ -91,8 +91,12 @@ Le programme :
    `CAISSE_CYCLOS_LOGIN` et `CAISSE_CYCLOS_PASSWORD` ne sont pas dans l'environnement. Ils restent en mémoire :
    jamais écrits dans un fichier, ni dans les journaux, ni dans l'environnement du programme ;
 3. vérifie l'identifiant **une seule fois** auprès de Cyclos ;
-4. démarre la caisse sur l'adresse locale (`127.0.0.1`) seulement, puis ouvre la page dans le navigateur par défaut.
-   Il faut s'y connecter avec le même compte. Si le navigateur ne s'ouvre pas, l'adresse est affichée.
+4. démarre la caisse sur l'adresse locale (`127.0.0.1`) seulement, puis ouvre la page dans le navigateur par défaut
+   avec un **lien à usage unique** : la page `/caisse` s'affiche sans formulaire de connexion. Le code du lien est
+   aléatoire, valable **15 secondes**, utilisable une seule fois, et n'est écrit dans aucun journal ni affiché à l'écran.
+   S'il est expiré ou déjà utilisé (navigateur trop lent à démarrer, lien rouvert), ou si la session expire
+   (20 minutes sans visite, 8 heures au plus), le formulaire de connexion habituel s'affiche : on s'y connecte avec le
+   même compte. Si le navigateur ne s'ouvre pas, l'adresse simple est affichée (sans code), avec le formulaire.
 
 Exemple, sans rien demander (mot de passe saisi sans trace dans l'historique) :
 
@@ -108,7 +112,7 @@ unset CAISSE_PW
 | `CYCLOS_BASE_URL` | Adresse de l'API Cyclos (jamais la démo : une valeur vide donne l'adresse de La Graine 34) | `https://laruchedesmonnaieslocales.org/lagraine34/api` |
 | `CYCLOS_CHANNEL` | Canal Cyclos (vide : aucun canal) | `main` |
 | `PORT` | Port d'écoute. Sans `PORT`, si 3001 est pris, 3002 à 3010 sont essayés. Avec `PORT`, seul ce port est essayé | `3001` |
-| `CAISSE_OPEN_NETWORK` | `true` : la page est aussi accessible depuis les autres appareils du réseau local (à n'utiliser que si c'est voulu : toute personne du réseau voit la page de connexion) | `false` |
+| `CAISSE_OPEN_NETWORK` | `true` : la page est aussi accessible depuis les autres appareils du réseau local (à n'utiliser que si c'est voulu : toute personne du réseau voit la page de connexion). Désactive le lien à usage unique : le formulaire est alors toujours demandé | `false` |
 
 Les autres variables `CAISSE_*` (voir « Activer et lancer la caisse ») s'appliquent aussi. L'exécutable ne lit
 pas de fichier `.env`. L'écoute est toujours activée (pas besoin de `CAISSE_ENABLED`).
