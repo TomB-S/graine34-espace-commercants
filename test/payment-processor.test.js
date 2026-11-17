@@ -7,12 +7,12 @@
 // payer, amount, description, identifier or token. All values are fictitious. Basic notions: test/statique.test.js.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { startFakeCyclos, USER, entry, transfer, paymentNotification, notificationSettingsBody } from "../test-support/fake-cyclos.js";
-import { readCaisseConfig } from "../caisse-config.js";
-import { createCyclosPush } from "../cyclos-push.js";
-import { createTicketStore, isNew } from "../ticket-store.js";
-import { createListener } from "../cyclos-listener.js";
-import { createPaymentProcessor } from "../payment-processor.js";
+import { startFakeCyclos, USER, entry, transfer, paymentNotification, notificationSettingsBody } from "./support/fake-cyclos.js";
+import { readCaisseConfig } from "../src/caisse-config.js";
+import { createCyclosPush } from "../src/cyclos-push.js";
+import { createTicketStore, isNew } from "../src/ticket-store.js";
+import { createListener } from "../src/cyclos-listener.js";
+import { createPaymentProcessor } from "../src/payment-processor.js";
 
 async function waitFor(condition, what, ms = 4000) {
   const end = Date.now() + ms;

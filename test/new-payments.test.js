@@ -2,7 +2,7 @@
 // Intention: the first load never reports anything, then only a ticket none of whose keys was seen is new.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createNewPaymentDetector } from "../new-payments.js";
+import { createNewPaymentDetector } from "../web/js/new-payments.js";
 
 const ticket = (keys, extra = {}) => ({ keys: [].concat(keys), initial: false, ...extra });
 

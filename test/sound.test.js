@@ -3,8 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { createSound } from "../sound.js";
-import { BEEP, beepLength } from "../sound-logic.js";
+import { createSound } from "../web/js/sound.js";
+import { BEEP, beepLength } from "../web/js/sound-logic.js";
 
 function fakeContext(resumeTo = "running") {
   const log = { created: 0, oscillators: [], gains: [], changes: 0, context: null };
@@ -193,7 +193,7 @@ test("audio : sans stockage ni cible de gestes (valeurs par défaut) rien ne cas
 
 // Intention: no sound file, nothing fetched, and no direct access to the storage (it is given, and its wrapper never throws).
 test("audio : aucun fichier audio, aucune dépendance, aucun accès direct au stockage dans sound.js", async () => {
-  const code = await readFile(new URL("../sound.js", import.meta.url), "utf8");
+  const code = await readFile(new URL("../web/js/sound.js", import.meta.url), "utf8");
   assert.ok(!/\.(mp3|wav|ogg|m4a)|new Audio\(|<audio|fetch\(|decodeAudioData|localStorage|sessionStorage|indexedDB/i.test(code));
   assert.deepEqual([...code.matchAll(/^import .* from "([^"]+)";/gm)].map((m) => m[1]), ["./sound-logic.js"]);
 });

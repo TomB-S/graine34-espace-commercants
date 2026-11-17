@@ -3,8 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { createCaisseView } from "../caisse-view.js";
-import { createNewPaymentDetector } from "../new-payments.js";
+import { createCaisseView } from "../web/js/caisse-view.js";
+import { createNewPaymentDetector } from "../web/js/new-payments.js";
 
 class Node {
   constructor(tag) {
@@ -279,7 +279,7 @@ test("vue : l'affichage reste en place pendant une coupure réseau", () => {
 // Intention: the files the browser loads never build HTML from a string, never evaluate text and never use storage or other pages.
 test("fichiers du navigateur : ni innerHTML, ni eval, ni document.write", async () => {
   for (const name of ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic", "notification", "notification-logic", "controls-logic", "refresh-logic"]) {
-    const code = await readFile(new URL(`../${name}.js`, import.meta.url), "utf8");
+    const code = await readFile(new URL(`../web/js/${name}.js`, import.meta.url), "utf8");
     assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\s*\(|new Function|setTimeout\(\s*["'`]/.test(code), name);
   }
 });

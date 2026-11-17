@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { createNotifier } from "../notification.js";
+import { createNotifier } from "../web/js/notification.js";
 
 function fakeNotification({ permission = "default", answer = "granted", throwOnCreate = false } = {}) {
   const log = { requested: 0, shown: [] };
@@ -109,7 +109,7 @@ test("notifier : requestPermission qui échoue ne casse rien", async () => {
 
 // Intention: no service worker, no push, nothing stored, no request for the permission outside request().
 test("notifier : ni service worker, ni push, ni stockage dans notification.js", async () => {
-  const code = await readFile(new URL("../notification.js", import.meta.url), "utf8");
+  const code = await readFile(new URL("../web/js/notification.js", import.meta.url), "utf8");
   assert.ok(!/serviceWorker|PushManager|pushManager|localStorage|sessionStorage|indexedDB|fetch\(/i.test(code));
   assert.equal(code.match(/requestPermission/g).length, 1, "asked in one place only (request())");
   assert.deepEqual([...code.matchAll(/^import .* from "([^"]+)";/gm)].map((m) => m[1]), []);

@@ -1,7 +1,7 @@
 // The one button of the sound and the notifications (controls-logic.js): pure logic, no browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { controlsLabel } from "../controls-logic.js";
+import { controlsLabel } from "../web/js/controls-logic.js";
 
 const sound = (extra = {}) => ({ supported: true, wanted: true, audioState: "none", ...extra });
 const notif = (extra = {}) => ({ supported: true, secure: true, permission: "default", ...extra });

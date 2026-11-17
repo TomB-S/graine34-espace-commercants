@@ -7,10 +7,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 // MUST stay first: cleans the environment variables before server.js is loaded (see env-propre.js).
-import "../test-support/env-propre.js";
-import { formatAmount } from "../server.js";
-import { transfer, paymentNotification, entry } from "../test-support/fake-cyclos.js";
-import { makeTicket, createTicketStore, ticketDisplay, isNew, transferShapeOfTransaction } from "../ticket-store.js";
+import "./support/env-propre.js";
+import { formatAmount } from "../src/server.js";
+import { transfer, paymentNotification, entry } from "./support/fake-cyclos.js";
+import { makeTicket, createTicketStore, ticketDisplay, isNew, transferShapeOfTransaction } from "../src/ticket-store.js";
 
 const NOW = Date.parse("2026-01-10T12:00:00Z");
 

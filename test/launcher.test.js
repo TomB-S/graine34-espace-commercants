@@ -1,15 +1,15 @@
 // Start-up of the single executable (launcher.js): defaults, the browser, the free port, the whole sequence with the login
 // typed on the page. No real terminal, no real browser, no real Cyclos for most tests: the streams and helpers are fakes.
 // FICTITIOUS values only; the sentinel password must appear nowhere in what is shown or logged.
-import "../test-support/env-propre.js";
+import "./support/env-propre.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { networkInterfaces } from "node:os";
 import net from "node:net";
-import { startServer } from "../server.js";
-import { startFakeCyclos, USER } from "../test-support/fake-cyclos.js";
-import { rawRequest } from "../test-support/harness.js";
+import { startServer } from "../src/server.js";
+import { startFakeCyclos, USER } from "./support/fake-cyclos.js";
+import { rawRequest } from "./support/harness.js";
 import {
   DEFAULTS,
   MESSAGES,
@@ -21,7 +21,7 @@ import {
   openBrowser,
   listenOnFreePort,
   launch,
-} from "../launcher.js";
+} from "../src/launcher.js";
 
 const fakeOutput = () => ({ text: "", write(chunk) { this.text += chunk; } });
 

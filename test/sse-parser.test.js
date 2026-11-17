@@ -5,7 +5,7 @@
 // and the decoding of the JSON (event name or "type" field). All values are fictitious. Basic notions: test/statique.test.js.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createSseParser, interpretEvent } from "../sse-parser.js";
+import { createSseParser, interpretEvent } from "../src/sse-parser.js";
 
 // Feeds all chunks one after the other and returns every event produced.
 function parseAll(chunks) {

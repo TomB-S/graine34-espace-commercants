@@ -6,11 +6,11 @@
 // All values are fictitious. Basic notions: test/statique.test.js.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { startFakeCyclos, USER, paymentNotification } from "../test-support/fake-cyclos.js";
-import { readCaisseConfig } from "../caisse-config.js";
-import { createCyclosPush, PushAuthError } from "../cyclos-push.js";
-import { createTicketStore } from "../ticket-store.js";
-import { createListener } from "../cyclos-listener.js";
+import { startFakeCyclos, USER, paymentNotification } from "./support/fake-cyclos.js";
+import { readCaisseConfig } from "../src/caisse-config.js";
+import { createCyclosPush, PushAuthError } from "../src/cyclos-push.js";
+import { createTicketStore } from "../src/ticket-store.js";
+import { createListener } from "../src/cyclos-listener.js";
 
 async function waitFor(condition, what, ms = 4000) {
   const end = Date.now() + ms;

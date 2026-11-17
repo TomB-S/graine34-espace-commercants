@@ -12,7 +12,7 @@
 // - The text of the notification `message` is never used.
 // - Nothing here writes to the log.
 import { DateTime } from "luxon";
-import { ageText } from "./age.js";
+import { ageText } from "../web/js/age.js";
 
 const ZONE = "Europe/Paris";
 const AMOUNT_SHAPE = /^-?\d+(\.\d+)?$/;

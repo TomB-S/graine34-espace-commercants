@@ -8,8 +8,8 @@
 // The helpers of server.js (escapeHtml, formatAmount, htmlPage, errorMessage, logoutForm) are given
 // by the caller: importing server.js from here would be a circular import.
 import { ticketDisplay } from "./ticket-store.js";
-import { TEXTS } from "./caisse-texts.js";
-import { pollFooterText } from "./refresh-logic.js";
+import { TEXTS } from "../web/js/caisse-texts.js";
+import { pollFooterText } from "../web/js/refresh-logic.js";
 import { LIST_SIZE, bannerOf, payerText, amountText } from "./caisse-data.js";
 
 const TITLE = "Caisse : paiements reçus";

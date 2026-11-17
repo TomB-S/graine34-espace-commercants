@@ -12,7 +12,7 @@ import http from "node:http";
 import { test, mock } from "node:test";
 // MUST stay first: it cleans the environment variables before server.js is loaded (see env-propre.js).
 import { isolerEnv } from "./env-propre.js";
-import { startServer } from "../server.js";
+import { startServer } from "../../src/server.js";
 import { startFakeCyclos, USER } from "./fake-cyclos.js";
 
 // The expected Content Security Policy (CSP), written out in full: an HTTP header telling the browser

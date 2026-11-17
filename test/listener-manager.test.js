@@ -6,10 +6,10 @@
 // by simulated timers (mock.timers): no real waiting. All values are fictitious. Basic notions: test/statique.test.js.
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { startFakeCyclos, USER, entry } from "../test-support/fake-cyclos.js";
-import { readCaisseConfig } from "../caisse-config.js";
-import { createCyclosPush } from "../cyclos-push.js";
-import { createListenerManager } from "../listener-manager.js";
+import { startFakeCyclos, USER, entry } from "./support/fake-cyclos.js";
+import { readCaisseConfig } from "../src/caisse-config.js";
+import { createCyclosPush } from "../src/cyclos-push.js";
+import { createListenerManager } from "../src/listener-manager.js";
 
 async function waitFor(condition, what, ms = 4000) {
   const end = Date.now() + ms;

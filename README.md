@@ -40,14 +40,14 @@ Une seule dépendance : `luxon` (heures de Paris).
 npm start
 ```
 
-(équivalent de `node server.js`, avec en plus la lecture de `.env` s'il existe.)
+(équivalent de `node src/server.js`, avec en plus la lecture de `.env` s'il existe.)
 Puis ouvrir <http://localhost:3001> (port **3001** par défaut, pour ne pas gêner
 l'outil de relevé qui garde le 3000). Après la connexion, le navigateur arrive sur
 `/caisse`. La page est **désactivée par défaut** (voir « Activer et lancer la caisse »).
 
 Les variables peuvent se mettre dans un fichier `.env` (copier
 [.env.example](.env.example) en `.env`) : `npm start` le lit s'il existe, `node
-server.js` seul et `npm test` ne le lisent pas, une variable placée devant la
+src/server.js` seul et `npm test` ne le lisent pas, une variable placée devant la
 commande l'emporte sur le fichier, et `.env` est ignoré par git (ne jamais le
 commiter).
 
@@ -55,8 +55,8 @@ commiter).
 
 | Commande | Effet |
 | --- | --- |
-| `npm start` | Démarre le serveur (`node --env-file-if-exists=.env server.js`) |
-| `npm test` | Lance les tests (`node --test`), sans appel à un vrai Cyclos |
+| `npm start` | Démarre le serveur (`node --env-file-if-exists=.env src/server.js`) |
+| `npm test` | Lance les tests (`node --test "test/*.test.js"`), sans appel à un vrai Cyclos |
 | `npm run build:exe` | Fabrique l'exécutable (voir « Exécutable ») |
 
 ## Exécutable
@@ -139,41 +139,50 @@ pauses). **Non testé** sur Windows et Linux : ouverture du navigateur (`rundll3
 ## Arborescence
 
 ```
-server.js            serveur HTTP : connexion, sessions, /caisse, déconnexion, statiques
-assets.js            lecture des fichiers statiques (disque, ou fichiers embarqués dans l'exécutable)
-main.js              point d'entrée de l'exécutable
-launcher.js          démarrage de l'exécutable : réglages, port libre, navigateur
-build-sea.js         fabrication de l'exécutable (npm run build:exe)
-caisse-config.js     lecture et validation des variables CAISSE_*
-sse-parser.js        analyseur du flux d'événements Cyclos (SSE), sans accès réseau
-cyclos-push.js       appels Cyclos : flux, transfert, historique, réglage
-ticket-store.js      tickets en mémoire : modèle, doublons, tri, état
-cyclos-listener.js   boucle d'écoute d'un commerçant : réouverture, chien de garde, reconnexion
-payment-processor.js événements reçus, tickets, filet de sécurité par l'historique
-listener-manager.js  cycle de vie des écouteurs : inscription, inactivité, plafond, arrêt
-caisse-page.js       HTML de la page /caisse (fonctions pures), complète sans script
-caisse-data.js       bannière, textes d'un ticket et JSON de /caisse/data (fonctions pures)
-caisse-texts.js      textes fixes de la page, partagés avec le navigateur
-caisse.js            script du navigateur : lecture toutes les N secondes, minuteries, réseau
-caisse-view.js       script du navigateur : construit l'affichage (textContent, jamais de HTML brut)
-new-payments.js      détection des nouveaux paiements (fonction pure, servira au son et à la notification)
-date-line.js         ligne de date et décalage d'horloge (fonctions pures)
-age.js               « il y a x min » (fonction pure, utilisée par le serveur et le navigateur)
-sound-logic.js       quand sonner et que dire de l'état du son, son voulu par défaut (fonctions pures)
-controls-logic.js    le bouton unique du son et des notifications : libellé et action (fonctions pures)
-refresh-logic.js     le bouton « Actualiser » : libellé et état désactivé (fonctions pures)
-sound.js             le son : Web Audio, bip généré, aucun fichier audio
-notification-logic.js  quoi notifier et que dire de l'état (regroupement, tag, texte : fonctions pures)
-notification.js      notifications du navigateur : le seul fichier qui touche à l'API Notification
-style.css            feuille de style unique (charte La Graine 34, classes de la caisse comprises)
-logo-lagraine34.png  logo, servi sur /logo.png
-icon-lagraine34.png  icône carrée, servie sur /icon.png (favicon des pages et icône des notifications)
-fonts/               polices Roboto et Voltaire (woff2) et leurs licences
-test/                tests (node:test)
-test-support/        faux Cyclos, harnais de test, options communes
-test-cyclos/         push-smoke.js : script de vérification du flux, à lancer à la main
+src/                 le serveur et la logique côté Node
+  server.js            serveur HTTP : connexion, sessions, /caisse, déconnexion, statiques
+  assets.js            lecture des fichiers statiques de web/ (disque, ou fichiers embarqués dans l'exécutable)
+  main.js              point d'entrée de l'exécutable
+  launcher.js          démarrage de l'exécutable : réglages, port libre, navigateur
+  caisse-config.js     lecture et validation des variables CAISSE_*
+  sse-parser.js        analyseur du flux d'événements Cyclos (SSE), sans accès réseau
+  cyclos-push.js       appels Cyclos : flux, transfert, historique, réglage
+  ticket-store.js      tickets en mémoire : modèle, doublons, tri, état
+  cyclos-listener.js   boucle d'écoute d'un commerçant : réouverture, chien de garde, reconnexion
+  payment-processor.js événements reçus, tickets, filet de sécurité par l'historique
+  listener-manager.js  cycle de vie des écouteurs : inscription, inactivité, plafond, arrêt
+  caisse-page.js       HTML de la page /caisse (fonctions pures), complète sans script
+  caisse-data.js       bannière, textes d'un ticket et JSON de /caisse/data (fonctions pures)
+web/                 tout ce que le navigateur reçoit
+  style.css            feuille de style unique (charte La Graine 34, classes de la caisse comprises)
+  images/              logo-lagraine34.png (servi sur /logo.png), icon-lagraine34.png (servi sur /icon.png :
+                       favicon des pages et icône des notifications)
+  fonts/               polices Roboto et Voltaire (woff2) et leurs licences
+  js/                  les scripts du navigateur, tous servis à la racine (/caisse.js, /age.js...)
+    caisse.js            lecture toutes les N secondes, minuteries, réseau
+    caisse-view.js       construit l'affichage (textContent, jamais de HTML brut)
+    caisse-texts.js      textes fixes de la page, partagés avec le serveur
+    new-payments.js      détection des nouveaux paiements (fonction pure, servira au son et à la notification)
+    date-line.js         ligne de date et décalage d'horloge (fonctions pures)
+    age.js               « il y a x min » (fonction pure, utilisée par le serveur et le navigateur)
+    sound-logic.js       quand sonner et que dire de l'état du son, son voulu par défaut (fonctions pures)
+    controls-logic.js    le bouton unique du son et des notifications : libellé et action (fonctions pures)
+    refresh-logic.js     le bouton « Actualiser » : libellé et état désactivé (fonctions pures, aussi utilisées par le serveur)
+    sound.js             le son : Web Audio, bip généré, aucun fichier audio
+    notification-logic.js  quoi notifier et que dire de l'état (regroupement, tag, texte : fonctions pures)
+    notification.js      notifications du navigateur : le seul fichier qui touche à l'API Notification
+test/                tests (node:test), un fichier par sujet : *.test.js
+  support/             faux Cyclos, harnais de test, options communes (pas des tests)
+tools/               outils hors serveur
+  build-sea.js         fabrication de l'exécutable (npm run build:exe)
+  push-smoke.js        script de vérification du flux, à lancer à la main
+docs/                consignes de travail (ignorées par git)
 .env.example         modèle du fichier `.env`
 ```
+
+Trois fichiers sont utilisés par le serveur **et** par le navigateur (`caisse-texts.js`, `refresh-logic.js`, `age.js`) :
+ils restent dans `web/js/`, parce que les scripts s'importent entre eux par chemin relatif, et le serveur les lit depuis là.
+Les adresses du navigateur ne dépendent pas de ce rangement (`/style.css`, `/logo.png`, `/caisse.js`, `/fonts/...`).
 
 ## Variables d'environnement
 
@@ -441,19 +450,17 @@ Ne rien coller dans une conversation qui contienne un nom, un montant, un jeton 
 un identifiant réel : donner seulement des formes agrégées (statuts, noms de
 champs, nombres de tickets).
 
-1. **Script de vérification du flux** (`test-cyclos/push-smoke.js`, dans cette application). Il ouvre une session, ouvre le flux avec le jeton de session, puis se
+1. **Script de vérification du flux** (`tools/push-smoke.js`, dans cette application). Il ouvre une session, ouvre le flux avec le jeton de session, puis se
    reconnecte avec `Last-Event-ID`, et n'affiche que la structure (statut,
    durée, noms des événements et des clés, jamais une valeur). Pendant qu'il
    écoute (environ une minute par connexion), faire un paiement vers le compte
    pour voir un événement :
 
    ```sh
-   cd test-cyclos
    read -s CAISSE_PW
    CAISSE_CYCLOS_LOGIN="..." CAISSE_CYCLOS_PASSWORD="$CAISSE_PW" \
-   CYCLOS_CHANNEL=main CYCLOS_BASE_URL="https://laruchedesmonnaieslocales.org/lagraine34/api" node push-smoke.js
+   CYCLOS_CHANNEL=main CYCLOS_BASE_URL="https://laruchedesmonnaieslocales.org/lagraine34/api" node tools/push-smoke.js
    unset CAISSE_PW
-   cd ..
    ```
 
    Attendu : statut 200 avec le jeton de session, `text/event-stream`,
@@ -484,9 +491,10 @@ champs, nombres de tickets).
 npm test
 ```
 
-Les tests utilisent `node:test` (rien à installer) et durent quelques secondes. Ils
+Les tests utilisent `node:test` (rien à installer) et durent quelques secondes. Le script lance uniquement les
+fichiers `test/*.test.js` : le dossier `test/support/` ne contient pas de tests. Ils
 démarrent le vrai serveur sur un port libre face à un **faux Cyclos** local
-(`test-support/fake-cyclos.js`) : aucun appel à un service externe, aucun vrai
+(`test/support/fake-cyclos.js`) : aucun appel à un service externe, aucun vrai
 identifiant (ceux des tests sont fictifs).
 
 - Étape B : `test/new-payments.test.js` (détection), `test/date-line.test.js`
@@ -570,6 +578,6 @@ identifiant (ceux des tests sont fictifs).
 
 ## Licences
 
-Les polices Roboto et Voltaire servies par l'outil (`fonts/`) sont sous licence SIL
-Open Font License 1.1 : voir [fonts/LICENSES.txt](fonts/LICENSES.txt). Le logo est
+Les polices Roboto et Voltaire servies par l'outil (`web/fonts/`) sont sous licence SIL
+Open Font License 1.1 : voir [web/fonts/LICENSES.txt](web/fonts/LICENSES.txt). Le logo est
 celui de La Graine 34.

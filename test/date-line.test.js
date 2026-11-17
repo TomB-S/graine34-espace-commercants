@@ -1,9 +1,9 @@
 // The date line and the clock offset of the script (date-line.js), and the proof that the browser and the server say the same thing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dateLine, clockOffset } from "../date-line.js";
-import { ticketDisplay, makeTicket } from "../ticket-store.js";
-import { transfer } from "../test-support/fake-cyclos.js";
+import { dateLine, clockOffset } from "../web/js/date-line.js";
+import { ticketDisplay, makeTicket } from "../src/ticket-store.js";
+import { transfer } from "./support/fake-cyclos.js";
 
 test("ligne de date : libellé suivi de l'âge, sans âge au-delà de 24 h", () => {
   const at = Date.parse("2026-01-10T12:00:00Z");

@@ -5,9 +5,9 @@
 // All values are fictitious. Basic notions: test/statique.test.js.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { startFakeCyclos, USER, entry, transfer, paymentNotification, notificationSettingsBody } from "../test-support/fake-cyclos.js";
-import { createCyclosPush, PushAuthError, PushForbiddenError, PushUnavailableError } from "../cyclos-push.js";
-import { createSseParser } from "../sse-parser.js";
+import { startFakeCyclos, USER, entry, transfer, paymentNotification, notificationSettingsBody } from "./support/fake-cyclos.js";
+import { createCyclosPush, PushAuthError, PushForbiddenError, PushUnavailableError } from "../src/cyclos-push.js";
+import { createSseParser } from "../src/sse-parser.js";
 
 // A fake Cyclos and a client, stopped at the end.
 async function withClient(options, fn) {

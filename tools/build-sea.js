@@ -1,7 +1,7 @@
 // Builds the single executable of the current platform: npm run build:exe (see "Exécutable" in README.md).
 // The executable is made from a Node 25.5 or later, which provides --build-sea. If the Node that runs npm is older,
 // give the path of a suitable one in SEA_NODE.
-// 1. esbuild (development tool only) gathers main.js, the server modules and luxon into build/server.cjs;
+// 1. esbuild (development tool only) gathers src/main.js, the server modules and luxon into build/server.cjs;
 // 2. the static files are listed as assets of the executable;
 // 3. "node --build-sea" writes build/graine34-notif-caisse (build/graine34-notif-caisse.exe on Windows);
 // 4. on macOS, the result gets an ad hoc signature, without which the system kills it at launch.
@@ -21,7 +21,7 @@ if (major < 25 || (major === 25 && minor < 5)) {
 mkdirSync("build", { recursive: true });
 
 await build({
-  entryPoints: ["main.js"],
+  entryPoints: ["src/main.js"],
   outfile: "build/server.cjs",
   bundle: true,
   platform: "node",
@@ -32,19 +32,20 @@ await build({
   logLevel: "warning",
 });
 
+// Names relative to web/: the same ones the server asks for (see src/assets.js).
 const browserScripts = [
   "caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound",
   "sound-logic", "notification", "notification-logic", "controls-logic", "refresh-logic",
-].map((name) => `${name}.js`);
+].map((name) => `js/${name}.js`);
 const output = platform() === "win32" ? "build/graine34-notif-caisse.exe" : "build/graine34-notif-caisse";
 const assets = Object.fromEntries(
   [
     "style.css",
-    "logo-lagraine34.png",
-    "icon-lagraine34.png",
-    ...readdirSync("fonts").filter((f) => f.endsWith(".woff2")).map((f) => `fonts/${f}`),
+    "images/logo-lagraine34.png",
+    "images/icon-lagraine34.png",
+    ...readdirSync("web/fonts").filter((f) => f.endsWith(".woff2")).map((f) => `fonts/${f}`),
     ...browserScripts,
-  ].map((name) => [name, name]),
+  ].map((name) => [name, `web/${name}`]),
 );
 
 writeFileSync(

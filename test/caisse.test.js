@@ -7,12 +7,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { appTest, EXPECTED_CSP, USER } from "../test-support/harness.js";
-import { envEnfant } from "../test-support/env-propre.js";
-import { startFakeCyclos, entry, transfer, paymentNotification, notificationSettingsBody } from "../test-support/fake-cyclos.js";
-import { escapeHtml, formatAmount } from "../server.js";
-import { renderCaissePage, renderCaisseRefused } from "../caisse-page.js";
-import { makeTicket } from "../ticket-store.js";
+import { appTest, EXPECTED_CSP, USER } from "./support/harness.js";
+import { envEnfant } from "./support/env-propre.js";
+import { startFakeCyclos, entry, transfer, paymentNotification, notificationSettingsBody } from "./support/fake-cyclos.js";
+import { escapeHtml, formatAmount } from "../src/server.js";
+import { renderCaissePage, renderCaisseRefused } from "../src/caisse-page.js";
+import { makeTicket } from "../src/ticket-store.js";
 
 const ON = { enabled: true, login: USER.login, password: USER.password };
 // Shorter pauses and grouping for the tests; the stream stays open (events are pushed by the tests).
@@ -426,7 +426,7 @@ test("page : descriptions de la liste à masquer absentes du HTML, texte du paye
 // Intention: the CSS keeps the date on one line and the description on one cut line (no inline style possible).
 test("page : CSS = heure sur une ligne, description en une ligne avec points de suspension", async () => {
   const { readFile } = await import("node:fs/promises");
-  const css = await readFile(new URL("../style.css", import.meta.url), "utf8");
+  const css = await readFile(new URL("../web/style.css", import.meta.url), "utf8");
   assert.match(css.match(/\.caisse-heure\s*{[^}]*}/)[0], /white-space:\s*nowrap/);
   const description = css.match(/\.caisse-description\s*{[^}]*}/)[0];
   assert.match(description, /text-overflow:\s*ellipsis/);
@@ -457,7 +457,7 @@ test("page : fond coloré qui s'estompe sur un paiement qui vient d'arriver, san
   assert.ok(!big(older).includes("caisse-gros-neuf"), "still Nouveau, but the fade is over");
   assert.ok(render({ status: "live", tickets: [older] }).includes("caisse-nouveau"));
   assert.ok(!big(opening).includes("caisse-gros-neuf"));
-  const css = await readFile(new URL("../style.css", import.meta.url), "utf8");
+  const css = await readFile(new URL("../web/style.css", import.meta.url), "utf8");
   assert.match(css.match(/\.caisse-gros-neuf\s*{[^}]*}/)[0], /animation:\s*caisse-fond-neuf/);
   assert.match(css, /@keyframes caisse-fond-neuf/);
   assert.match(css, /prefers-reduced-motion/);
@@ -466,7 +466,7 @@ test("page : fond coloré qui s'estompe sur un paiement qui vient d'arriver, san
 // Intention: big ticket hierarchy: the description is smaller than the date line and grey; the amount has room around it.
 test("page : gros ticket = description plus petite et grise que la date, marge autour du montant", async () => {
   const { readFile } = await import("node:fs/promises");
-  const css = await readFile(new URL("../style.css", import.meta.url), "utf8");
+  const css = await readFile(new URL("../web/style.css", import.meta.url), "utf8");
   const rem = (selector) => Number(css.match(new RegExp(`${selector.replaceAll(".", "\\.")}\\s*{[^}]*font-size:\\s*([\\d.]+)rem`))[1]);
   assert.ok(rem(".caisse-gros .caisse-gros-description") <= 1.05);
   assert.ok(rem(".caisse-gros .caisse-gros-heure") > rem(".caisse-gros .caisse-gros-description") * 1.4);
@@ -491,7 +491,7 @@ test("page : ticket incomplet = 'Montant en cours de lecture', illisible = 'Mont
 // width (so that the numbers line up from one row to the next), centred between the name and the amount, small, grey, monospace.
 test("page : colonne du numéro de transaction, sous le nom sur téléphone, centrée et de largeur fixe en large", async () => {
   const { readFile } = await import("node:fs/promises");
-  const css = await readFile(new URL("../style.css", import.meta.url), "utf8");
+  const css = await readFile(new URL("../web/style.css", import.meta.url), "utf8");
   const rule = (selector) => css.match(new RegExp(`${selector.replace(/[.]/g, "\\.")} \\{([^}]*)\\}`))?.[1] ?? "";
   assert.match(rule(".caisse-ligne"), /"heure qui montant"\s+"\. numero \."/, "phone: the number under the name");
   const numero = rule(".caisse-numero");
@@ -506,7 +506,7 @@ test("page : colonne du numéro de transaction, sous le nom sur téléphone, cen
 
 test("page : le montant est en très grand (3 rem au moins), classes dans style.css", async () => {
   const { readFile } = await import("node:fs/promises");
-  const css = await readFile(new URL("../style.css", import.meta.url), "utf8");
+  const css = await readFile(new URL("../web/style.css", import.meta.url), "utf8");
   assert.match(css.match(/\.caisse-gros-montant\s*{[^}]*}/)[0], /font-size:\s*clamp\(3rem,/);
   for (const name of ["caisse-gros", "caisse-nouveau", "caisse-ligne", "caisse-precedents", "caisse-etat", "caisse-actualisation"]) {
     assert.ok(css.includes(`.${name}`), name);
@@ -539,12 +539,12 @@ appTest("caisse : arrêt du serveur = flux coupé et sessions Cyclos de l'écout
   assert.ok(!app.cyclos.state.deleted.includes(visitorToken), "the page's own session is not the listener's");
 });
 
-// Intention: for real: `node server.js` receives SIGTERM, closes the listening cleanly (stream cut, DELETE /auth/session) and exits with code 0.
-test("node server.js : SIGTERM arrête les écouteurs proprement et sort avec le code 0", async () => {
+// Intention: for real: `node src/server.js` receives SIGTERM, closes the listening cleanly (stream cut, DELETE /auth/session) and exits with code 0.
+test("node src/server.js : SIGTERM arrête les écouteurs proprement et sort avec le code 0", async () => {
   const cyclos = await startFakeCyclos();
   cyclos.state.push.lifetimeMs = null;
   const port = 20000 + Math.floor(Math.random() * 20000);
-  const child = spawn(process.execPath, ["server.js"], {
+  const child = spawn(process.execPath, ["src/server.js"], {
     cwd: new URL("../", import.meta.url),
     env: envEnfant({
       PORT: String(port),

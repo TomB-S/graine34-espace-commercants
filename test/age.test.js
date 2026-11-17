@@ -3,7 +3,7 @@
 // a negative gap). Pure function, no network, no clock.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ageText } from "../age.js";
+import { ageText } from "../web/js/age.js";
 
 const NOW = 1_800_000_000_000;
 const SECOND = 1000;

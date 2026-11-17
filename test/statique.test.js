@@ -24,18 +24,18 @@
 // Static files: /style.css, /logo.png, /fonts/*.woff2.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { appTest, rawRequest } from "../test-support/harness.js";
+import { appTest, rawRequest } from "./support/harness.js";
 
 // ROOT: the project folder, used to re-read the real files on disk and compare them with what the server serves.
 const ROOT = new URL("../", import.meta.url);
 // An array of cases: [address requested from the server, real file on disk, expected content type].
 const FILES = [
-  ["/style.css", "style.css", "text/css; charset=utf-8"],
-  ["/logo.png", "logo-lagraine34.png", "image/png"],
-  ["/icon.png", "icon-lagraine34.png", "image/png"],
-  ["/fonts/roboto-latin-400-normal.woff2", "fonts/roboto-latin-400-normal.woff2", "font/woff2"],
-  ["/fonts/roboto-latin-700-normal.woff2", "fonts/roboto-latin-700-normal.woff2", "font/woff2"],
-  ["/fonts/voltaire-latin-400-normal.woff2", "fonts/voltaire-latin-400-normal.woff2", "font/woff2"],
+  ["/style.css", "web/style.css", "text/css; charset=utf-8"],
+  ["/logo.png", "web/images/logo-lagraine34.png", "image/png"],
+  ["/icon.png", "web/images/icon-lagraine34.png", "image/png"],
+  ["/fonts/roboto-latin-400-normal.woff2", "web/fonts/roboto-latin-400-normal.woff2", "font/woff2"],
+  ["/fonts/roboto-latin-700-normal.woff2", "web/fonts/roboto-latin-700-normal.woff2", "font/woff2"],
+  ["/fonts/voltaire-latin-400-normal.woff2", "web/fonts/voltaire-latin-400-normal.woff2", "font/woff2"],
 ];
 
 // MODEL TO READ FIRST. Intention: each static file is served with the right type, a cache duration and

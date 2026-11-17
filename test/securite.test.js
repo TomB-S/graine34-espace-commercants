@@ -3,9 +3,9 @@
 // caching, the absence of style or script in the HTML, and the size limit of requests (10 kB). Uses the harness
 // (test-support/harness.js) and the fake Cyclos. Basic notions (assert, async, HTTP statuses): see test/statique.test.js.
 import assert from "node:assert/strict";
-import { appTest, rawRequest, EXPECTED_CSP } from "../test-support/harness.js";
-import { CAISSE_OPTIONS } from "../test-support/options.js";
-import { entry, transfer, paymentNotification } from "../test-support/fake-cyclos.js";
+import { appTest, rawRequest, EXPECTED_CSP } from "./support/harness.js";
+import { CAISSE_OPTIONS } from "./support/options.js";
+import { entry, transfer, paymentNotification } from "./support/fake-cyclos.js";
 
 // Triggers ONE example of each kind of server response (pages, redirections, errors 403/404/405/413/503, static files...) and
 // returns them all together as [{ label, res, body }]. The tests below go through this list so that NO kind of response escapes a rule.

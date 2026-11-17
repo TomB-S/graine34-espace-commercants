@@ -1,7 +1,7 @@
 // When to ring and what to say about the sound (sound-logic.js): pure logic, no audio.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BEEP, beepLength, initialWanted, isSoundActive, soundLabel, soundText, shouldBeep } from "../sound-logic.js";
+import { BEEP, beepLength, initialWanted, isSoundActive, soundLabel, soundText, shouldBeep } from "../web/js/sound-logic.js";
 
 const state = (extra = {}) => ({ supported: true, wanted: true, audioState: "running", ...extra });
 

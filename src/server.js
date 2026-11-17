@@ -249,18 +249,18 @@ function staticAsset(file, contentType, cacheControl = "public, max-age=3600") {
 const BROWSER_MODULES = ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic", "notification", "notification-logic", "controls-logic", "refresh-logic"];
 
 const STATIC_ASSETS = new Map([
-  ["GET /style.css", staticAsset("./style.css", "text/css; charset=utf-8")],
-  ["GET /logo.png", staticAsset("./logo-lagraine34.png", "image/png")],
+  ["GET /style.css", staticAsset("style.css", "text/css; charset=utf-8")],
+  ["GET /logo.png", staticAsset("images/logo-lagraine34.png", "image/png")],
   // Square icon: the favicon of the pages and the icon of the notifications (the logo is a wide rectangle).
-  ["GET /icon.png", staticAsset("./icon-lagraine34.png", "image/png")],
-  ...BROWSER_MODULES.map((name) => [`GET /${name}.js`, staticAsset(`./${name}.js`, "text/javascript; charset=utf-8", "no-cache")]),
+  ["GET /icon.png", staticAsset("images/icon-lagraine34.png", "image/png")],
+  ...BROWSER_MODULES.map((name) => [`GET /${name}.js`, staticAsset(`js/${name}.js`, "text/javascript; charset=utf-8", "no-cache")]),
   ...[
     "roboto-latin-400-normal",
     "roboto-latin-700-normal",
     "voltaire-latin-400-normal",
   ].map((name) => [
     `GET /fonts/${name}.woff2`,
-    staticAsset(`./fonts/${name}.woff2`, "font/woff2"),
+    staticAsset(`fonts/${name}.woff2`, "font/woff2"),
   ]),
 ]);
 

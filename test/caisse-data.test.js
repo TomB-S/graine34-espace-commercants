@@ -4,10 +4,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { appTest, EXPECTED_CSP, USER } from "../test-support/harness.js";
-import { entry, transfer, paymentNotification } from "../test-support/fake-cyclos.js";
-import { renderCaisseData } from "../caisse-data.js";
-import { makeTicket } from "../ticket-store.js";
+import { appTest, EXPECTED_CSP, USER } from "./support/harness.js";
+import { entry, transfer, paymentNotification } from "./support/fake-cyclos.js";
+import { renderCaisseData } from "../src/caisse-data.js";
+import { makeTicket } from "../src/ticket-store.js";
 
 const ON = { enabled: true, login: USER.login, password: USER.password };
 const HOOKS = { listenerOptions: { shortStreamMs: 0, sleep: async () => {} }, processorOptions: { debounceMs: 50, retryDelaysMs: [30, 30, 30] } };
@@ -196,7 +196,7 @@ appTest("scripts : servis avec le bon type, revalidés à chaque fois (no-cache 
     assert.equal(res.headers.get("content-security-policy"), EXPECTED_CSP, route);
     assert.equal(res.headers.get("x-content-type-options"), "nosniff", route);
     assert.equal(res.headers.get("set-cookie"), null, route);
-    assert.equal(await res.text(), await readFile(new URL(`../${name}.js`, import.meta.url), "utf8"), route);
+    assert.equal(await res.text(), await readFile(new URL(`../web/js/${name}.js`, import.meta.url), "utf8"), route);
     const etag = res.headers.get("etag");
     const again = await app.request(route, { headers: { "If-None-Match": etag } });
     assert.equal(again.status, 304, route);
@@ -212,7 +212,7 @@ appTest("scripts : seuls les modules prévus sont servis (pas le serveur ni les 
 
 test("scripts : le navigateur n'importe que des fichiers servis, jamais le code du serveur", async () => {
   for (const name of MODULES) {
-    const code = await readFile(new URL(`../${name}.js`, import.meta.url), "utf8");
+    const code = await readFile(new URL(`../web/js/${name}.js`, import.meta.url), "utf8");
     for (const [, target] of code.matchAll(/^import .* from "\.\/([\w-]+)\.js";/gm)) {
       assert.ok(MODULES.includes(target), `${name} imports ${target}`);
     }

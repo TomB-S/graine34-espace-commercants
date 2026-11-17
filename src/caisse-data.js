@@ -3,7 +3,7 @@
 // The texts that come from Cyclos stay plain strings here; the page escapes them, the script uses textContent.
 import { createHash } from "node:crypto";
 import { ticketDisplay, ticketKeys } from "./ticket-store.js";
-import { TEXTS } from "./caisse-texts.js";
+import { TEXTS } from "../web/js/caisse-texts.js";
 
 // Payments shown: the big ticket and the list under it.
 export const LIST_SIZE = 10;

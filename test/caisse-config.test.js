@@ -6,9 +6,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 // MUST stay first: cleans the environment variables before server.js is loaded (see env-propre.js).
-import { envEnfant } from "../test-support/env-propre.js";
-import { readCaisseConfig, PROTOTYPE_MERCHANT } from "../caisse-config.js";
-import { startServer } from "../server.js";
+import { envEnfant } from "./support/env-propre.js";
+import { readCaisseConfig, PROTOTYPE_MERCHANT } from "../src/caisse-config.js";
+import { startServer } from "../src/server.js";
 
 const ENABLED = {
   CAISSE_ENABLED: "true",
@@ -188,7 +188,7 @@ test("caisse : startServer refuse de démarrer sur une configuration invalide", 
 // Intention: launched for real, an invalid or incomplete configuration gives one clear line, no stack, exit code 1.
 // Disabled, the server starts with no credential and prints exactly what it printed before.
 function runServer(env) {
-  const child = spawn(process.execPath, ["server.js"], {
+  const child = spawn(process.execPath, ["src/server.js"], {
     cwd: new URL("../", import.meta.url),
     env: envEnfant({ PORT: String(20000 + Math.floor(Math.random() * 20000)), CYCLOS_CHANNEL: "", ...env }),
     stdio: ["ignore", "pipe", "pipe"],
@@ -200,7 +200,7 @@ function runServer(env) {
   return { child, exited, output: () => output };
 }
 
-test("node server.js : CAISSE_ENABLED=true sans identifiant, message clair, code 1", async () => {
+test("node src/server.js : CAISSE_ENABLED=true sans identifiant, message clair, code 1", async () => {
   const { exited, output } = runServer({ CAISSE_ENABLED: "true" });
   assert.equal(await exited, 1);
   assert.match(output(), /^CAISSE_ENABLED=true exige CAISSE_CYCLOS_LOGIN et CAISSE_CYCLOS_PASSWORD/);
@@ -208,14 +208,14 @@ test("node server.js : CAISSE_ENABLED=true sans identifiant, message clair, code
   assert.ok(!output().includes("Serveur démarré"));
 });
 
-test("node server.js : valeur CAISSE_* invalide, message clair, code 1, sans écho du mot de passe", async () => {
+test("node src/server.js : valeur CAISSE_* invalide, message clair, code 1, sans écho du mot de passe", async () => {
   const { exited, output } = runServer({ ...ENABLED, CAISSE_IDLE_SECONDS: "5" });
   assert.equal(await exited, 1);
   assert.match(output(), /^CAISSE_IDLE_SECONDS invalide/);
   assert.ok(!output().includes(ENABLED.CAISSE_CYCLOS_PASSWORD));
 });
 
-test("node server.js : caisse désactivée, démarre sans identifiant, même sortie qu'avant", async () => {
+test("node src/server.js : caisse désactivée, démarre sans identifiant, même sortie qu'avant", async () => {
   const { child, exited, output } = runServer({});
   try {
     for (let i = 0; i < 100 && !output().includes("Canal Cyclos"); i += 1) {

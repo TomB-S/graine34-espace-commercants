@@ -1,7 +1,7 @@
 // The "Actualiser" button (refresh-logic.js): pure logic, no browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { canStartRefresh, pollFooterText, pollSettings, refreshState } from "../refresh-logic.js";
+import { canStartRefresh, pollFooterText, pollSettings, refreshState } from "../web/js/refresh-logic.js";
 
 test("actualiser : au repos, « Actualiser » actif ; pendant la lecture, « Actualisation... » désactivé", () => {
   assert.deepEqual(refreshState(false), { text: "Actualiser", disabled: false });

@@ -5,8 +5,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 // First, before server.js: removes the terminal's environment variables (see env-propre.js).
-import "../test-support/env-propre.js";
-import { escapeHtml, formatAmount } from "../server.js";
+import "./support/env-propre.js";
+import { escapeHtml, formatAmount } from "../src/server.js";
 
 // Intention (security): texts coming from Cyclos (names, descriptions) are inserted into a page. If they contained
 // <script>, an attacker could have code run on the merchant's side (XSS flaw). `escapeHtml` replaces < > & " with

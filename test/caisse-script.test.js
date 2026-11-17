@@ -75,7 +75,7 @@ async function run(responses, audio = null, notif = null, store = null, pollSeco
     if (next instanceof Error) throw next;
     return next;
   });
-  await import(`../caisse.js?run=${Math.random()}`);
+  await import(`../web/js/caisse.js?run=${Math.random()}`);
   await flush();
   const restore = () => {
     for (const [name, descriptor] of Object.entries(saved)) {

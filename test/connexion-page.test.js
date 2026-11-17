@@ -3,15 +3,15 @@
 // of one attempt (one form = one call to Cyclos, pauses after a refusal), the Host check, the first account being the
 // merchant, and the hosted mode (no option) staying as it was. Real server, fake Cyclos, FICTITIOUS values only: the
 // password never appears in a log, in a page or in a message.
-import "../test-support/env-propre.js";
+import "./support/env-propre.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { appTest, until, rawRequest } from "../test-support/harness.js";
-import { CAISSE_OPTIONS } from "../test-support/options.js";
-import { USER } from "../test-support/fake-cyclos.js";
-import { startServer } from "../server.js";
-import { readCaisseConfig } from "../caisse-config.js";
-import { createListenerManager } from "../listener-manager.js";
+import { appTest, until, rawRequest } from "./support/harness.js";
+import { CAISSE_OPTIONS } from "./support/options.js";
+import { USER } from "./support/fake-cyclos.js";
+import { startServer } from "../src/server.js";
+import { readCaisseConfig } from "../src/caisse-config.js";
+import { createListenerManager } from "../src/listener-manager.js";
 
 const WRONG = "faux-mot-de-passe-fictif";
 const SHORT = 150;

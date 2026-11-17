@@ -7,8 +7,8 @@
 // `mock` (from node:test) FAKES THE CLOCK: we advance time by 20 minutes in one millisecond to test session expiry.
 import { mock } from "node:test";
 import assert from "node:assert/strict";
-import { appTest, until, USER } from "../test-support/harness.js";
-import { CAISSE_OPTIONS } from "../test-support/options.js";
+import { appTest, until, USER } from "./support/harness.js";
+import { CAISSE_OPTIONS } from "./support/options.js";
 
 // One minute in milliseconds (JavaScript durations are in ms).
 const MINUTE = 60_000;

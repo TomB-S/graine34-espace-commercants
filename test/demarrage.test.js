@@ -1,17 +1,17 @@
 // === WHAT THIS FILE CHECKS ===
-// The real startup of the tool with `node server.js`, as the operator launches it. The other tests start the server through code; here we launch
+// The real startup of the tool with `node src/server.js`, as the operator launches it. The other tests start the server through code; here we launch
 // a REAL Node process (`spawn`) and read what it prints. We check that importing the file starts nothing (important for the tests), and that
 // the port (PORT) and the Cyclos address (CYCLOS_BASE_URL) from the environment are taken into account. Uses the fake Cyclos.
 // Basic notions (assert, async): test/statique.test.js.
-// "node server.js" starts as before; importing the file starts nothing.
+// "node src/server.js" starts as before; importing the file starts nothing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import net from "node:net";
-import { startFakeCyclos } from "../test-support/fake-cyclos.js";
-import { envEnfant } from "../test-support/env-propre.js";
+import { startFakeCyclos } from "./support/fake-cyclos.js";
+import { envEnfant } from "./support/env-propre.js";
 
-// ROOT: the project folder, where `node server.js` is launched.
+// ROOT: the project folder, where `node src/server.js` is launched.
 const ROOT = new URL("../", import.meta.url);
 
 // Launches a Node process with the given environment variables, and gathers everything it writes (normal output and errors)
@@ -54,18 +54,18 @@ async function waitForOutput(child, output, text, limitMs = 20_000) {
 
 // Intention: IMPORTING server.js must start no server and print nothing, otherwise every test file that imports it
 // would open a port. The process must end by itself, with code 0 (success).
-test("importer server.js ne démarre aucun serveur et le processus se termine", async () => {
-  const { exited, output } = run(["--input-type=module", "-e", 'await import("./server.js")'], { PORT: "1" });
+test("importer src/server.js ne démarre aucun serveur et le processus se termine", async () => {
+  const { exited, output } = run(["--input-type=module", "-e", 'await import("./src/server.js")'], { PORT: "1" });
   assert.equal(await exited, 0);
   assert.equal(output(), "");
 });
 
 // Intention: launched for real, the server listens on the requested port (PORT variable), prints its address and the channel, and serves the login
 // page. The port is chosen by the system, and the test waits for the announcement lines (no fixed delay). The `finally` block always stops the process.
-test("node server.js : écoute sur PORT, annonce l'adresse, sert la page de connexion", async () => {
+test("node src/server.js : écoute sur PORT, annonce l'adresse, sert la page de connexion", async () => {
   const cyclos = await startFakeCyclos();
   const port = await freePort();
-  const { child, exited, output } = run(["server.js"], { PORT: String(port), CYCLOS_BASE_URL: cyclos.url, COOKIE_SECURE: "" });
+  const { child, exited, output } = run(["src/server.js"], { PORT: String(port), CYCLOS_BASE_URL: cyclos.url, COOKIE_SECURE: "" });
   try {
     await waitForOutput(child, output, "Canal Cyclos");
     assert.equal(output().trim(), `Serveur démarré sur http://localhost:${port}\nCanal Cyclos : (par defaut)`);
@@ -81,10 +81,10 @@ test("node server.js : écoute sur PORT, annonce l'adresse, sert la page de conn
 
 // Intention: the Cyclos address given by the CYCLOS_BASE_URL environment variable is indeed used for the login (the fake Cyclos receives
 // the call). We deliberately add a trailing "/" to check that it is ignored. Without this, the tool would query the Cyclos demo.
-test("node server.js : CYCLOS_BASE_URL est bien utilisée pour la connexion", async () => {
+test("node src/server.js : CYCLOS_BASE_URL est bien utilisée pour la connexion", async () => {
   const cyclos = await startFakeCyclos();
   const port = await freePort();
-  const { child, exited, output } = run(["server.js"], { PORT: String(port), CYCLOS_BASE_URL: `${cyclos.url}/` });
+  const { child, exited, output } = run(["src/server.js"], { PORT: String(port), CYCLOS_BASE_URL: `${cyclos.url}/` });
   try {
     await waitForOutput(child, output, "Canal Cyclos");
     const base = `http://127.0.0.1:${port}`;
@@ -103,12 +103,12 @@ test("node server.js : CYCLOS_BASE_URL est bien utilisée pour la connexion", as
   }
 });
 
-// ---- .env file: read by "npm start" only, never by the tests or by "node server.js" ----
+// ---- .env file: read by "npm start" only, never by the tests or by "node src/server.js" ----
 
 test("package.json : seul `start` lit .env, `test` ne le lit pas", async () => {
   const { readFile } = await import("node:fs/promises");
   const pkg = JSON.parse(await readFile(new URL("package.json", ROOT), "utf8"));
-  assert.equal(pkg.scripts.start, "node --env-file-if-exists=.env server.js");
+  assert.equal(pkg.scripts.start, "node --env-file-if-exists=.env src/server.js");
   assert.doesNotMatch(pkg.scripts.test, /env-file/);
   // --env-file-if-exists appeared in Node 22.9.
   assert.equal(pkg.engines.node, ">=22.9");
@@ -131,15 +131,15 @@ test("--env-file-if-exists : le fichier remplit les variables, une variable déj
   try {
     const port = String(await freePort());
     // The file supplies the channel; its PORT=1 loses against the PORT given in front (port 1 would fail).
-    let out = await start([flag, "server.js"], { PORT: port, CYCLOS_CHANNEL: undefined });
+    let out = await start([flag, "src/server.js"], { PORT: port, CYCLOS_CHANNEL: undefined });
     assert.match(out, /Canal Cyclos : depuis-le-fichier/);
     // A variable set before the command wins over the file, even when empty.
-    out = await start([flag, "server.js"], { PORT: port, CYCLOS_CHANNEL: "devant" });
+    out = await start([flag, "src/server.js"], { PORT: port, CYCLOS_CHANNEL: "devant" });
     assert.match(out, /Canal Cyclos : devant/);
-    out = await start([flag, "server.js"], { PORT: port, CYCLOS_CHANNEL: "" });
+    out = await start([flag, "src/server.js"], { PORT: port, CYCLOS_CHANNEL: "" });
     assert.match(out, /Canal Cyclos : \(par defaut\)/);
     // No file: same behaviour as before, no error.
-    out = await start([`--env-file-if-exists=${dir}/absent.env`, "server.js"], { PORT: port, CYCLOS_CHANNEL: "" });
+    out = await start([`--env-file-if-exists=${dir}/absent.env`, "src/server.js"], { PORT: port, CYCLOS_CHANNEL: "" });
     assert.match(out, /Canal Cyclos : \(par defaut\)/);
   } finally {
     await rm(dir, { recursive: true, force: true });

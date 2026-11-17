@@ -1,7 +1,7 @@
 // What to notify and what to say (notification-logic.js): pure logic, no browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MAX_SEPARATE, canAskPermission, canNotify, createNotificationPlanner, notificationLabel, paymentBody, paymentTitle, planNotifications } from "../notification-logic.js";
+import { MAX_SEPARATE, canAskPermission, canNotify, createNotificationPlanner, notificationLabel, paymentBody, paymentTitle, planNotifications } from "../web/js/notification-logic.js";
 
 const ticket = (n, extra = {}) => ({
   keys: [`k${n}`],
