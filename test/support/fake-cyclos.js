@@ -156,6 +156,17 @@ export async function startFakeCyclos() {
     res.end(JSON.stringify(body));
   }
 
+  // Data of the user of a token: the users added with their own `entries`, `transfers`, `transactions` (see addUser) see only
+  // their own; every other user sees the shared ones of `state` (the behavior of all the tests written before).
+  const dataOf = (token) => {
+    const own = state.tokenUsers.get(token)?.own;
+    return {
+      entries: own?.entries ?? state.entries,
+      transfers: own?.transfers ?? state.transfers,
+      transactions: own?.transactions ?? state.transactions,
+    };
+  };
+
   // Every request received goes through here. It is recorded in `state.requests`: tests can then check what OUR
   // server sent to Cyclos (which calls, with which headers). `key` looks like "GET /self/accounts".
   const server = http.createServer((req, res) => {
@@ -191,7 +202,7 @@ export async function startFakeCyclos() {
         login === USER.login && password === USER.password
           ? { id: USER.id, display: USER.display }
           : other && other.password === password
-            ? { id: other.id, display: other.display }
+            ? { id: other.id, display: other.display, own: other }
             : null;
       if (scheme !== "Basic" || !known) {
         return json(res, 401, { code: "login" });
@@ -223,7 +234,7 @@ export async function startFakeCyclos() {
     if (key === "GET /self/notification-settings/data-for-edit") return json(res, 200, state.notificationSettings);
     const detail = /^GET \/(transfers|transactions)\/([^/]+)$/.exec(key);
     if (detail) {
-      const found = state[detail[1]].get(decodeURIComponent(detail[2]));
+      const found = dataOf(token)[detail[1]].get(decodeURIComponent(detail[2]));
       return found ? json(res, 200, found) : json(res, 404, { code: "entityNotFound" });
     }
     // Push stream: ":Initialized", the events missed since Last-Event-ID (when replay is on), then the events pushed by the
@@ -232,6 +243,7 @@ export async function startFakeCyclos() {
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
       res.flushHeaders();
       state.streams.add(res);
+      res.userId = state.tokenUsers.get(token)?.id ?? USER.id;
       let timer;
       res.on("close", () => {
         clearTimeout(timer);
@@ -241,7 +253,9 @@ export async function startFakeCyclos() {
       res.write(":Initialized\n\n");
       const lastId = Number(req.headers["last-event-id"]);
       if (state.push.replay && Number.isFinite(lastId)) {
-        for (const event of state.push.history) if (event.id > lastId) res.write(event.text);
+        for (const event of state.push.history) {
+          if (event.id > lastId && (event.userId === undefined || event.userId === res.userId)) res.write(event.text);
+        }
       }
       if (state.push.lifetimeMs !== null) {
         timer = setTimeout(() => res.end(), state.push.lifetimeMs);
@@ -271,8 +285,8 @@ export async function startFakeCyclos() {
       }
       if (state.totals) return json(res, 200, { status: state.totals });
       const sum = (list) => list.reduce((total, e) => total + Math.abs(Number(e.amount)), 0).toFixed(2);
-      const incoming = state.entries.filter((e) => Number(e.amount) > 0);
-      const outgoing = state.entries.filter((e) => Number(e.amount) < 0);
+      const incoming = dataOf(token).entries.filter((e) => Number(e.amount) > 0);
+      const outgoing = dataOf(token).entries.filter((e) => Number(e.amount) < 0);
       return json(res, 200, {
         status: {
           incoming: { count: incoming.length, sum: sum(incoming) },
@@ -287,8 +301,8 @@ export async function startFakeCyclos() {
       const page = Number(url.searchParams.get("page") ?? 0);
       const size = state.pageSize ?? Number(url.searchParams.get("pageSize") ?? 40);
       // `direction=credit` (cash register page): only the entries received, amount above zero.
-      let all =
-        url.searchParams.get("direction") === "credit" ? state.entries.filter((e) => Number(e.amount) > 0) : state.entries;
+      const mine = dataOf(token).entries;
+      let all = url.searchParams.get("direction") === "credit" ? mine.filter((e) => Number(e.amount) > 0) : mine;
       // `datePeriod=begin,end` (cash register page, recap of yesterday): only the entries dated in the period.
       const period = url.searchParams.get("datePeriod");
       if (period) {
@@ -313,7 +327,21 @@ export async function startFakeCyclos() {
     force: (key, status) => state.forced.set(key, status),
     calls: (method, path) => state.requests.filter((r) => r.method === method && r.path === path),
     // A second user able to log in (tests of the registration check).
-    addUser: (login, password, { id, display = "Autre Utilisateur de Test" }) => state.users.set(login, { password, id, display }),
+    // With `entries` (and optionally `transfers`, `transactions`), the user has data of his own, apart from the shared ones.
+    addUser: (login, password, { id, display = "Autre Utilisateur de Test", entries, transfers, transactions }) =>
+      state.users.set(login, {
+        password,
+        id,
+        display,
+        ...(entries ? { entries, transfers: transfers ?? new Map(), transactions: transactions ?? new Map() } : {}),
+      }),
+    // Same as push(), but only for the open streams of this user (and replayed only to him).
+    pushTo(userId, name, data, { id = state.push.nextId++ } = {}) {
+      const text = `id: ${id}\n${name ? `event: ${name}\n` : ""}data: ${JSON.stringify(data)}\n\n`;
+      state.push.history.push({ id: Number(id), text, userId });
+      for (const stream of state.streams) if (stream.userId === userId) stream.write(text);
+      return id;
+    },
     // Sends an event on every open stream and keeps it for the replay. `data` is an object (sent as JSON);
     // `name` the SSE event name (null = no "event:" line). Returns the id given to the event.
     push(name, data, { id = state.push.nextId++ } = {}) {
