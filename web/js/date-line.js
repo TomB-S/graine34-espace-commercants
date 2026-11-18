@@ -14,3 +14,9 @@ export function clockOffset(serverNowMs, clientNowMs) {
   if (!Number.isFinite(serverNowMs) || !Number.isFinite(clientNowMs)) return 0;
   return serverNowMs - clientNowMs;
 }
+
+// The day of a moment in Paris, as "2026-11-18". The page compares it from time to time to notice the change of day (midnight in
+// Paris) by itself. Intl only, so that the browser and the tests use the same file.
+export function parisDayKey(ms) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
+}

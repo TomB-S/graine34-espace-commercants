@@ -20,7 +20,9 @@
 // kinds of events and HTTP statuses.
 import { PushAuthError } from "./cyclos-push.js";
 import { describeError } from "./cyclos-listener.js";
-import { makeTicket, transferShapeOfTransaction } from "./ticket-store.js";
+import { makeTicket, transferShapeOfTransaction, pickCurrency } from "./ticket-store.js";
+import { dayBounds, dayKey, summarizeYesterday, PERIOD_PAGE_SIZE, PERIOD_MAX_PAGES } from "./day-recap.js";
+import { DateTime } from "luxon";
 
 const PLAIN_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const PLAIN_NAME = /^[A-Za-z][A-Za-z0-9_.-]{0,40}$/;
@@ -47,6 +49,7 @@ export function createPaymentProcessor({
   let again = false;
   let debounce = { timer: null, dueAt: 0 };
   let poll = null;
+  let midnight = null; // timer of the next change of day (Paris), see watchMidnight
   const stats = { ignored: 0 };
 
   // Finds the type and the currency of the account (same rule as the statement), unless configured.
@@ -58,12 +61,69 @@ export function createPaymentProcessor({
     accountType ??= account.accountType;
   }
 
+  // Reads the payments of yesterday and today in one go (pages of 100, at most 20 pages): today's go to the tickets, yesterday's
+  // make the recap, kept apart. Returns true when the history was read (the recap may still be refused as "tooMany"), false when
+  // the reading failed: the recap is then marked "error" (never a guessed total) and the caller reads the latest payments the
+  // usual way, so that today's payments still show. A 401 is thrown to the caller.
+  async function loadPeriod(token) {
+    const bounds = dayBounds(now());
+    const lines = [];
+    let complete = false;
+    try {
+      for (let page = 0; page < PERIOD_MAX_PAGES && !complete; page += 1) {
+        const result = await push.getCreditsPeriod(token, { accountType, from: bounds.from, to: bounds.to, page, pageSize: PERIOD_PAGE_SIZE });
+        if (stopped) return true;
+        lines.push(...result.lines);
+        complete = !result.hasNext;
+      }
+    } catch (error) {
+      if (error instanceof PushAuthError) throw error;
+      log.error(`lecture de la période en échec : ${describeError(error)}`);
+      store.setRecap({ day: bounds.yesterdayKey, state: "error" });
+      return false;
+    }
+
+    // Today's payments become tickets, oldest first (the arrival order follows the payment order).
+    const source = initialPending ? "initial" : "history";
+    let added = 0;
+    for (const line of [...lines].reverse()) {
+      if (isDebit(line)) continue;
+      const date = typeof line?.date === "string" ? DateTime.fromISO(line.date) : null;
+      if (!date?.isValid || dayKey(date.toMillis()) !== bounds.todayKey) continue;
+      if (store.add(makeTicket({ historyEntry: line, source, arrivedAt: now(), fallbackCurrency: currency })).action === "added") added += 1;
+    }
+
+    const { currencySuffix, decimals } = pickCurrency([currency]);
+    if (!complete) {
+      // Limit reached: the oldest lines (yesterday's) were not all read. No total rather than a possibly wrong one.
+      store.setRecap({ day: bounds.yesterdayKey, state: "tooMany" });
+      log.error(`bilan d'hier impossible : plus de ${PERIOD_MAX_PAGES * PERIOD_PAGE_SIZE} paiements à lire`);
+    } else {
+      const summary = summarizeYesterday(lines, now(), decimals);
+      if (summary) {
+        store.setRecap({ day: bounds.yesterdayKey, state: "ok", count: summary.count, total: summary.total, decimals, suffix: currencySuffix });
+      } else {
+        store.setRecap({ day: bounds.yesterdayKey, state: "error" });
+        log.error("bilan d'hier impossible : une ligne de l'historique est illisible");
+      }
+    }
+    initialPending = false;
+    store.setLoaded(true);
+    log.info(`chargement de la période : ${added} paiement(s) du jour, ${lines.length} ligne(s) lue(s)`);
+    return true;
+  }
+
   // Reads the latest credits and adds the new ones. Throws on any error: callers decide.
   async function syncHistory(token) {
     await ensureAccount(token);
     if (!accountType) {
       log.error("aucun compte lisible, historique ignoré");
       return;
+    }
+    // The recap of yesterday is (re)read when it is missing, failed, or is not the one of the right day (the day changed).
+    const recap = store.recap;
+    if (!recap || recap.state === "error" || recap.day !== dayBounds(now()).yesterdayKey) {
+      if (await loadPeriod(token)) return;
     }
     const credits = await push.getRecentCredits(token, {
       accountType,
@@ -84,6 +144,19 @@ export function createPaymentProcessor({
     store.setLoaded(true);
     if (source === "initial") log.info(`chargement initial : ${added} paiement(s)`);
     else if (added + completed > 0) log.info(`filet de sécurité : ${added} paiement(s) rattrapé(s), ${completed} ticket(s) complété(s)`);
+  }
+
+  // At the change of day (Paris, plus two seconds) the recap is read again for the new "yesterday", without waiting for the
+  // next safety poll. The timer renews itself; the next one is always worked out from the clock.
+  function watchMidnight() {
+    if (stopped) return;
+    clearTimeout(midnight);
+    const delay = Math.min(Math.max(dayBounds(now()).nextMidnight - now() + 2000, 1000), 2 ** 31 - 1);
+    midnight = setTimeout(() => {
+      void reconcile();
+      watchMidnight();
+    }, delay);
+    midnight.unref?.();
   }
 
   // After a reconcile: the incomplete tickets made from a notification get a few more tries, each later than the last.
@@ -214,6 +287,7 @@ export function createPaymentProcessor({
         if (!stopped && ctx && !ctx.isReopening() && ctx.token()) void reconcile();
       }, config.safetyPollSeconds * 1000);
       poll.unref?.();
+      watchMidnight();
     },
 
     async onEvent(event, ctxArg) {
@@ -246,6 +320,8 @@ export function createPaymentProcessor({
       debounce = { timer: null, dueAt: 0 };
       clearInterval(poll);
       poll = null;
+      clearTimeout(midnight);
+      midnight = null;
     },
   };
 }

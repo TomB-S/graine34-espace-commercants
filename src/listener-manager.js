@@ -90,7 +90,7 @@ export function createListenerManager({
   const timer = setInterval(() => void sweep(), sweepIntervalMs);
   timer.unref?.();
 
-  const viewOf = (entry) => ({ status: entry.store.status(), tickets: entry.store.list(), loaded: entry.store.loaded });
+  const viewOf = (entry) => ({ status: entry.store.status(), tickets: entry.store.list(), loaded: entry.store.loaded, recap: entry.store.recap });
 
   // A visit: starts the listener if there is none, renews its delay. Returns { ok: true, view } or { ok: false, status: 503 }.
   function touch(merchantKey) {

@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { appTest, EXPECTED_CSP, USER } from "./support/harness.js";
 import { envEnfant } from "./support/env-propre.js";
-import { startFakeCyclos, entry, transfer, paymentNotification, notificationSettingsBody } from "./support/fake-cyclos.js";
+import { startFakeCyclos, fixturesOn, entry, transfer, paymentNotification, notificationSettingsBody } from "./support/fake-cyclos.js";
 import { escapeHtml, formatAmount } from "../src/server.js";
 import { renderCaissePage, renderCaisseRefused } from "../src/caisse-page.js";
 import { makeTicket } from "../src/ticket-store.js";
@@ -233,7 +233,7 @@ appTest("caisse : la liste montre 10 paiements précédents au plus", withOption
 appTest("caisse : aucun paiement = phrase dédiée, sans ticket ni liste", OPTIONS, async (app) => {
   await ready(app);
   const html = await pageUntil(app, isLive, "état live");
-  assert.match(html, /Aucun paiement pour l'instant/);
+  assert.match(html, /Aucun paiement hier/);
   assert.match(html, /Le prochain paiement s'affichera ici/);
   assert.ok(!html.includes("caisse-gros"));
   assert.ok(!html.includes("Paiements précédents"));
@@ -337,6 +337,7 @@ const helpers = {
   logoutForm: () => "<form></form>",
 };
 const NOW = Date.parse("2026-01-10T12:00:00Z");
+const old = fixturesOn(Date.parse("2026-01-10T08:00:00Z"));
 const render = (view, extra = {}) => renderCaissePage(view, { refreshSeconds: 5, hidePayerName: false, now: NOW, csrfToken: "x", ...extra }, helpers);
 
 // Intention: the banner of each state (table of step A1): none while it works, a warning when reconnecting, a durable error.
@@ -356,9 +357,9 @@ test("page : bannière selon l'état (aucune en direct, avertissement, erreur du
   assert.match(error, /role="status"[^>]*>[\s\S]*Impossible de lire les paiements pour le moment\. Prévenir l'équipe La Graine 34\./);
   assert.ok(render({ status: "starting", tickets: [] }).includes("Connexion à Cyclos en cours"));
   assert.ok(!render({ status: "starting", tickets: [] }).includes("Aucun paiement"));
-  assert.match(render({ status: "live", tickets: [] }), /Aucun paiement pour l'instant/);
+  assert.match(render({ status: "live", tickets: [] }), /Bilan d'hier en cours de lecture/);
   for (const status of ["reconnecting", "degraded", "error"]) {
-    assert.ok(!render({ status, tickets: [] }).includes("Aucun paiement"), `no empty line while ${status}: the banner speaks`);
+    assert.ok(!/Aucun paiement|Bilan d'hier/.test(render({ status, tickets: [] })), `no empty line while ${status}: the banner speaks`);
   }
   for (const status of ["starting", "live", "reconnecting", "degraded", "fallback", "error"]) {
     assert.ok(!/État :|::/.test(render({ status, tickets: [] })), `no "État :" prefix or double colon (${status})`);
@@ -368,7 +369,7 @@ test("page : bannière selon l'état (aucune en direct, avertissement, erreur du
 // Intention: the big ticket, top to bottom: mark, payer, amount, date line with the age, description, number.
 test("page : grand ticket dans l'ordre, ligne de date avec l'ancienneté, description et numéro", () => {
   const at = new Date(NOW - 2 * 60_000).toISOString();
-  const ticket = makeTicket({ transfer: transfer(1, { date: at, description: "Pain & fromage" }), source: "push", arrivedAt: NOW - 30_000 });
+  const ticket = makeTicket({ transfer: old.transfer(1, { date: at, description: "Pain & fromage" }), source: "push", arrivedAt: NOW - 30_000 });
   const big = render({ status: "live", tickets: [ticket] }).match(/<section class="caisse-gros"[\s\S]*?<\/section>/)[0];
   const order = ["caisse-nouveau", "caisse-gros-payeur", "caisse-gros-montant", "caisse-gros-heure", "caisse-gros-description", "caisse-gros-numero"].map((c) => big.indexOf(c));
   assert.ok(order.every((n) => n >= 0) && order.every((n, i) => i === 0 || n > order[i - 1]), `order ${order}`);
@@ -377,19 +378,19 @@ test("page : grand ticket dans l'ordre, ligne de date avec l'ancienneté, descri
   assert.match(big, /N° T00001/);
 });
 
-// Intention: another day: the date, with "il y a N h" only under 24 hours; 24 hours or more: the date alone.
-test("page : date d'un autre jour = jj/MM HH:mm, âge seulement sous 24 h", () => {
-  const dateLine = (ms) => render({ status: "live", tickets: [makeTicket({ transfer: transfer(1, { date: new Date(ms).toISOString() }), source: "initial", arrivedAt: ms })] })
-    .match(/<p class="caisse-gros-heure">([^<]*)<\/p>/)[1];
-  assert.equal(dateLine(NOW - 20 * 3_600_000), "09/01 17:00 · il y a 20 h");
-  assert.equal(dateLine(NOW - 30 * 3_600_000), "09/01 07:00");
+// Intention: a payment of another day is never on the page: neither the big ticket nor the list (only today's, Paris time).
+test("page : un paiement d'un autre jour n'apparaît jamais", () => {
+  const ticket = (n, ms) => makeTicket({ transfer: old.transfer(n, { date: new Date(ms).toISOString() }), source: "initial", arrivedAt: ms });
+  const html = render({ status: "live", tickets: [ticket(1, NOW - 20 * 3_600_000), ticket(2, NOW - 30 * 3_600_000)] });
+  assert.ok(!html.includes("caisse-gros") && !html.includes("caisse-ligne") && !html.includes("Paiements précédents"));
+  assert.match(html, /Bilan d'hier en cours de lecture/);
 });
 
 // Intention: no description = no description line; the list shows the description under the payer, escaped; the time stays on one line.
 test("page : description dans la liste (échappée), ligne absente si vide", () => {
-  const withText = makeTicket({ transfer: transfer(2, { description: '<b>Gras</b> "x"' }), source: "initial", arrivedAt: NOW - 1000 });
-  const without = makeTicket({ transfer: transfer(3, { description: "" }), source: "initial", arrivedAt: NOW - 2000 });
-  const top = makeTicket({ transfer: transfer(1), source: "initial", arrivedAt: NOW });
+  const withText = makeTicket({ transfer: old.transfer(2, { description: '<b>Gras</b> "x"' }), source: "initial", arrivedAt: NOW - 1000 });
+  const without = makeTicket({ transfer: old.transfer(3, { description: "" }), source: "initial", arrivedAt: NOW - 2000 });
+  const top = makeTicket({ transfer: old.transfer(1), source: "initial", arrivedAt: NOW });
   const rows = render({ status: "live", tickets: [top, withText, without] }).match(/<li class="caisse-ligne">[\s\S]*?<\/li>/g);
   assert.equal(rows.length, 2);
   assert.match(rows[0], /<span class="caisse-description">&lt;b&gt;Gras&lt;\/b&gt; &quot;x&quot;<\/span>/);
@@ -400,9 +401,9 @@ test("page : description dans la liste (échappée), ligne absente si vide", () 
 // Intention: each previous payment shows its transaction number, small and grey, between the payer and the amount, with the same
 // text as the ticket of the last payment ("N° ..."); a payment without a number shows nothing (no "undefined", no dash, no empty element).
 test("page : numéro de transaction dans la liste, entre le payeur et le montant, rien s'il n'y en a pas", () => {
-  const top = makeTicket({ transfer: transfer(1), source: "initial", arrivedAt: NOW });
-  const numbered = makeTicket({ transfer: transfer(2, { amount: "12.00", description: "" }), source: "initial", arrivedAt: NOW - 1000 });
-  const bare = makeTicket({ transfer: { ...transfer(3), transactionNumber: undefined }, source: "initial", arrivedAt: NOW - 2000 });
+  const top = makeTicket({ transfer: old.transfer(1), source: "initial", arrivedAt: NOW });
+  const numbered = makeTicket({ transfer: old.transfer(2, { amount: "12.00", description: "" }), source: "initial", arrivedAt: NOW - 1000 });
+  const bare = makeTicket({ transfer: { ...old.transfer(3), transactionNumber: undefined }, source: "initial", arrivedAt: NOW - 2000 });
   const html = render({ status: "live", tickets: [top, numbered, bare] });
   const rows = html.match(/<li class="caisse-ligne">[\s\S]*?<\/li>/g);
   assert.equal(rows.length, 2);
@@ -416,7 +417,7 @@ test("page : numéro de transaction dans la liste, entre le payeur et le montant
 
 // Intention: the page without script hides the descriptions of the list too, and keeps the ones the payer wrote.
 test("page : descriptions de la liste à masquer absentes du HTML, texte du payeur conservé", () => {
-  const view = { status: "live", tickets: [makeTicket({ transfer: transfer(2, { description: "Pain" }), source: "initial", arrivedAt: NOW }), makeTicket({ transfer: transfer(1, { description: "virement mobile pro" }), source: "initial", arrivedAt: NOW - 1000 })] };
+  const view = { status: "live", tickets: [makeTicket({ transfer: old.transfer(2, { description: "Pain" }), source: "initial", arrivedAt: NOW }), makeTicket({ transfer: old.transfer(1, { description: "virement mobile pro" }), source: "initial", arrivedAt: NOW - 1000 })] };
   const html = render(view, { hiddenDescriptions: ["Virement Mobile Pro"] });
   assert.ok(html.includes("Description : Pain"));
   assert.ok(!/virement mobile pro/i.test(html));
@@ -449,9 +450,9 @@ test("page : pastille 'En direct' dans l'en-tête seulement quand l'écoute fonc
 // fade does not replay it; the CSS holds the animation (no script, no inline style).
 test("page : fond coloré qui s'estompe sur un paiement qui vient d'arriver, sans script", async () => {
   const { readFile } = await import("node:fs/promises");
-  const fresh = makeTicket({ transfer: transfer(1), source: "push", arrivedAt: NOW - 1000 });
-  const older = makeTicket({ transfer: transfer(2), source: "push", arrivedAt: NOW - 20_000 });
-  const opening = makeTicket({ transfer: transfer(3), source: "initial", arrivedAt: NOW - 1000 });
+  const fresh = makeTicket({ transfer: old.transfer(1), source: "push", arrivedAt: NOW - 1000 });
+  const older = makeTicket({ transfer: old.transfer(2), source: "push", arrivedAt: NOW - 20_000 });
+  const opening = makeTicket({ transfer: old.transfer(3), source: "initial", arrivedAt: NOW - 1000 });
   const big = (ticket) => render({ status: "live", tickets: [ticket] }).match(/<section class="caisse-gros[^"]*"/)[0];
   assert.match(big(fresh), /caisse-gros caisse-gros-neuf/);
   assert.ok(!big(older).includes("caisse-gros-neuf"), "still Nouveau, but the fade is over");
@@ -476,12 +477,12 @@ test("page : gros ticket = description plus petite et grise que la date, marge a
 
 // Intention: an incomplete ticket shows the payer and time, and says the amount is being read; an unreadable one says so.
 test("page : ticket incomplet = 'Montant en cours de lecture', illisible = 'Montant indisponible'", () => {
-  const pending = makeTicket({ notification: paymentNotification(1).notification, entityId: "tr-1", source: "push", arrivedAt: NOW });
+  const pending = makeTicket({ notification: old.paymentNotification(1).notification, entityId: "tr-1", source: "push", arrivedAt: NOW });
   const html = render({ status: "live", tickets: [pending] });
   assert.match(html, /Payeur 1/);
   assert.match(html, /Montant en cours de lecture/);
   assert.ok(!html.includes("caisse-gros-montant"), "no big figure");
-  const unreadable = makeTicket({ transfer: transfer(2, { amount: "abc" }), source: "push", arrivedAt: NOW });
+  const unreadable = makeTicket({ transfer: old.transfer(2, { amount: "abc" }), source: "push", arrivedAt: NOW });
   assert.match(render({ status: "live", tickets: [unreadable] }), /Montant indisponible/);
   assert.match(render({ status: "live", tickets: [pending, pending] }), /<span class="caisse-montant">Montant en cours de lecture<\/span>/);
 });
@@ -511,7 +512,7 @@ test("page : le montant est en très grand (3 rem au moins), classes dans style.
   for (const name of ["caisse-gros", "caisse-nouveau", "caisse-ligne", "caisse-precedents", "caisse-etat", "caisse-actualisation"]) {
     assert.ok(css.includes(`.${name}`), name);
   }
-  const html = render({ status: "live", tickets: [makeTicket({ transfer: transfer(1), source: "push", arrivedAt: NOW })] });
+  const html = render({ status: "live", tickets: [makeTicket({ transfer: old.transfer(1), source: "push", arrivedAt: NOW })] });
   assert.ok(html.includes('class="caisse-gros-montant"'));
 });
 

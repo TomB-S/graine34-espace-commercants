@@ -29,7 +29,7 @@ async function withManager(options, fn) {
   setup?.(cyclos);
   const realPush = createCyclosPush({ baseUrl: cyclos.url, channel: "main" });
   const push = wrapPush ? wrapPush(realPush) : realPush;
-  const clock = { at: 1_000_000, reads: 0 }; // `reads` counts how many times the manager looked at the clock
+  const clock = { at: Date.now(), reads: 0 }; // `reads` counts how many times the manager looked at the clock
   const logs = { info: [], error: [] };
   const log = { info: (m) => logs.info.push(m), error: (m) => logs.error.push(m) };
   const conf = readCaisseConfig({}, {
@@ -317,7 +317,7 @@ test("gestionnaire : touch() simple répond tout de suite, liste vide, « starti
 let releaseHistory = () => {};
 test("gestionnaire : touchAndWait ne dépasse pas le délai maximum, puis répond comme avant", () =>
   withManager(
-    { readyWaitMs: 150, wrapPush: (push) => ({ ...push, getRecentCredits: () => new Promise((resolve) => (releaseHistory = () => resolve([]))) }) },
+    { readyWaitMs: 150, wrapPush: (push) => ({ ...push, getRecentCredits: () => new Promise((resolve) => (releaseHistory = () => resolve([]))), getCreditsPeriod: () => new Promise((resolve) => (releaseHistory = () => resolve({ lines: [], hasNext: false }))) }) },
     async ({ manager }) => {
       try {
         const started = Date.now();

@@ -151,15 +151,26 @@ export function createCaisseView(document, { pollSeconds, nowMs, onSoundToggle =
     holders.list.replaceChildren(heading, rows);
   }
 
-  function renderEmpty(show) {
-    if (show === signatures.empty) return;
-    signatures.empty = show;
-    if (!show) {
+  // No payment today: `recap` is { kind, text } (the recap of yesterday, worked out by the server) or null (nothing to say).
+  function renderEmpty(recap) {
+    const signature = JSON.stringify(recap);
+    if (signature === signatures.empty) return;
+    signatures.empty = signature;
+    if (!recap) {
       holders.empty.replaceChildren();
       return;
     }
+    if (recap.kind === "error") {
+      const paragraph = make("p", "caisse-bandeau erreur");
+      paragraph.setAttribute("role", "status");
+      const icon = make("span", "icone", "⚠");
+      icon.setAttribute("aria-hidden", "true");
+      paragraph.append(icon, ` ${recap.text}`);
+      holders.empty.replaceChildren(paragraph);
+      return;
+    }
     const box = make("div", "caisse-vide");
-    box.append(make("p", "caisse-vide-titre", TEXTS.emptyTitle), make("p", undefined, TEXTS.emptyHelp));
+    box.append(make("p", "caisse-vide-titre", recap.text), make("p", undefined, TEXTS.emptyHelp));
     holders.empty.replaceChildren(box);
   }
 
@@ -235,12 +246,12 @@ export function createCaisseView(document, { pollSeconds, nowMs, onSoundToggle =
       if (top) {
         renderBig(top, freshTickets.includes(top));
         renderList(others);
-        renderEmpty(false);
+        renderEmpty(null);
       } else {
         big = null;
         holders.big.replaceChildren();
         renderList([]);
-        renderEmpty(LIVE.has(data.status));
+        renderEmpty(data.recap ?? null);
       }
       renderBanner();
       renderBadge();

@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { appTest, EXPECTED_CSP, USER } from "./support/harness.js";
-import { entry, transfer, paymentNotification } from "./support/fake-cyclos.js";
+import { entry, transfer, paymentNotification, fixturesOn } from "./support/fake-cyclos.js";
 import { renderCaisseData } from "../src/caisse-data.js";
 import { makeTicket } from "../src/ticket-store.js";
 
@@ -13,6 +13,9 @@ const ON = { enabled: true, login: USER.login, password: USER.password };
 const HOOKS = { listenerOptions: { shortStreamMs: 0, sleep: async () => {} }, processorOptions: { debounceMs: 50, retryDelaysMs: [30, 30, 30] } };
 const OPTIONS = { caisse: ON, caisseHooks: HOOKS };
 const withOptions = (caisse = {}) => ({ caisse: { ...ON, ...caisse }, caisseHooks: HOOKS });
+// Unit tests with a hand-given clock: the fixtures are dated on the same day as NOW.
+const NOW = Date.parse("2026-01-10T12:00:00Z");
+const old = fixturesOn(Date.parse("2026-01-10T08:00:00Z"));
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function dataUntil(app, predicate, what) {
@@ -93,7 +96,7 @@ appTest("caisse/data : la première visite démarre l'écoute, JSON no-store ave
   assert.equal(res.headers.get("content-security-policy"), EXPECTED_CSP);
   assert.equal(res.headers.get("set-cookie"), null);
   const data = await res.json();
-  assert.deepEqual(Object.keys(data).sort(), ["banner", "loaded", "now", "status", "tickets"]);
+  assert.deepEqual(Object.keys(data).sort(), ["banner", "loaded", "now", "recap", "status", "tickets"]);
   assert.ok(Math.abs(data.now - Date.now()) < 5000);
   assert.ok(Array.isArray(data.tickets));
 });
@@ -174,9 +177,9 @@ test("caisse/data : bannière par état dans le JSON", () => {
 });
 
 test("caisse/data : les clés d'un ticket complété gardent celle de sa notification", () => {
-  const draft = makeTicket({ notification: paymentNotification(1).notification, entityId: "tr-1", source: "push", arrivedAt: 1 });
-  const done = makeTicket({ transfer: transfer(1), entityId: "tr-1", source: "push", arrivedAt: 1 });
-  const keys = (ticket) => renderCaisseData({ status: "live", tickets: [ticket] }, { hidePayerName: false, now: 2 }, { formatAmount: String }).tickets[0].keys;
+  const draft = makeTicket({ notification: old.paymentNotification(1).notification, entityId: "tr-1", source: "push", arrivedAt: 1 });
+  const done = makeTicket({ transfer: old.transfer(1), entityId: "tr-1", source: "push", arrivedAt: 1 });
+  const keys = (ticket) => renderCaisseData({ status: "live", tickets: [ticket] }, { hidePayerName: false, now: NOW }, { formatAmount: String }).tickets[0].keys;
   assert.equal(keys(draft).length, 1);
   assert.equal(keys(done).length, 2);
   assert.ok(keys(done).includes(keys(draft)[0]));
@@ -224,8 +227,8 @@ test("scripts : le navigateur n'importe que des fichiers servis, jamais le code 
 // "Family First"): the first name is the last word, the initial is the one of the first word.
 const payerOf = (name, nameOrder) =>
   renderCaisseData(
-    { status: "live", loaded: true, tickets: [makeTicket({ transfer: transfer(1, { payer: name }), source: "push", arrivedAt: 1 })] },
-    { hidePayerName: false, nameOrder, now: 2 },
+    { status: "live", loaded: true, tickets: [makeTicket({ transfer: old.transfer(1, { payer: name }), source: "push", arrivedAt: 1 })] },
+    { hidePayerName: false, nameOrder, now: NOW },
     { formatAmount: String },
   ).tickets[0].payer;
 
@@ -258,7 +261,7 @@ test("caisse/data : prenom-nom : « Prénom Nom » devient « Prénom N. » (ord
 
 test("caisse/data : CAISSE_HIDE_PAYER_NAME l'emporte sur l'ordre des mots", () => {
   for (const nameOrder of ["nom-prenom", "prenom-nom"]) {
-    const hidden = renderCaisseData({ status: "live", tickets: [makeTicket({ transfer: transfer(1, { payer: "Marie Dupont" }), source: "push", arrivedAt: 1 })] }, { hidePayerName: true, nameOrder, now: 2 }, { formatAmount: String });
+    const hidden = renderCaisseData({ status: "live", tickets: [makeTicket({ transfer: old.transfer(1, { payer: "Marie Dupont" }), source: "push", arrivedAt: 1 })] }, { hidePayerName: true, nameOrder, now: NOW }, { formatAmount: String });
     assert.equal(hidden.tickets[0].payer, "Client");
     assert.ok(!JSON.stringify(hidden).includes("Dupont"));
   }
@@ -278,12 +281,12 @@ appTest("caisse : la page et /caisse/data appliquent CAISSE_NAME_ORDER, sans nom
 });
 
 test("caisse/data : descriptions de la liste à masquer absentes du JSON, `loaded` annoncé", () => {
-  const ticket = makeTicket({ transfer: transfer(1, { description: "Virement Mobile Pro" }), source: "push", arrivedAt: 1 });
-  const render = (hiddenDescriptions) => renderCaisseData({ status: "live", loaded: true, tickets: [ticket] }, { hidePayerName: false, hiddenDescriptions, now: 2 }, { formatAmount: String });
+  const ticket = makeTicket({ transfer: old.transfer(1, { description: "Virement Mobile Pro" }), source: "push", arrivedAt: 1 });
+  const render = (hiddenDescriptions) => renderCaisseData({ status: "live", loaded: true, tickets: [ticket] }, { hidePayerName: false, hiddenDescriptions, now: NOW }, { formatAmount: String });
   assert.equal(render(["virement mobile pro"]).tickets[0].description, "");
   assert.equal(render([]).tickets[0].description, "Virement Mobile Pro");
   assert.equal(render(["virement mobile pro"]).loaded, true);
-  assert.equal(renderCaisseData({ status: "starting", tickets: [] }, { hidePayerName: false, now: 2 }, { formatAmount: String }).loaded, false);
+  assert.equal(renderCaisseData({ status: "starting", tickets: [] }, { hidePayerName: false, now: NOW }, { formatAmount: String }).loaded, false);
 });
 
 // Intention: the real server uses the list of the configuration: the default hides "Virement Mobile Pro", a value set to something

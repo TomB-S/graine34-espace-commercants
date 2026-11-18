@@ -33,7 +33,7 @@ function readableAmount(value) {
 }
 
 // First value that is usable, looking at the currency of the transfer, then the account's.
-function pickCurrency(sources) {
+export function pickCurrency(sources) {
   let suffix = null;
   let decimals = null;
   for (const currency of sources) {
@@ -102,6 +102,12 @@ function timeOf(ticket) {
 // Most recent first: payment date, then arrival.
 function byRecency(a, b) {
   return timeOf(b) - timeOf(a) || b.arrivedAt - a.arrivedAt;
+}
+
+// The tickets paid on the same day as `now` (Paris time), in the same order. The cash register page shows nothing else.
+export function ticketsOfDay(tickets, now) {
+  const today = DateTime.fromMillis(now, { zone: ZONE });
+  return tickets.filter((ticket) => DateTime.fromMillis(timeOf(ticket), { zone: ZONE }).hasSame(today, "day"));
 }
 
 // The "New" mark: not loaded at opening, and arrived less than 60 seconds ago.
@@ -185,6 +191,7 @@ export function createTicketStore({ ticketsKept = 50, seenKept = 200 } = {}) {
   let anonymous = 0;
   let connection = "starting"; // starting, live, reconnecting, degraded, error
   let fallback = false; // the "payment received" notification is off at Cyclos
+  let recap = null; // recap of yesterday (see setRecap), null while it has not been read
   let loaded = false; // the first load of the history succeeded (what the page may take as "what was already there")
   let settleWaiters = []; // resolved when the connection leaves "starting"
 
@@ -305,6 +312,16 @@ export function createTicketStore({ ticketsKept = 50, seenKept = 200 } = {}) {
       tickets.clear();
       seenTransactions.clear();
       seenEntities.clear();
+      recap = null;
+    },
+
+    // Recap of yesterday, read apart from the tickets: { day: "2026-11-17", state: "ok", count, total, decimals, suffix },
+    // or { day, state: "error" } (the reading failed) or { day, state: "tooMany" } (more payments than the reading limit).
+    setRecap(value) {
+      recap = value;
+    },
+    get recap() {
+      return recap;
     },
 
     // State of the listening, for the page.

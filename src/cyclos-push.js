@@ -157,6 +157,34 @@ export function createCyclosPush({ baseUrl, channel = "", fetchImpl = globalThis
       return body;
     },
 
+    // One page of the payments received between two moments (ISO texts with offset), most recent first. Returns
+    // { lines, hasNext }. `hasNext` comes from the X-Has-Next-Page header; when the header is missing, a full page is taken
+    // to mean "there may be more" (the caller then reads on, and its page limit protects it).
+    async getCreditsPeriod(token, { accountType, from, to, page, pageSize }, signal) {
+      if (!ACCOUNT_TYPE.test(accountType ?? "")) throw new PushUnavailableError("invalid account type");
+      const query = new URLSearchParams({
+        direction: "credit",
+        kinds: "payment",
+        orderBy: "dateDesc",
+        datePeriod: `${from},${to}`,
+        page: String(page),
+        pageSize: String(pageSize),
+        skipTotalCount: "true",
+      });
+      const { response } = await request(`/self/accounts/${accountType}/history?${query}`, { headers: { "Session-Token": token }, signal });
+      checkStatus(response, "getCreditsPeriod");
+      let lines;
+      try {
+        lines = await response.json();
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        throw new PushUnavailableError("unreadable answer on getCreditsPeriod", { cause: error });
+      }
+      if (!Array.isArray(lines)) throw new PushUnavailableError("unexpected answer on getCreditsPeriod");
+      const header = response.headers.get("x-has-next-page");
+      return { lines, hasNext: header === null ? lines.length >= pageSize : header === "true" };
+    },
+
     // Detail of a transfer: one call. Never give a transaction id here (they differ).
     async getTransfer(token, id, signal) {
       if (!PLAIN_ID.test(String(id))) throw new PushUnavailableError("invalid transfer id");

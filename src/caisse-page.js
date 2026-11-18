@@ -7,10 +7,10 @@
 //
 // The helpers of server.js (escapeHtml, formatAmount, htmlPage, errorMessage, logoutForm) are given
 // by the caller: importing server.js from here would be a circular import.
-import { ticketDisplay } from "./ticket-store.js";
+import { ticketDisplay, ticketsOfDay } from "./ticket-store.js";
 import { TEXTS } from "../web/js/caisse-texts.js";
 import { pollFooterText } from "../web/js/refresh-logic.js";
-import { LIST_SIZE, bannerOf, payerText, amountText } from "./caisse-data.js";
+import { LIST_SIZE, bannerOf, payerText, amountText, recapOf } from "./caisse-data.js";
 
 const TITLE = "Caisse : paiements reçus";
 
@@ -39,7 +39,7 @@ export function renderCaissePage(view, { refreshSeconds, pollSeconds = 3, hidePa
   const payerOf = (d) => payerText(d, hidePayerName, nameOrder);
   const amountOf = amountText;
 
-  const [latest, ...others] = view.tickets;
+  const [latest, ...others] = ticketsOfDay(view.tickets, now);
   let main = "";
   if (latest) {
     const d = show(latest);
@@ -72,7 +72,11 @@ export function renderCaissePage(view, { refreshSeconds, pollSeconds = 3, hidePa
   } else if (view.status !== "starting") {
     // Only while the listening works: during a reconnection or an error the banner speaks, an "empty" line would mislead.
     if (view.status === "live" || view.status === "fallback") {
-      main += `<div class="caisse-vide"><p class="caisse-vide-titre">${TEXTS.emptyTitle}</p><p>${TEXTS.emptyHelp}</p></div>`;
+      const recap = recapOf(view.recap, now, formatAmount);
+      main +=
+        recap.kind === "error"
+          ? `<p class="caisse-bandeau erreur" role="status"><span class="icone" aria-hidden="true">⚠</span> ${e(recap.text)}</p>`
+          : `<div class="caisse-vide"><p class="caisse-vide-titre">${e(recap.text)}</p><p>${TEXTS.emptyHelp}</p></div>`;
     }
   }
 

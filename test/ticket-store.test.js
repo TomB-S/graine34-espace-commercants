@@ -9,10 +9,11 @@ import assert from "node:assert/strict";
 // MUST stay first: cleans the environment variables before server.js is loaded (see env-propre.js).
 import "./support/env-propre.js";
 import { formatAmount } from "../src/server.js";
-import { transfer, paymentNotification, entry } from "./support/fake-cyclos.js";
+import { fixturesOn } from "./support/fake-cyclos.js";
 import { makeTicket, createTicketStore, ticketDisplay, isNew, transferShapeOfTransaction } from "../src/ticket-store.js";
 
 const NOW = Date.parse("2026-01-10T12:00:00Z");
+const { transfer, paymentNotification, entry } = fixturesOn(Date.parse("2026-01-10T08:00:00Z"));
 
 // A ticket as the listener builds it from a notification and its transfer.
 function pushTicket(n, { arrivedAt = NOW, ...options } = {}) {

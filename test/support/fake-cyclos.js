@@ -29,8 +29,20 @@ export const USER = { login: "commercant", password: "motdepasse-de-test", displ
 // Builds a fictitious transaction. `n` makes it unique and orders it in time (the n-th one is n minutes
 // after the previous one); the default amount is 10.00.
 // Builds a history line in Cyclos' format (negative amount = outgoing payment).
+// Start of today in Paris, in milliseconds. The default dates of the fixtures are on THIS day (a few seconds apart), because the
+// cash register page only shows today's payments: the fixtures must be "today" whatever the day the tests run.
+const dayStart = (offsetDays = 0) => {
+  const key = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const [year, month, day] = key.split("-").map(Number);
+  // Noon UTC of that day, then back to the Paris midnight: the offset of Paris is the same all through the day except at the change of time.
+  const noon = Date.UTC(year, month - 1, day + offsetDays, 12);
+  const parisHour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Paris", hour: "2-digit", hourCycle: "h23" }).format(new Date(noon)));
+  return noon - parisHour * 3_600_000;
+};
+export const todayAt = (n, offsetDays = 0) => dayStart(offsetDays) + n * 1000;
+
 export function entry(n, { amount = "10.00", date, description, who = "Client" } = {}) {
-  const base = Date.parse("2026-01-10T08:00:00Z") + n * 60_000;
+  const base = todayAt(n);
   return {
     transactionNumber: `T${String(n).padStart(5, "0")}`,
     date: date ?? new Date(base).toISOString(),
@@ -57,7 +69,7 @@ export function notificationSettingsBody({ paymentReceived = { internal: true },
 // Builds the answer of GET /transfers/{id} in the shape of the real instance: the description is NOT at the root,
 // it is in `transaction.description`; the amount is a STRING; the date has a time zone. Fictitious values only.
 export function transfer(n, { amount = "1.00", description = `Objet ${n}`, payer = `Payeur ${n}`, date, id = `tr-${n}` } = {}) {
-  const base = Date.parse("2026-01-10T08:00:00Z") + n * 60_000;
+  const base = todayAt(n);
   return {
     id,
     transactionNumber: `T${String(n).padStart(5, "0")}`,
@@ -71,7 +83,7 @@ export function transfer(n, { amount = "1.00", description = `Objet ${n}`, payer
 
 // Builds the "newNotification" event data for a payment received (the shape of section 2 of the instructions).
 export function paymentNotification(n, { payer = `Payeur ${n}`, entityId = `tr-${n}`, entityType = "transfer", type = "paymentReceived", date } = {}) {
-  const base = Date.parse("2026-01-10T08:00:00Z") + n * 60_000;
+  const base = todayAt(n);
   return {
     notification: {
       date: date ?? new Date(base).toISOString().replace("Z", "+00:00"),
@@ -85,6 +97,17 @@ export function paymentNotification(n, { payer = `Payeur ${n}`, entityId = `tr-$
     },
     newNotifications: 1,
     unreadNotifications: 1,
+  };
+}
+
+// The same fixtures on another day, for the unit tests that work with a fixed clock ("now" given by hand): dated `base` + n
+// minutes. The default ones above are dated today, because the cash register page only shows today's payments.
+export function fixturesOn(base) {
+  const iso = (n) => new Date(base + n * 60_000).toISOString();
+  return {
+    entry: (n, options = {}) => entry(n, { ...options, date: options.date ?? iso(n) }),
+    transfer: (n, options = {}) => transfer(n, { ...options, date: options.date ?? iso(n).replace("Z", "+00:00") }),
+    paymentNotification: (n, options = {}) => paymentNotification(n, { ...options, date: options.date ?? iso(n).replace("Z", "+00:00") }),
   };
 }
 
@@ -264,8 +287,14 @@ export async function startFakeCyclos() {
       const page = Number(url.searchParams.get("page") ?? 0);
       const size = state.pageSize ?? Number(url.searchParams.get("pageSize") ?? 40);
       // `direction=credit` (cash register page): only the entries received, amount above zero.
-      const all =
+      let all =
         url.searchParams.get("direction") === "credit" ? state.entries.filter((e) => Number(e.amount) > 0) : state.entries;
+      // `datePeriod=begin,end` (cash register page, recap of yesterday): only the entries dated in the period.
+      const period = url.searchParams.get("datePeriod");
+      if (period) {
+        const [begin, end] = period.split(",").map((d) => Date.parse(d));
+        all = all.filter((e) => Date.parse(e.date) >= begin && Date.parse(e.date) < end);
+      }
       const slice = all.slice(page * size, (page + 1) * size);
       const hasNext = (page + 1) * size < all.length;
       return json(res, 200, slice, { "X-Has-Next-Page": String(hasNext) });

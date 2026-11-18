@@ -235,10 +235,14 @@ test("vue : montant en cours de lecture = phrase, pas un grand chiffre", () => {
 
 test("vue : aucun paiement = phrase d'attente seulement si l'écoute fonctionne", () => {
   const { view, content } = setup();
-  view.update(data([]));
-  assert.match(content.textContent, /Aucun paiement pour l'instant/);
-  view.update(data([], { status: "reconnecting", banner: { level: "warning", text: "Connexion interrompue." } }));
-  assert.ok(!/Aucun paiement/.test(content.textContent));
+  view.update(data([], { recap: { kind: "summary", text: "Hier : 12 paiements, 87,00 G" } }));
+  assert.match(content.textContent, /Hier : 12 paiements, 87,00 G/);
+  view.update(data([], { recap: { kind: "none", text: "Aucun paiement hier" } }));
+  assert.match(content.textContent, /Aucun paiement hier/);
+  view.update(data([], { recap: { kind: "error", text: "Impossible de lire le bilan d'hier pour le moment." } }));
+  assert.match(content.textContent, /Impossible de lire le bilan d'hier/);
+  view.update(data([], { status: "reconnecting", recap: null, banner: { level: "warning", text: "Connexion interrompue." } }));
+  assert.ok(!/Hier|Aucun paiement/.test(content.textContent));
 });
 
 test("vue : bannière et pastille 'En direct' selon l'état, bannière réseau quand le serveur ne répond plus", () => {

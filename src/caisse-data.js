@@ -2,7 +2,8 @@
 // the banner, the texts of a ticket (payer, amount) and the JSON for the script. Pure functions: state in, data out.
 // The texts that come from Cyclos stay plain strings here; the page escapes them, the script uses textContent.
 import { createHash } from "node:crypto";
-import { ticketDisplay, ticketKeys } from "./ticket-store.js";
+import { ticketDisplay, ticketKeys, ticketsOfDay } from "./ticket-store.js";
+import { dayBounds } from "./day-recap.js";
 import { TEXTS } from "../web/js/caisse-texts.js";
 
 // Payments shown: the big ticket and the list under it.
@@ -42,10 +43,24 @@ export const amountText = (display) =>
 // Opaque key: the identifiers of Cyclos never leave the server as they are.
 const opaque = (key) => `k${createHash("sha256").update(key).digest("hex").slice(0, 12)}`;
 
+// What the page says when there is no payment today, from the recap of yesterday kept by the store: { kind, text }.
+// kind: "summary" (count and total), "none" (no payment yesterday), "pending" (not read yet, or the day just changed and the
+// new recap is being read), "error" (the reading failed or went past its limit: never a guessed total).
+export function recapOf(recap, now, formatAmount) {
+  if (!recap || recap.day !== dayBounds(now).yesterdayKey) return { kind: "pending", text: TEXTS.recapPending };
+  if (recap.state === "error") return { kind: "error", text: TEXTS.recapError };
+  if (recap.state === "tooMany") return { kind: "error", text: TEXTS.recapTooMany };
+  if (recap.count === 0) return { kind: "none", text: TEXTS.recapNone };
+  const noun = recap.count === 1 ? "paiement" : "paiements";
+  return { kind: "summary", text: `Hier : ${recap.count} ${noun}, ${formatAmount(recap.total, recap.decimals)}${recap.suffix}` };
+}
+
 // The JSON of GET /caisse/data. Nothing but what the page shows, plus what the script needs to follow the payments
 // (keys, source, date in milliseconds). No identifier of Cyclos, no session data.
 export function renderCaisseData(view, { hidePayerName, nameOrder, hiddenDescriptions, now }, { formatAmount }) {
-  const tickets = view.tickets.slice(0, LIST_SIZE + 1).map((ticket) => {
+  // Only the payments of today (Paris time). With none, and while the listening works, the recap of yesterday takes their place.
+  const today = ticketsOfDay(view.tickets, now);
+  const tickets = today.slice(0, LIST_SIZE + 1).map((ticket) => {
     const d = ticketDisplay(ticket, { now, formatAmount, hiddenDescriptions });
     return {
       keys: ticketKeys(ticket).map(opaque),
@@ -62,5 +77,7 @@ export function renderCaisseData(view, { hidePayerName, nameOrder, hiddenDescrip
     };
   });
   // `loaded`: the first load of the history is done, so the page may take what it sees as "already there" (see new-payments.js).
-  return { status: view.status, banner: bannerOf(view.status), now, loaded: view.loaded === true, tickets };
+  const live = view.status === "live" || view.status === "fallback";
+  const recap = today.length === 0 && live ? recapOf(view.recap, now, formatAmount) : null;
+  return { status: view.status, banner: bannerOf(view.status), now, loaded: view.loaded === true, recap, tickets };
 }

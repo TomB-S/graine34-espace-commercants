@@ -266,19 +266,21 @@ test("processeur : réglage confirmé dans settings.notifications = état direct
     }),
   ));
 
-// Intention: at opening, the latest payments are loaded from the history (not more than historyInitial), marked "initial":
-// never "New", most recent first; then the state is "live".
-test("processeur : chargement initial borné, tickets initial jamais Nouveau", () =>
+// Intention: at opening, the payments of yesterday and today are read in pages of 100 with a period (not only the latest ones),
+// today's ones become tickets marked "initial": never "New", most recent first; then the state is "live".
+test("processeur : chargement initial par période, tickets initial jamais Nouveau", () =>
   withCaisse({ setup: (c) => (c.state.entries = Array.from({ length: 12 }, (_, i) => entry(12 - i, { amount: "1.00" }))) }, async ({ cyclos, store, live }) => {
     await live();
     assert.equal(store.status(), "live");
-    assert.equal(store.size, 10);
+    assert.equal(store.size, 12);
     assert.ok(store.list().every((t) => t.source === "initial" && !isNew(t, Date.now())));
     assert.deepEqual(store.list().slice(0, 2).map((t) => t.transactionNumber), ["T00012", "T00011"]);
     const query = historyCalls(cyclos)[0].query;
-    assert.equal(query.get("pageSize"), "10");
+    assert.equal(query.get("pageSize"), "100");
+    assert.equal(query.get("page"), "0");
     assert.equal(query.get("direction"), "credit");
     assert.equal(query.get("skipTotalCount"), "true");
+    assert.match(query.get("datePeriod"), /^\d{4}-\d{2}-\d{2}T00:00:00\.000[+-]\d{2}:\d{2},\d{4}-\d{2}-\d{2}T00:00:00\.000[+-]\d{2}:\d{2}$/);
   }));
 
 // Intention: the history of the opening and the later notification of the same payment give ONE ticket.

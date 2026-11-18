@@ -4,7 +4,7 @@
 // the elements are built in caisse-view.js. This file only holds the timers and the network.
 import { createCaisseView } from "./caisse-view.js";
 import { createNewPaymentDetector } from "./new-payments.js";
-import { clockOffset } from "./date-line.js";
+import { clockOffset, parisDayKey } from "./date-line.js";
 import { createSound } from "./sound.js";
 import { shouldBeep, soundLabel } from "./sound-logic.js";
 import { controlsLabel } from "./controls-logic.js";
@@ -88,6 +88,8 @@ function start() {
   const detector = createNewPaymentDetector();
   let timer = null;
   let reading = null; // the reading under way, if any: one at a time, whoever asked for it
+  let wantsRetry = false; // the recap of yesterday is still being read by the server: read again soon, even in manual mode
+  let shownDay = parisDayKey(Date.now()); // the day (Paris) the page was last read for
   let refreshing = false; // a reading asked by the "Actualiser" button is under way
 
   // A click reads at once. Same reading, same detector as the automatic one: a payment already shown is never new, so the click can
@@ -129,6 +131,8 @@ function start() {
       if (!response.ok) throw new Error(`status ${response.status}`);
       const data = await response.json();
       offset = clockOffset(data.now, Date.now());
+      shownDay = parisDayKey(Date.now() + offset);
+      wantsRetry = data.recap?.kind === "pending";
       // New = not seen yet by this page, even when it comes from the history (after a pause of the listening). Nothing is reported
       // before the server says its first load of the history is done (`loaded`), so that the old payments never ring.
       const nowMs = Date.now() + offset;
@@ -148,7 +152,7 @@ function start() {
     } finally {
       // A timeout chain, not an interval: the next read starts a few seconds after the end of this one.
       // Never paused when the tab is hidden.
-      if (!manual) timer = setTimeout(poll, pollMs);
+      if (!manual || wantsRetry) timer = setTimeout(poll, manual ? 3000 : pollMs);
     }
   }
 
@@ -160,7 +164,11 @@ function start() {
     }
   });
   if (!manual) window.addEventListener("online", poll);
-  setInterval(() => view.refreshAges(), AGE_REFRESH_MS);
+  setInterval(() => {
+    view.refreshAges();
+    // Midnight in Paris: the day changed while the page stayed open, read at once (the payments of the day before leave the page).
+    if (parisDayKey(Date.now() + offset) !== shownDay) poll();
+  }, AGE_REFRESH_MS);
   poll();
 }
 
