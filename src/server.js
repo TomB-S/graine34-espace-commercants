@@ -948,6 +948,9 @@ export function startServer(options = {}) {
     return Promise.reject(error);
   }
   LISTEN_ON_LOGIN = Boolean(options.listenOnLogin);
+  if (CAISSE.multiMerchantIgnored) {
+    console.log("Mode multi-commerçants ignoré : l'exécutable reste mono-commerçant");
+  }
   if (LISTEN_ON_LOGIN) {
     // The only difference with the hosted mode: where the listener's credentials come from.
     CAISSE = Object.freeze({ ...CAISSE, credentialsFor: pageCredentials, credentialsRefused: dropPageCredentials });
