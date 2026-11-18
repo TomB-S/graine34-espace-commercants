@@ -8,6 +8,7 @@ import {
 } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { readCaisseConfig, PROTOTYPE_MERCHANT } from "./caisse-config.js";
+import { clientAddressOf } from "./client-address.js";
 import { createCyclosPush, PushAuthError } from "./cyclos-push.js";
 import { describeError } from "./cyclos-listener.js";
 import { createListenerManager } from "./listener-manager.js";
@@ -817,7 +818,17 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        const ip = req.socket.remoteAddress ?? "unknown";
+        // Behind relays (multi-merchant mode only) the address comes from X-Forwarded-For, counted from the right.
+        const reading = clientAddressOf(req, CAISSE.trustedProxyHops ?? 0);
+        const ip = reading.address;
+        if (CAISSE.multiMerchant) {
+          // Help to set CAISSE_TRUSTED_PROXY_HOPS after a real test: what was read, and what it was read from.
+          console.log(
+            `adresse lue ${ip} (${reading.fromHeader ? "X-Forwarded-For" : "connexion directe"}, adresse de la connexion ${
+              req.socket.remoteAddress ?? "inconnue"
+            }, ${reading.headerEntries} entrée(s) X-Forwarded-For, relais de confiance ${CAISSE.trustedProxyHops})`,
+          );
+        }
         const blockedUntil = loginBlockedUntil(ip);
         if (blockedUntil) {
           const retryAfter = Math.ceil((blockedUntil - Date.now()) / 1000);
