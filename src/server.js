@@ -17,6 +17,7 @@ import { renderCaissePage, renderCaisseRefused } from "./caisse-page.js";
 import { renderEspaceLogin, renderEspaceHome, REFUSED_TEXT } from "./espace-page.js";
 import { renderCaisseData } from "./caisse-data.js";
 import { inExecutable, readAsset } from "./assets.js";
+import { escapeHtml, errorMessage, formatAmount } from "./format.js";
 
 
 // Cyclos API address. CYCLOS_BASE_URL overrides the public demo (default),
@@ -293,20 +294,6 @@ function serveStatic(req, res, asset) {
   res.end(asset.body);
 }
 
-// Values come from a remote API (or the user): escape them before putting them in HTML.
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
-// An error message: never conveyed by colour alone (icon + "Erreur :" label).
-function errorMessage(text) {
-  return `<p class="erreur" role="alert"><span class="icone" aria-hidden="true">⚠</span> <strong>Erreur :</strong> ${text}</p>`;
-}
-
 function htmlPage(title, body, { toolName = "Notification de paiement" } = {}) {
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -393,21 +380,6 @@ function renderAccessDenied(csrfToken) {
   ${errorMessage("Votre compte n'a pas l'autorisation d'utiliser cet outil.")}
   ${links}`,
   );
-}
-
-// Cyclos refuses (403) or gives nothing (empty list) on GET /self/accounts:
-// either no money account, or no banking right for the API session. The
-// `signed` adds "+" to positive amounts; negative ones always keep their "-".
-function formatAmount(value, digits = 2, { signed = false } = {}) {
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(String(value));
-  if (!match) return String(value);
-  const [, minus, integer, decimals = ""] = match;
-  const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
-  const number =
-    digits > 0 ? `${grouped},${decimals.padEnd(digits, "0")}` : grouped;
-  const isZero = /^[0,\u202f]*$/.test(number);
-  if (minus && !isZero) return `-${number}`;
-  return signed && !isZero ? `+${number}` : number;
 }
 
 function send(res, status, contentType, body, headers = {}) {
