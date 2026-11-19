@@ -88,6 +88,7 @@ function start() {
   const detector = createNewPaymentDetector();
   let timer = null;
   let reading = null; // the reading under way, if any: one at a time, whoever asked for it
+  let halted = false; // the server says the listening is over for good (session expired): no more automatic readings
   let wantsRetry = false; // the recap of yesterday is still being read by the server: read again soon, even in manual mode
   let shownDay = parisDayKey(Date.now()); // the day (Paris) the page was last read for
   let refreshing = false; // a reading asked by the "Actualiser" button is under way
@@ -133,6 +134,7 @@ function start() {
       offset = clockOffset(data.now, Date.now());
       shownDay = parisDayKey(Date.now() + offset);
       wantsRetry = data.recap?.kind === "pending";
+      halted = data.status === "reauth";
       // New = not seen yet by this page, even when it comes from the history (after a pause of the listening). Nothing is reported
       // before the server says its first load of the history is done (`loaded`), so that the old payments never ring.
       const nowMs = Date.now() + offset;
@@ -152,7 +154,8 @@ function start() {
     } finally {
       // A timeout chain, not an interval: the next read starts a few seconds after the end of this one.
       // Never paused when the tab is hidden.
-      if (!manual || wantsRetry) timer = setTimeout(poll, manual ? 3000 : pollMs);
+      // The one exception: "reauth", the merchant has to log in again, reading again would change nothing.
+      if (!halted && (!manual || wantsRetry)) timer = setTimeout(poll, manual ? 3000 : pollMs);
     }
   }
 

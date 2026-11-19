@@ -863,3 +863,29 @@ test("mode manuel : 401 à l'ouverture ou au clic = retour à la connexion", asy
     page.restore();
   }
 });
+
+// Intention: when the server says "reauth" (session expired), the script shows the message and STOPS reading by itself: no next reading is
+// planned, so nothing loops. A click on "Actualiser" (a manual reading) still works, and if the state is back to normal the chain resumes.
+test("script : état « reconnexion nécessaire » = message, plus aucune lecture automatique ; un retour à la normale reprend la chaîne", async () => {
+  const expired = { status: "reauth", banner: { level: "error", text: "Session expirée, reconnectez-vous", link: { text: "Se reconnecter", href: "/" } }, now: Date.now(), tickets: [] };
+  const page = await run([ok(expired), ok(expired), ok(data([ticket(1)]))]);
+  try {
+    assert.equal(page.calls.length, 1);
+    assert.match(page.nodes.get("caisse-zone-etat").textContent, /Session expirée, reconnectez-vous/);
+    assert.equal(page.timers.filter((t) => !t.every && t.ms === 3000).length, 0, "no next reading planned");
+    assert.equal(page.nodes.get("caisse-actualisation").textContent, "");
+    // Time passing and a tab coming back to the foreground read once each, never in a chain.
+    page.document.visibilityState = "visible";
+    page.listeners.visibilitychange();
+    await flush();
+    assert.equal(page.calls.length, 2);
+    assert.equal(page.timers.filter((t) => !t.every && t.ms === 3000).length, 0, "still no chain");
+    // The state is normal again (the merchant logged in elsewhere, for instance): the chain resumes.
+    page.listeners.visibilitychange();
+    await flush();
+    assert.equal(page.calls.length, 3);
+    assert.equal(page.timers.filter((t) => !t.every && t.ms === 3000).length, 1, "chain back");
+  } finally {
+    page.restore();
+  }
+});

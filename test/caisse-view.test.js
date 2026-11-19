@@ -315,3 +315,16 @@ test("vue : sans zone « actualiser » dans la page, la mise à jour du bouton n
   bare.updateRefresh({ text: "Actualiser", disabled: false });
   assert.ok(view);
 });
+
+// Intention: the banner of the expired session shows the sentence AND a real link to the login page; the "automatic update" line goes.
+test("vue : session expirée = phrase et lien « Se reconnecter », ligne de mise à jour automatique effacée", () => {
+  const { view, state } = setup();
+  view.update(data([ticket(1)], { status: "reauth", banner: { level: "error", text: "Session expirée, reconnectez-vous", link: { text: "Se reconnecter", href: "/" } } }));
+  const banner = first(state, "caisse-bandeau");
+  assert.equal(banner.className, "caisse-bandeau erreur");
+  assert.match(banner.textContent, /Session expirée, reconnectez-vous/);
+  const link = banner.children.find((child) => typeof child !== "string" && child.tag === "a");
+  assert.ok(link, "a link");
+  assert.equal(link.attributes.href, "/");
+  assert.equal(link.textContent, "Se reconnecter");
+});

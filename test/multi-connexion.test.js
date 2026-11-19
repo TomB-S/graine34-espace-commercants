@@ -430,3 +430,25 @@ test("exécutable : le drapeau multi est ignoré, le mode mono reste celui d'auj
     restore();
   }
 });
+
+// Intention: the page of a merchant whose listening token expired says "Session expirée, reconnectez-vous", offers the link to the login
+// page, and does not reload itself (no <meta refresh>, no "automatic update" line); a plain page load makes no call to Cyclos.
+appTest("multi : page « Session expirée, reconnectez-vous », sans rafraîchissement automatique", multi(), async (app) => {
+  seed(app);
+  const b = browsers(app);
+  await b.login("marie");
+  await liveData(app);
+  const token = app.server.inspectSessions()[0].listenerToken;
+  app.cyclos.state.tokens.delete(token);
+  app.cyclos.endStreams();
+  for (let i = 0; i < 100 && (await dataOf(app)).status !== "reauth"; i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+  const calls = app.cyclos.state.requests.length;
+  const html = await (await app.request("/caisse")).text();
+  assert.match(html, /Session expirée, reconnectez-vous/);
+  assert.match(html, /<a class="caisse-reconnexion" href="\/">Se reconnecter<\/a>/);
+  assert.doesNotMatch(html, /http-equiv="refresh"/);
+  assert.doesNotMatch(html, /Mise à jour automatique/);
+  const data = await dataOf(app);
+  assert.deepEqual(data.banner, { level: "error", text: "Session expirée, reconnectez-vous", link: { text: "Se reconnecter", href: "/" } });
+  assert.equal(app.cyclos.state.requests.length, calls, "reading the page does not call Cyclos");
+});

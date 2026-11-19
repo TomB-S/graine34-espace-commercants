@@ -14,6 +14,8 @@ export const LIST_SIZE = 10;
 export function bannerOf(status) {
   if (status === "live" || status === "fallback") return null;
   if (status === "error") return { level: "error", text: TEXTS.unreadable };
+  // The listening stopped for good (no retry): the banner says so and offers the way back to the login page.
+  if (status === "reauth") return { level: "error", text: TEXTS.reauth, link: { text: TEXTS.reconnectLink, href: "/" } };
   if (status === "reconnecting" || status === "degraded") return { level: "warning", text: TEXTS.reconnecting };
   return { level: "info", text: TEXTS.starting };
 }

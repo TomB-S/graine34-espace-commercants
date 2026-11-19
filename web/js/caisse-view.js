@@ -53,6 +53,11 @@ export function createCaisseView(document, { pollSeconds, nowMs, onSoundToggle =
     const icon = make("span", "icone", "⚠");
     icon.setAttribute("aria-hidden", "true");
     paragraph.append(icon, ` ${banner.text}`);
+    if (banner.link) {
+      const anchor = make("a", "caisse-reconnexion", banner.link.text);
+      anchor.setAttribute("href", banner.link.href);
+      paragraph.append(" ", anchor);
+    }
     zones.state.replaceChildren(paragraph);
   }
 
@@ -255,7 +260,8 @@ export function createCaisseView(document, { pollSeconds, nowMs, onSoundToggle =
       }
       renderBanner();
       renderBadge();
-      if (footer) footer.textContent = pollFooterText(pollSeconds);
+      // No "automatic update" line once the listening is over for good (the script has stopped reading by itself).
+      if (footer) footer.textContent = data.status === "reauth" ? "" : pollFooterText(pollSeconds);
     },
 
     // The server cannot be reached: the display stays as it is, a banner says so.
