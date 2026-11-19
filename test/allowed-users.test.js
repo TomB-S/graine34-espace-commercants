@@ -74,3 +74,20 @@ test("liste autorisée : ligne de journal d'un compte refusé, numéro interne s
     assert.equal(line.includes("@"), false);
   }
 });
+
+// Intention: the internal Cyclos numbers have 19 digits, beyond the safe integers of JavaScript. Two numbers that differ only by their last
+// digits are the SAME number once converted, so they must be kept as text everywhere: here in the setting and in the whitelist.
+test("liste autorisée : numéros de 19 chiffres traités comme du texte, jamais confondus", () => {
+  const A = "7636759574759746134";
+  const B = "7636759574759746135";
+  assert.equal(Number(A) === Number(B), true, "as numbers they would be equal: the test is meaningful");
+  const config = readCaisseConfig({ ...ENV, CAISSE_ALLOWED_USERS: ` ${A} ` });
+  assert.deepEqual(config.allowedUsers.ids, [A]);
+  const list = createAllowedUsers(config.allowedUsers);
+  assert.equal(list.isAllowed({ id: A }), true);
+  assert.equal(list.isAllowed({ id: B }), false, "the neighbour is not allowed");
+  assert.equal(list.isAllowed({ id: Number(A) }), false, "a number (not text) is refused");
+  const both = createAllowedUsers(readCaisseConfig({ ...ENV, CAISSE_ALLOWED_USERS: `${A},${B}` }).allowedUsers);
+  assert.equal(both.size, 2, "two entries, not one");
+  assert.equal(refusedAccountLine(B), `compte refusé (absent de CAISSE_ALLOWED_USERS), numéro interne Cyclos : ${B}`);
+});

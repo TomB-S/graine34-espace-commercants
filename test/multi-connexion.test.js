@@ -452,3 +452,47 @@ appTest("multi : page « Session expirée, reconnectez-vous », sans rafraîchis
   assert.deepEqual(data.banner, { level: "error", text: "Session expirée, reconnectez-vous", link: { text: "Se reconnecter", href: "/" } });
   assert.equal(app.cyclos.state.requests.length, calls, "reading the page does not call Cyclos");
 });
+
+// === 19-digit numbers ===
+
+const BIG_A = "7636759574759746134";
+const BIG_B = "7636759574759746135"; // differs from A by the last digit only: equal to A once converted to a number
+
+function seedBig(app) {
+  app.cyclos.state.push.lifetimeMs = null;
+  app.cyclos.addUser("alice", "mdp-alice-fictif", { id: BIG_A, display: "Alice", entries: [entry(11, { amount: "11.00", description: "Achat d'alice" })] });
+  app.cyclos.addUser("bob", "mdp-bob-fictif", { id: BIG_B, display: "Bob", entries: [entry(22, { amount: "22.00", description: "Achat de bob" })] });
+}
+const loginBig = (app, name) => {
+  app.cookie = "";
+  return app.login({ login: name, password: `mdp-${name}-fictif` });
+};
+
+// Intention: with only A on the list, B (the number next door) is refused: the numbers are compared as text, not as numbers.
+appTest("multi : numéros de 19 chiffres, le voisin n'est pas autorisé à la place de l'autre", multi({ ids: [BIG_A], emails: [] }), async (app) => {
+  assert.equal(Number(BIG_A) === Number(BIG_B), true, "the test is meaningful");
+  seedBig(app);
+  assert.equal((await loginBig(app, "alice")).status, 303);
+  assert.equal((await loginBig(app, "bob")).status, 403);
+  assert.ok(app.logs.some((l) => l.endsWith(`numéro interne Cyclos : ${BIG_B}`)), "the log shows the exact number, unchanged");
+});
+
+// Intention: both on the list: two listeners, two sessions, each sees only his own payments, and each session holds his exact number.
+appTest("multi : numéros de 19 chiffres voisins, deux écouteurs et deux sessions séparés", multi({ ids: [BIG_A, BIG_B], emails: [] }), async (app) => {
+  seedBig(app);
+  await loginBig(app, "alice");
+  const alice = app.cookie;
+  await loginBig(app, "bob");
+  const bob = app.cookie;
+  app.cookie = alice;
+  const a = JSON.stringify(await liveData(app));
+  app.cookie = bob;
+  const b = JSON.stringify(await liveData(app));
+  assert.match(a, /11,00/);
+  assert.doesNotMatch(a, /22,00|Achat de bob/);
+  assert.match(b, /22,00/);
+  assert.doesNotMatch(b, /11,00|Achat d'alice/);
+  assert.equal(app.cyclos.openStreams(), 2, "two listeners");
+  assert.deepEqual(app.server.inspectSessions().map((s) => s.merchantKey).sort(), [BIG_A, BIG_B]);
+  assert.deepEqual(app.server.inspectSessions().map((s) => s.cyclosUserId).sort(), [BIG_A, BIG_B]);
+});
