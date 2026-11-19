@@ -82,7 +82,7 @@ appTest("espace : connexion réussie d'un compte autorisé, deux liens, canal ma
 
   const page = await (await b.request("/espace")).text();
   assert.match(page, /Notifications de caisse/);
-  assert.match(page, /href="\/caisse"/);
+  assert.match(page, /<form class="espace-lien-form" method="post" action="\/espace\/caisse">/);
   assert.match(page, /Relevé de transactions/);
   assert.match(page, /action="\/espace\/deconnexion"/);
   assert.doesNotMatch(page, /name="password"/);
@@ -198,7 +198,7 @@ appTest("espace : sans ESPACE_RELEVE_URL, « Bientôt disponible » et aucun lie
   const page = await (await b.request("/espace")).text();
   assert.match(page, /Bientôt disponible/);
   assert.match(page, /Relevé de transactions/);
-  assert.equal([...page.matchAll(/<a [^>]*>/g)].filter((m) => !m[0].includes('href="/caisse"') && !m[0].includes("/style.css")).length, 0, "the only link is the cash register");
+  assert.equal([...page.matchAll(/<a [^>]*>/g)].filter((m) => !m[0].includes("/style.css")).length, 0, "no link at all: the cash register is a form button");
 });
 
 // Intention: the same brakes as the other logins: 5 refusals of one identifier turn it away without reaching Cyclos, and the

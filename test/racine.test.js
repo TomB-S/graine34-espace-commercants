@@ -78,15 +78,16 @@ appTest("racine multi : la page /caisse donne /connexion au script, et la décon
   assert.equal(out.headers.get("location"), "/connexion");
 });
 
-// Intention: the link of /espace to /caisse still works: /caisse asks for its own login, which is the form.
-appTest("racine multi : le lien de /espace vers /caisse mène au formulaire de /caisse", multi, async (app) => {
+// Intention: a direct GET of /caisse (no session of the cash register) still leads to the login form of /caisse. The button of /espace
+// is a POST (/espace/caisse), tested in connexion-unique.test.js.
+appTest("racine multi : /caisse sans session de caisse, même après /espace, mène au formulaire de /caisse", multi, async (app) => {
   app.cyclos.addUser(MARIE.login, MARIE.password, { id: MARIE.id, entries: [] });
   const jar = [];
   const enter = await get(app, "/espace/connexion", { method: "POST", headers: { Origin: app.base, "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ login: MARIE.login, password: MARIE.password }).toString() });
   assert.equal(enter.status, 303);
   jar.push(enter.headers.get("set-cookie").split(";")[0]);
   const home = await (await get(app, "/espace", { headers: { Cookie: jar.join("; ") } })).text();
-  assert.match(home, /href="\/caisse"/);
+  assert.match(home, /action="\/espace\/caisse"/);
   const caisse = await get(app, "/caisse", { headers: { Cookie: jar.join("; ") } });
   assert.equal(caisse.headers.get("location"), "/connexion");
   assert.equal((await get(app, "/connexion")).status, 200);

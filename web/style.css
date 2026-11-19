@@ -914,7 +914,21 @@ form[action="/espace/deconnexion"] {
   text-decoration: none;
 }
 
-a.espace-lien:hover {
+/* The notifications entry is a form button (a POST), drawn like the links beside it. */
+.espace-lien-form {
+  margin: 0;
+}
+
+button.espace-lien {
+  display: flex;
+  width: 100%;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+}
+
+a.espace-lien:hover,
+button.espace-lien:hover {
   border-color: var(--vert-principal-survol);
   background: var(--vert-principal-survol);
   color: var(--blanc);
