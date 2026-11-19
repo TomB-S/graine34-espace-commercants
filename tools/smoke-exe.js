@@ -1,7 +1,7 @@
 // Start-up check of the executable: node tools/smoke-exe.js [path-of-the-executable] (see "Exécutable" in README.md).
 // Starts the executable without opening a browser (CAISSE_NO_BROWSER), waits for the login page and one embedded static
-// file to answer on the local port, then stops the program. No login, no password, no call to Cyclos: only two GET
-// requests on 127.0.0.1. Works the same on Windows, macOS and Linux. Exit code 0 when everything answered, 1 otherwise.
+// file to answer on the local port, and the merchants' area (and its statement) to answer 404, then stops the program. No login, no
+// password, no call to Cyclos: only a few GET requests on 127.0.0.1. Works the same on Windows, macOS and Linux. Exit code 0 when everything answered, 1 otherwise.
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { platform } from "node:os";
@@ -86,6 +86,12 @@ try {
   const css = await get("/style.css");
   if (css.status !== 200 || css.text.length === 0) throw new Error(`fichier intégré /style.css : statut ${css.status}`);
   console.log("Fichier intégré /style.css : 200.");
+  // The merchants' area and its statement exist in the multi-merchant mode only, which the executable never has: 404, not a login page.
+  for (const path of ["/espace", "/espace/releve", "/espace/releve/ticket.pdf"]) {
+    const { status } = await get(path);
+    if (status !== 404) throw new Error(`${path} doit répondre 404 dans l'exécutable (le relevé n'en fait pas partie), reçu ${status}`);
+  }
+  console.log("/espace et /espace/releve : 404 (le relevé n'est pas dans l'exécutable).");
 } catch (error) {
   failure = error;
 }

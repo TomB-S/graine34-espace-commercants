@@ -2,6 +2,7 @@
 // the checks, the answers); everything the statement needs is here, so that server.js only forwards the paths:
 //   GET  /espace/releve         the filters (shortcuts ?preset=aujourdhui|hier|6h)
 //   POST /espace/releve/ticket  the ticket, read again from Cyclos for the two dates typed
+//   POST /espace/releve/ticket.pdf  the same ticket as a PDF download (same checks, the data is read again)
 // Each POST: origin check, session of the area (its Cyclos token), CSRF token of that session, then ONE reading at a time per
 // session. Nothing but the two dates is taken from the browser. A Cyclos 401 ends the session of the area, as for the cash register.
 import { PushAuthError, PushForbiddenError, PushUnavailableError } from "./cyclos-push.js";
@@ -27,6 +28,7 @@ export const DEFAULT_READ_TIMEOUT_MS = 60_000;
 //   push()                  -> the Cyclos client (getStatement)
 //   limits()                -> { pageSize, maxRows }
 //   readTimeoutMs()         -> milliseconds
+//   pdf(model, statement)   -> { bytes, filename }: the PDF of a ticket (loaded on demand, see server.js)
 // }
 export function createReleveRoutes(deps) {
   const { helpers, send, redirect, readBody, isSameOrigin, isValidCsrf, findSession, endSession } = deps;
@@ -121,7 +123,32 @@ export function createReleveRoutes(deps) {
           if (!loaded) return true;
           try {
             const model = ticketModel(loaded.statement);
-            send(res, 200, "text/html", renderReleveTicket({ model, csrfToken: loaded.found.session.csrfToken }, helpers));
+            send(res, 200, "text/html", renderReleveTicket({ model, csrfToken: loaded.found.session.csrfToken, pdf: Boolean(deps.pdf) }, helpers));
+          } finally {
+            loaded.release();
+          }
+          return true;
+        }
+        case `POST ${RELEVE_PATH}/ticket.pdf`: {
+          const loaded = await load(req, res);
+          if (!loaded) return true;
+          try {
+            // The whole PDF is built before any header is sent: a failure here ends in a plain error answer, not in a half-sent file.
+            let pdf;
+            try {
+              pdf = await deps.pdf(ticketModel(loaded.statement), loaded.statement);
+            } catch (error) {
+              console.error(error);
+              send(res, 500, "text/plain", "Impossible de générer le PDF");
+              return true;
+            }
+            res.writeHead(200, {
+              "Content-Type": "application/pdf",
+              "Content-Disposition": `attachment; filename="${pdf.filename}"`,
+              "Content-Length": pdf.bytes.length,
+              "Cache-Control": "no-store",
+            });
+            res.end(pdf.bytes);
           } finally {
             loaded.release();
           }

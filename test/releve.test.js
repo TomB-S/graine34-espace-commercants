@@ -10,86 +10,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { DateTime } from "luxon";
-import { appTest, until, rawRequest } from "./support/harness.js";
+import { appTest, until } from "./support/harness.js";
 import { CAISSE_OPTIONS } from "./support/options.js";
-import { entry } from "./support/fake-cyclos.js";
+import {
+  MARIE, RANGE, NNBSP, options, seed, setEntries, browser, connected, on, history,
+  summaryOf, rowsOf, numbersOf, amountsOf, cents, historyCalls,
+} from "./support/releve-support.js";
 
-const MARIE = { id: "u-marie", login: "marie", password: "mdp-marie-fictif", email: "marie@exemple.test", display: "Boutique de Marie" };
-const REFUSED = "Identifiants incorrects ou accès non autorisé.";
-const RANGE = { start: "2026-01-10T00:00", end: "2026-01-10T23:59" };
-const NNBSP = "\u202f";
 // The policy of the original statement tool, written out in full: no script, no connection.
 const CSP_SANS_SCRIPT = "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 const CSP_AVEC_SCRIPT = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
-
-const options = (more = {}, caisse = {}) => ({
-  cyclosChannel: "main",
-  caisseHooks: CAISSE_OPTIONS.caisseHooks,
-  caisse: { enabled: true, multiMerchant: true, allowedUsers: { ids: [MARIE.id], emails: [] }, ...caisse },
-  ...more,
-});
-
-// A merchant of the fake Cyclos with data of his own.
-function seed(app, entries = []) {
-  app.cyclos.addUser(MARIE.login, MARIE.password, { id: MARIE.id, email: MARIE.email, display: MARIE.display, entries });
-  app.cyclos.state.push.lifetimeMs = null;
-}
-const setEntries = (app, entries) => {
-  app.cyclos.state.users.get(MARIE.login).entries = entries;
-};
-
-// A small browser keeping the cookies by name (the area's cookie only here).
-function browser(app) {
-  const jar = new Map();
-  const cookieLine = () => [...jar].filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join("; ");
-  async function request(path, { method = "GET", form, headers = {} } = {}) {
-    const init = { method, redirect: "manual", headers: { ...headers } };
-    if (cookieLine()) init.headers.Cookie = cookieLine();
-    if (form) {
-      init.headers["Content-Type"] = "application/x-www-form-urlencoded";
-      init.body = new URLSearchParams(form).toString();
-    }
-    const res = await fetch(`${app.base}${path}`, init);
-    for (const line of res.headers.getSetCookie()) {
-      const [pair] = line.split(";");
-      const [name, ...value] = pair.split("=");
-      jar.set(name, value.join("="));
-    }
-    return res;
-  }
-  const self = {
-    request,
-    jar,
-    enter: (password = MARIE.password) => request("/espace/connexion", { method: "POST", form: { login: MARIE.login, password }, headers: { Origin: app.base } }),
-    csrf: async () => (await (await request("/espace")).text()).match(/name="csrf" value="([0-9a-f]+)"/)?.[1],
-    // POST /espace/releve/ticket with the Origin of the page.
-    ticket: (form, { origin = app.base } = {}) => request("/espace/releve/ticket", { method: "POST", form, headers: origin ? { Origin: origin } : {} }),
-  };
-  return self;
-}
-
-// Logs the merchant into the area and returns { b, csrf }.
-async function connected(app, entries) {
-  seed(app, entries);
-  const b = browser(app);
-  assert.equal((await b.enter()).status, 303);
-  return { b, csrf: await b.csrf() };
-}
-
-// n transactions on 10 January 2026 (a day that is over), most recent first like Cyclos; one in four is outgoing.
-const on = (n, extra = {}) => entry(n, { ...extra, date: new Date(Date.UTC(2026, 0, 10, 12, 0, 0) + n * 1000).toISOString() });
-function history(count) {
-  const list = [];
-  for (let n = count - 1; n >= 0; n -= 1) list.push(on(n, { amount: n % 4 === 3 ? "-2.50" : `${(n % 7) + 1}.25` }));
-  return list;
-}
-
-const summaryOf = (html) => [...html.matchAll(/<dt>(.*?)<\/dt>\s*<dd>(.*?)<\/dd>/g)].map((m) => [m[1], m[2]]);
-const rowsOf = (html) => [...html.matchAll(/<li class="ligne">([\s\S]*?)<\/li>/g)].map((m) => m[1]);
-const numbersOf = (html) => [...html.matchAll(/<span class="numero">(.*?)<\/span>/g)].map((m) => m[1]);
-const amountsOf = (html) => [...html.matchAll(/<span class="montant">(.*?)<\/span>/g)].map((m) => m[1]);
-const cents = (text) => Math.round(Number(text.replaceAll(NNBSP, "").replace(",", ".")) * 100);
-const historyCalls = (app) => app.cyclos.calls("GET", "/self/accounts/membre/history");
 
 // ------------------------------------------------------------------------------ one login, the token of the area
 
@@ -268,8 +198,7 @@ appTest("relevé : valeurs de Cyclos échappées (nom, contrepartie, description
   const hostile = '<script>alert(1)</script><style>*{}</style><img src=x onerror=alert(1)> & "q"';
   const e = on(1, { description: hostile });
   e.relatedAccount = { user: { display: hostile } };
-  const { b, csrf } = await connected(app, [e]);
-  app.cyclos.state.users.get(MARIE.login).display = hostile;
+  const { b, csrf } = await connected(app, [e], { display: hostile });
   const html = await (await b.ticket({ csrf, ...RANGE })).text();
   assert.ok(!/<script|<style|<img src=x|<b>/i.test(html), "balise brute dans la page");
   assert.ok(html.includes("&lt;img src=x onerror=alert(1)&gt;"));

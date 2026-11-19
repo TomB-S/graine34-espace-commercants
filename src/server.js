@@ -999,6 +999,12 @@ const RELEVE = createReleveRoutes({
   push: () => CAISSE_RUNTIME.push,
   limits: () => HISTORY,
   readTimeoutMs: () => RELEVE_TIMEOUT_MS,
+  // The PDF module (and pdfkit with it) is loaded at the first PDF only. The build of the single executable leaves it out (the area
+  // does not exist there): see tools/build-sea.js.
+  async pdf(model, statement) {
+    const { renderTicketPdf, pdfFilename } = await import("./releve-pdf.js");
+    return { bytes: await renderTicketPdf(model), filename: pdfFilename(statement) };
+  },
 });
 const CAISSE_HELPERS = { escapeHtml, formatAmount, htmlPage, errorMessage, logoutForm, stylesheetHref: STYLE_HREF, loginHref };
 

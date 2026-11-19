@@ -20,7 +20,17 @@ if (major < 25 || (major === 25 && minor < 5)) {
 
 mkdirSync("build", { recursive: true });
 
-await build({
+// The statement of transactions (/espace/releve) exists in the multi-merchant mode only, which the executable never has. Its PDF
+// module and pdfkit (which reads its own files from disk, and the logo through import.meta.url) are left out of the bundle: server.js
+// loads them on demand, which never happens here.
+const leaveOutStatementPdf = {
+  name: "leave-out-statement-pdf",
+  setup(b) {
+    b.onResolve({ filter: /(^|\/)releve-pdf\.js$|^pdfkit(\/|$)/ }, (args) => ({ path: args.path, external: true }));
+  },
+};
+
+const bundle = await build({
   entryPoints: ["src/main.js"],
   outfile: "build/server.cjs",
   bundle: true,
@@ -29,8 +39,17 @@ await build({
   target: "node22",
   // Never evaluated in the executable (the static files come from the embedded assets).
   define: { "import.meta.url": "undefined" },
+  plugins: [leaveOutStatementPdf],
+  metafile: true,
   logLevel: "warning",
 });
+
+// A guard, not a hope: the build stops if the PDF code or pdfkit got into the executable all the same.
+const leaked = Object.keys(bundle.metafile.inputs).filter((file) => /pdfkit|releve-pdf/.test(file));
+if (leaked.length > 0) {
+  console.error(`Le PDF du relevé ne doit pas être dans l'exécutable, mais le build contient : ${leaked.join(", ")}`);
+  process.exit(1);
+}
 
 // Names relative to web/: the same ones the server asks for (see src/assets.js).
 const browserScripts = [
