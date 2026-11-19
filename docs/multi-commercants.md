@@ -157,8 +157,10 @@ Le ticket de fin de service, ouvert depuis l'espace. **Une seule connexion** : i
 - Réglages : `HISTORY_PAGE_SIZE` (200 lignes par page) et `HISTORY_MAX_ROWS` (2000 lignes au plus). Au-delà du plafond, la liste est
   coupée aux plus récentes avec un avertissement. Sans totaux donnés par Cyclos (le cas de l'instance réelle), ils sont calculés si
   la liste est complète, sinon « Non disponible » (jamais un total inventé).
-- **Limite : un seul compte.** Le relevé lit le premier compte de `GET /self/accounts` (comme la caisse). Un commerçant qui aurait
-  plusieurs comptes ne voit que le premier, sans choix et sans que le ticket dise lequel.
+- **Compte lu.** Un commerçant peut avoir plusieurs comptes. Le relevé et la caisse lisent le même : dans `GET /self/accounts`, le
+  compte de type `MonComptePro`, sinon `monCompte`, sinon le premier de la liste, quel que soit l'ordre donné par Cyclos
+  (constante `PREFERRED_ACCOUNT_TYPES` dans `src/cyclos-push.js`). Il n'y a pas de choix de compte à l'écran, et le ticket ne dit
+  pas lequel est lu.
 - Le détail (heure de Paris, changement d'heure, PDF en Helvetica, impression 80 mm) est dans le README, « Relevé de transactions ».
 
 ## Ce qui n'est pas dans ce mode

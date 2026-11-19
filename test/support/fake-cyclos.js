@@ -10,8 +10,8 @@
 //   DELETE /auth/session                    logout (the token is closed on the Cyclos side)
 //   GET    /users/self                      display name of the merchant
 //   GET    /self/accounts                   list of the merchant's accounts
-//   GET    /self/accounts/membre            totals (received, sent, net balance) over a period
-//   GET    /self/accounts/membre/history    transactions, PAGE by page (`direction=credit` keeps the entries received; `datePeriod`
+//   GET    /self/accounts/{type}            totals (received, sent, net balance) over a period, for any account type
+//   GET    /self/accounts/{type}/history    transactions, PAGE by page (`direction=credit` keeps the entries received; `datePeriod`
 //                                           once as "begin,end" or twice as begin, end)
 // and, for the cash register page (/caisse):
 //   GET    /push/subscribe                  stream of events (SSE), closed after `streamLifetimeMs` like the real one (about 41 s)
@@ -139,6 +139,7 @@ export async function startFakeCyclos() {
     omitUserId: false, // true: GET /users/self answers without the user id
     deleted: [], // tokens closed by DELETE /auth/session
     entries: [], // most recent first, like Cyclos
+    accountEntries: {}, // account type -> entries of that account only (most recent first); a type not listed uses `entries`
     pageSize: null, // when set, forces the page size (otherwise the requested one)
     omitHasNext: false, // true: the history answers without the X-Has-Next-Page header
     totals: null, // when set, replaces the computed totals
@@ -168,6 +169,10 @@ export async function startFakeCyclos() {
       transactions: own?.transactions ?? state.transactions,
     };
   };
+
+  // Entries of one account type: the ones of `state.accountEntries[type]` when a test gave some for that type (so that a test can prove
+  // WHICH account was read), otherwise the usual ones of the user (all the tests written before use one account).
+  const entriesOf = (token, type) => state.accountEntries[type] ?? dataOf(token).entries;
 
   // Every request received goes through here. It is recorded in `state.requests`: tests can then check what OUR
   // server sent to Cyclos (which calls, with which headers). `key` looks like "GET /self/accounts".
@@ -273,7 +278,8 @@ export async function startFakeCyclos() {
     }
     // Totals of the period. "membre" is the type of the fictitious account. With `state.indicators = false` we imitate the real
     // instance, which does not return the received/sent totals: our tool must then compute them (see test/totaux-calcules.test.js).
-    if (key === "GET /self/accounts/membre") {
+    const accountRoute = /^GET \/self\/accounts\/([A-Za-z0-9_.-]+)(\/history)?$/.exec(key);
+    if (accountRoute && !accountRoute[2]) {
       if (!state.indicators) {
         return json(res, 200, {
           status: {
@@ -289,8 +295,9 @@ export async function startFakeCyclos() {
       }
       if (state.totals) return json(res, 200, { status: state.totals });
       const sum = (list) => list.reduce((total, e) => total + Math.abs(Number(e.amount)), 0).toFixed(2);
-      const incoming = dataOf(token).entries.filter((e) => Number(e.amount) > 0);
-      const outgoing = dataOf(token).entries.filter((e) => Number(e.amount) < 0);
+      const accountEntries = entriesOf(token, accountRoute[1]);
+      const incoming = accountEntries.filter((e) => Number(e.amount) > 0);
+      const outgoing = accountEntries.filter((e) => Number(e.amount) < 0);
       return json(res, 200, {
         status: {
           incoming: { count: incoming.length, sum: sum(incoming) },
@@ -301,11 +308,11 @@ export async function startFakeCyclos() {
     }
     // PAGINATED history: instead of returning everything at once, Cyclos splits it into pages. The client asks for `page` (0, 1, 2...)
     // and `pageSize` (lines per page); the `X-Has-Next-Page: true` header says whether another page remains to be read.
-    if (key === "GET /self/accounts/membre/history") {
+    if (accountRoute && accountRoute[2]) {
       const page = Number(url.searchParams.get("page") ?? 0);
       const size = state.pageSize ?? Number(url.searchParams.get("pageSize") ?? 40);
       // `direction=credit` (cash register page): only the entries received, amount above zero.
-      const mine = dataOf(token).entries;
+      const mine = entriesOf(token, accountRoute[1]);
       let all = url.searchParams.get("direction") === "credit" ? mine.filter((e) => Number(e.amount) > 0) : mine;
       // `datePeriod=begin,end` (cash register page, recap of yesterday): only the entries dated in the period.
       // The statement (/espace/releve) sends the period as the same parameter twice (begin, end), the end being the last instant
