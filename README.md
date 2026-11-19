@@ -185,7 +185,7 @@ src/                 le serveur et la logique côté Node
   assets.js            lecture des fichiers statiques de web/ (disque, ou fichiers embarqués dans l'exécutable)
   main.js              point d'entrée de l'exécutable
   launcher.js          démarrage de l'exécutable : réglages, port libre, navigateur
-  caisse-config.js     lecture et validation des variables CAISSE_*
+  caisse-config.js     lecture et validation des variables CAISSE_* et ESPACE_RELEVE_URL
   sse-parser.js        analyseur du flux d'événements Cyclos (SSE), sans accès réseau
   cyclos-push.js       appels Cyclos : flux, transfert, historique, réglage
   ticket-store.js      tickets en mémoire : modèle, doublons, tri, état
@@ -194,6 +194,7 @@ src/                 le serveur et la logique côté Node
   listener-manager.js  cycle de vie des écouteurs : inscription, inactivité, plafond, arrêt
   caisse-page.js       HTML de la page /caisse (fonctions pures), complète sans script
   caisse-data.js       bannière, textes d'un ticket et JSON de /caisse/data (fonctions pures)
+  espace-page.js       HTML de la page d'entrée /espace (fonctions pures)
 web/                 tout ce que le navigateur reçoit
   style.css            feuille de style unique (charte La Graine 34, classes de la caisse comprises)
   images/              logo-lagraine34.png (servi sur /logo.png), icon-lagraine34.png (servi sur /icon.png :
@@ -237,7 +238,7 @@ Générales (celles de la mission 2A, sauf `PORT` qui vaut ici 3001 par défaut)
 | `SESSION_MAX_HOURS` | Durée maximale d'une session de la page | `8` |
 | `COOKIE_SECURE` | `true` : cookie `Secure` et en-tête HSTS (à activer derrière HTTPS) | désactivé |
 
-Les variables `CAISSE_*` sont décrites dans « Activer et lancer la caisse ». Une valeur
+Les variables `CAISSE_*` sont décrites dans « Activer et lancer la caisse » et `ESPACE_RELEVE_URL` dans « Espace commerçants ». Une valeur
 numérique générale absente ou invalide est remplacée par sa valeur par défaut ; seule la
 valeur exacte `true` active `COOKIE_SECURE`.
 
@@ -282,6 +283,32 @@ Valeur invalide ou identifiants manquants avec `CAISSE_ENABLED=true` : le
 serveur s'arrête au démarrage avec un message qui nomme la variable (sans
 jamais afficher sa valeur). Quand la page est désactivée, les autres variables
 `CAISSE_*` ne sont pas lues.
+
+## Espace commerçants
+
+Page d'entrée `/espace`, pour le mode multi-commerçants (`CAISSE_ENABLED=true` et `CAISSE_MULTI_MERCHANT=true`, voir
+`docs/multi-commercants.md`). Le commerçant s'y connecte avec son compte Cyclos (canal `CYCLOS_CHANNEL`, `main` en production) ;
+**seulement s'il figure dans `CAISSE_ALLOWED_USERS`**, il voit deux liens : « Notifications de caisse » (vers `/caisse`) et
+« Relevé de transactions » (vers l'adresse de `ESPACE_RELEVE_URL`, ou « Bientôt disponible » sans lien si le réglage est vide).
+
+| Adresse | Rôle |
+| --- | --- |
+| `GET /espace` | Sans session : le formulaire. Avec une session valide : la page des deux liens |
+| `POST /espace/connexion` | Vérifie le compte auprès de Cyclos et la liste blanche ; ne garde que le jeton de session |
+| `POST /espace/deconnexion` | Ferme la session chez Cyclos et sur le serveur (jeton CSRF exigé) |
+
+- Un mauvais mot de passe, un compte valide mais absent de la liste et une liste vide donnent **la même réponse** (401) et le même
+  message, « Identifiants incorrects ou accès non autorisé. », pour ne pas révéler qui est sur la liste.
+- La session de l'espace est **séparée** de celle de `/caisse` (autre cookie `espace_session`, autre jeton Cyclos) : le commerçant
+  se reconnecte en ouvrant `/caisse`. C'est voulu.
+- Mêmes freins que les autres connexions (5 refus par identifiant et 10 par adresse sur 15 minutes, disjoncteur Cyclos, compteurs
+  partagés avec `/connexion`), même lecture de l'adresse (`CAISSE_TRUSTED_PROXY_HOPS`), mêmes sessions (`SESSION_IDLE_MINUTES`,
+  `SESSION_MAX_HOURS`) et mêmes en-têtes de sécurité.
+- Sans le mode multi-commerçants (mode à compte d'écoute unique, exécutable), `/espace` n'existe pas : toutes ses adresses répondent 404.
+
+| Nom | Rôle | Valeur par défaut |
+| --- | --- | --- |
+| `ESPACE_RELEVE_URL` | Adresse du relevé : adresse `http(s)` complète, ou chemin du site commençant par `/`. Vide : « Bientôt disponible ». Lue au démarrage ; une valeur invalide empêche le démarrage (sans afficher la valeur) | vide |
 
 ## Comment elle fonctionne
 
@@ -562,6 +589,8 @@ identifiant (ceux des tests sont fictifs).
   sessions, CSRF), `test/securite.test.js` (en-têtes, CSP, cache, taille des
   requêtes), `test/statique.test.js` (fichiers statiques), `test/demarrage.test.js`
   (démarrage réel), `test/unit.test.js` (`escapeHtml`, `formatAmount`).
+- Espace commerçants : `test/espace.test.js` (connexion, refus uniforme, déconnexion, lien du relevé, freins, séparation des sessions) ;
+  `ESPACE_RELEVE_URL` dans `test/caisse-config.test.js`.
 - Un test lancé seul : `node --test test/caisse.test.js`.
 
 ## Sécurité en bref

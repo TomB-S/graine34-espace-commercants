@@ -14,6 +14,7 @@ import { describeError } from "./cyclos-listener.js";
 import { createListenerManager } from "./listener-manager.js";
 import { createLoginGuard } from "./login-guard.js";
 import { renderCaissePage, renderCaisseRefused } from "./caisse-page.js";
+import { renderEspaceLogin, renderEspaceHome, REFUSED_TEXT } from "./espace-page.js";
 import { renderCaisseData } from "./caisse-data.js";
 import { inExecutable, readAsset } from "./assets.js";
 
@@ -96,6 +97,12 @@ let ALLOWED_HOSTS = null;
 // POST /connexion, to obtain a Cyclos session token, then dropped.
 // A session ends on logout, after IDLE_MS without use, or after MAX_MS in total.
 const sessions = new Map();
+
+// Sessions of the merchants' area (/espace): a store and a cookie of their own, apart from the ones of /caisse. A session of one
+// never opens the other (the merchant logs in again on /caisse, on purpose). Record: { sessionToken, csrfToken, createdAt,
+// lastSeenAt }, never a password, never a listening token.
+const espaceSessions = new Map();
+const ESPACE_COOKIE = "espace_session";
 
 // Cyclos answered 401: bad credentials, or the session token is no longer valid.
 class LoginError extends Error {}
@@ -300,7 +307,7 @@ function errorMessage(text) {
   return `<p class="erreur" role="alert"><span class="icone" aria-hidden="true">⚠</span> <strong>Erreur :</strong> ${text}</p>`;
 }
 
-function htmlPage(title, body) {
+function htmlPage(title, body, { toolName = "Notification de paiement" } = {}) {
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -313,7 +320,7 @@ function htmlPage(title, body) {
 <body>
   <header class="entete">
     <span class="logo"><img src="/logo.png" width="104" height="40" alt="La Graine 34, monnaie locale"></span>
-    <span class="nom-outil">Notification de paiement</span>
+    <span class="nom-outil">${escapeHtml(toolName)}</span>
   </header>
   <div class="page">
   ${body}
@@ -343,19 +350,22 @@ function renderLoginFailed() {
   );
 }
 
-function renderTooManyAttempts(retryAfterSeconds) {
+function renderTooManyAttempts(retryAfterSeconds, back = "/") {
   const minutes = Math.ceil(retryAfterSeconds / 60);
   return htmlPage(
     "Trop de tentatives",
     `<h1>Trop de tentatives</h1>
-  ${errorMessage(`Trop d'échecs de connexion depuis votre adresse. Réessayez dans ${minutes} minute${minutes > 1 ? "s" : ""}.`)}`,
+  ${errorMessage(`Trop d'échecs de connexion depuis votre adresse. Réessayez dans ${minutes} minute${minutes > 1 ? "s" : ""}.`)}
+  ${back === "/" ? "" : `<p><a href="${back}">Retour au formulaire</a></p>`}`,
   );
 }
 
-function renderForbidden(message, csrfToken) {
-  const back = csrfToken
-    ? `<p><a href="/caisse">Retour à la caisse</a></p>`
-    : `<p><a href="/">Retour</a></p>`;
+function renderForbidden(message, csrfToken, backHref = null) {
+  const back = backHref
+    ? `<p><a href="${backHref}">Retour</a></p>`
+    : csrfToken
+      ? `<p><a href="/caisse">Retour à la caisse</a></p>`
+      : `<p><a href="/">Retour</a></p>`;
   return htmlPage(
     "Requête refusée",
     `<h1>Requête refusée</h1>
@@ -464,12 +474,12 @@ function waitInWords(ms) {
   return `${minutes} minute${minutes > 1 ? "s" : ""}`;
 }
 
-function renderLoginProblem(title, text, { retry = true } = {}) {
+function renderLoginProblem(title, text, { retry = true, back = "/" } = {}) {
   return htmlPage(
     title,
     `<h1>${escapeHtml(title)}</h1>
   ${errorMessage(escapeHtml(text))}
-  ${retry ? `<p><a href="/">Retour au formulaire</a></p>` : ""}`,
+  ${retry ? `<p><a href="${back}">Retour au formulaire</a></p>` : ""}`,
   );
 }
 
@@ -565,6 +575,34 @@ function renderCaisseNotAllowed() {
   );
 }
 
+// Answers a login turned away by the brakes (429 for an identifier or an address, 503 while Cyclos is given a pause).
+// Returns true when the answer has been sent.
+function answerIfBlocked(res, verdict, back = "/") {
+  if (!verdict.blocked) return false;
+  const headers = { "Retry-After": String(verdict.retryAfterSeconds) };
+  if (verdict.reason === "cyclos") {
+    send(res, 503, "text/html", renderLoginProblem("Cyclos demande de patienter", `Les connexions sont suspendues quelques instants. Réessayez dans ${waitInWords(verdict.retryAfterSeconds * 1000)}.`, { back }), headers);
+  } else {
+    send(res, 429, "text/html", renderTooManyAttempts(verdict.retryAfterSeconds, back), headers);
+  }
+  return true;
+}
+
+// Address of the visitor of a login. Behind relays (multi-merchant mode only) it comes from X-Forwarded-For, counted from the
+// right. In that mode the line "adresse lue ..." helps to set CAISSE_TRUSTED_PROXY_HOPS after a real test: what was read, and
+// what it was read from.
+function loginAddress(req) {
+  const reading = clientAddressOf(req, CAISSE.trustedProxyHops ?? 0);
+  if (CAISSE.multiMerchant) {
+    console.log(
+      `adresse lue ${reading.address} (${reading.fromHeader ? "X-Forwarded-For" : "connexion directe"}, adresse de la connexion ${
+        req.socket.remoteAddress ?? "inconnue"
+      }, ${reading.headerEntries} entrée(s) X-Forwarded-For, relais de confiance ${CAISSE.trustedProxyHops})`,
+    );
+  }
+  return reading.address;
+}
+
 // POST /connexion in the multi-merchant mode. The merchant types HIS Cyclos login and password. The password is used for exactly
 // two calls to Cyclos (the page token, then the listening token) and then goes out of scope: it is never stored, logged or answered.
 //  1. the brakes (per identifier, per address, circuit breaker on Cyclos);
@@ -577,16 +615,7 @@ async function handleMultiLogin(req, res, address) {
   const password = form.get("password") ?? "";
   const who = { identifier: login, address };
 
-  const verdict = LOGIN_GUARD.check(who);
-  if (verdict.blocked) {
-    const headers = { "Retry-After": String(verdict.retryAfterSeconds) };
-    if (verdict.reason === "cyclos") {
-      send(res, 503, "text/html", renderLoginProblem("Cyclos demande de patienter", `Les connexions sont suspendues quelques instants. Réessayez dans ${waitInWords(verdict.retryAfterSeconds * 1000)}.`), headers);
-    } else {
-      send(res, 429, "text/html", renderTooManyAttempts(verdict.retryAfterSeconds), headers);
-    }
-    return;
-  }
+  if (answerIfBlocked(res, LOGIN_GUARD.check(who))) return;
   if (!login || !password) {
     send(res, 401, "text/html", renderLoginFailed());
     return;
@@ -633,6 +662,116 @@ async function handleMultiLogin(req, res, address) {
   LOGIN_GUARD.recordSuccess(who);
   await manager.restartIfStopped(merchantKey); // a listener that died of an expired token starts again with the new one
   openSession(res, pageToken, null, { listenerToken, merchantKey, cyclosUserId: merchantKey });
+}
+
+// === Merchants' area (/espace) ===
+// Only in the multi-merchant mode (it uses its whitelist, its brakes and its relays setting): otherwise every /espace path is a 404.
+
+const espaceCookie = (value, maxAgeSeconds) => cookieHeader(value, maxAgeSeconds, { name: ESPACE_COOKIE, path: "/espace" });
+
+function espaceView(session) {
+  return renderEspaceHome({ csrfToken: session.csrfToken, releveUrl: CAISSE.espaceReleveUrl ?? null }, ESPACE_HELPERS);
+}
+
+// POST /espace/connexion. The password is used for ONE call to Cyclos (the session token), then goes out of scope: it is never
+// stored, logged or answered. A wrong password and an account that is not on the list get the same status and the same words.
+async function handleEspaceLogin(req, res) {
+  if (!isSameOrigin(req)) {
+    send(res, 403, "text/html", renderForbidden("Origine de la requête non autorisée.", null, "/espace"));
+    return;
+  }
+  const address = loginAddress(req);
+  const form = new URLSearchParams(await readBody(req));
+  const login = form.get("login") ?? "";
+  const password = form.get("password") ?? "";
+  const who = { identifier: login, address };
+  const refused = () => send(res, 401, "text/html", renderEspaceLogin({ message: REFUSED_TEXT }, ESPACE_HELPERS));
+
+  if (answerIfBlocked(res, LOGIN_GUARD.check(who), "/espace")) return;
+  if (!login || !password) {
+    refused();
+    return;
+  }
+
+  const { push, manager } = CAISSE_RUNTIME;
+  let token = null;
+  try {
+    token = await createCyclosSession(login, password);
+    const decision = await manager.authorize(await push.getIdentity(token));
+    if (!decision.ok) {
+      // Not on the list (or an empty list, or an identity that cannot be read): counted like a wrong password, token closed.
+      LOGIN_GUARD.recordRefusal(who);
+      await closeCyclosSession(token);
+      refused();
+      return;
+    }
+  } catch (error) {
+    if (token) await closeCyclosSession(token);
+    if (error instanceof LoginError || error instanceof PushAuthError || error instanceof AccessDeniedError || error instanceof PushForbiddenError) {
+      if (error instanceof LoginError || error instanceof PushAuthError) LOGIN_GUARD.recordRefusal(who);
+      refused();
+      return;
+    }
+    if (error instanceof CyclosUnavailableError || error instanceof PushUnavailableError) {
+      LOGIN_GUARD.recordCyclosFailure();
+      console.error(`Cyclos injoignable ou en erreur : ${error.message}`);
+      send(res, 502, "text/html", renderLoginProblem("Cyclos ne répond pas", "Impossible de joindre Cyclos pour le moment. Réessayez dans quelques instants.", { back: "/espace" }));
+      return;
+    }
+    throw error;
+  }
+
+  LOGIN_GUARD.recordSuccess(who);
+  const id = randomUUID();
+  const now = Date.now();
+  espaceSessions.set(id, { sessionToken: token, csrfToken: randomBytes(32).toString("hex"), createdAt: now, lastSeenAt: now });
+  redirect(res, "/espace", { "Set-Cookie": espaceCookie(id, Math.floor(MAX_MS / 1000)) });
+}
+
+// POST /espace/deconnexion: the CSRF token of the area's own session, then the Cyclos token and the local session are closed.
+async function handleEspaceLogout(req, res) {
+  const found = getSession(req, espaceSessions, ESPACE_COOKIE);
+  if (!found) {
+    redirect(res, "/espace", { "Set-Cookie": espaceCookie("", 0) });
+    return;
+  }
+  const form = new URLSearchParams(await readBody(req));
+  if (!isValidCsrf(found.session, form.get("csrf"))) {
+    send(res, 403, "text/html", renderForbidden("Jeton de sécurité absent ou invalide. La session n'a pas été fermée.", null, "/espace"));
+    return;
+  }
+  espaceSessions.delete(found.id);
+  await closeSessionTokens(found.session);
+  redirect(res, "/espace", { "Set-Cookie": espaceCookie("", 0) });
+}
+
+async function handleEspace(req, res, pathname) {
+  if (!CAISSE.multiMerchant || !CAISSE_RUNTIME) {
+    send(res, 404, "text/plain", "Page introuvable");
+    return;
+  }
+  const route = `${req.method} ${pathname}`;
+  switch (route) {
+    case "GET /espace": {
+      const found = getSession(req, espaceSessions, ESPACE_COOKIE);
+      send(res, 200, "text/html", found ? espaceView(found.session) : renderEspaceLogin({}, ESPACE_HELPERS));
+      return;
+    }
+    case "POST /espace/connexion":
+      await handleEspaceLogin(req, res);
+      return;
+    case "POST /espace/deconnexion":
+      await handleEspaceLogout(req, res);
+      return;
+    case "GET /espace/connexion":
+      redirect(res, "/espace");
+      return;
+    case "GET /espace/deconnexion":
+      send(res, 405, "text/plain", "Méthode non autorisée : la déconnexion se fait par POST", { Allow: "POST" });
+      return;
+    default:
+      send(res, 404, "text/plain", "Page introuvable");
+  }
 }
 
 // Reads a POST body as text, refusing anything above `limit` bytes.
@@ -684,10 +823,10 @@ function isValidCsrf(session, submitted) {
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
-function getSessionId(req) {
+function getSessionId(req, cookieName = COOKIE) {
   for (const part of (req.headers.cookie ?? "").split(";")) {
     const [name, ...value] = part.trim().split("=");
-    if (name === COOKIE) return value.join("=");
+    if (name === cookieName) return value.join("=");
   }
   return null;
 }
@@ -716,15 +855,17 @@ function expireSession(id, session) {
 }
 
 // Returns { id, session } for a valid session cookie, otherwise null.
-// An expired session is deleted and treated as absent.
-function getSession(req) {
-  const id = getSessionId(req);
-  const session = id ? sessions.get(id) : undefined;
+// An expired session is deleted and treated as absent. `store` and `cookieName` default to the ones of the cash register;
+// another area with its own sessions passes its own.
+function getSession(req, store = sessions, cookieName = COOKIE) {
+  const id = getSessionId(req, cookieName);
+  const session = id ? store.get(id) : undefined;
   if (!session) return null;
 
   const now = Date.now();
   if (isExpired(session, now)) {
-    expireSession(id, session);
+    store.delete(id);
+    void closeSessionTokens(session);
     return null;
   }
 
@@ -738,19 +879,26 @@ function sweep(now = Date.now()) {
   for (const [id, session] of sessions) {
     if (isExpired(session, now)) expireSession(id, session);
   }
+  for (const [id, session] of espaceSessions) {
+    if (isExpired(session, now)) {
+      espaceSessions.delete(id);
+      void closeSessionTokens(session);
+    }
+  }
   for (const [ip, entry] of loginFailures) {
     if (now - entry.windowStart >= LOGIN_WINDOW_MS) loginFailures.delete(ip);
   }
   LOGIN_GUARD?.sweep(now);
 }
 
-function cookieHeader(value, maxAgeSeconds) {
-  return `${COOKIE}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}${COOKIE_SECURE ? "; Secure" : ""}`;
+function cookieHeader(value, maxAgeSeconds, { name = COOKIE, path = "/" } = {}) {
+  return `${name}=${value}; HttpOnly; SameSite=Lax; Path=${path}; Max-Age=${maxAgeSeconds}${COOKIE_SECURE ? "; Secure" : ""}`;
 }
 
 let clearCookie = cookieHeader("", 0);
 
 // What the cash register page needs from this file, given to caisse-page.js.
+const ESPACE_HELPERS = { escapeHtml, htmlPage, errorMessage };
 const CAISSE_HELPERS = { escapeHtml, formatAmount, htmlPage, errorMessage, logoutForm, stylesheetHref: STYLE_HREF };
 
 // What /caisse and /caisse/data share: the session, the identity of the visitor, the registration check and the
@@ -898,7 +1046,7 @@ const server = http.createServer(async (req, res) => {
   // no-referrer, so this one page uses same-origin (still no referrer leaves the site).
   res.setHeader(
     "Referrer-Policy",
-    route === "GET /" ? "same-origin" : "no-referrer",
+    route === "GET /" || pathname === "/espace" || pathname.startsWith("/espace/") ? "same-origin" : "no-referrer",
   );
   // Statements must not stay in any cache nor in the back button.
   res.setHeader("Cache-Control", "no-store");
@@ -920,6 +1068,11 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === "/caisse/data") {
       await handleCaisseData(req, res);
+      return;
+    }
+
+    if (pathname === "/espace" || pathname.startsWith("/espace/")) {
+      await handleEspace(req, res, pathname);
       return;
     }
 
@@ -945,17 +1098,7 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        // Behind relays (multi-merchant mode only) the address comes from X-Forwarded-For, counted from the right.
-        const reading = clientAddressOf(req, CAISSE.trustedProxyHops ?? 0);
-        const ip = reading.address;
-        if (CAISSE.multiMerchant) {
-          // Help to set CAISSE_TRUSTED_PROXY_HOPS after a real test: what was read, and what it was read from.
-          console.log(
-            `adresse lue ${ip} (${reading.fromHeader ? "X-Forwarded-For" : "connexion directe"}, adresse de la connexion ${
-              req.socket.remoteAddress ?? "inconnue"
-            }, ${reading.headerEntries} entrée(s) X-Forwarded-For, relais de confiance ${CAISSE.trustedProxyHops})`,
-          );
-        }
+        const ip = loginAddress(req);
         if (CAISSE.multiMerchant) {
           await handleMultiLogin(req, res, ip);
           return;
@@ -1112,6 +1255,7 @@ export function startServer(options = {}) {
   SWEEP_INTERVAL_MS = options.sweepIntervalMs ?? 60_000;
   clearCookie = cookieHeader("", 0);
   sessions.clear();
+  espaceSessions.clear();
   loginFailures.clear();
   LOGIN_GUARD = CAISSE.multiMerchant ? createLoginGuard(options.loginGuard) : null;
 
@@ -1135,6 +1279,7 @@ export function startServer(options = {}) {
         caisseEnabled: CAISSE.enabled,
         // For the tests: a copy of the session records (to check what a session holds, and what it does not).
         inspectSessions: () => JSON.parse(JSON.stringify([...sessions.values()])),
+        inspectEspaceSessions: () => JSON.parse(JSON.stringify([...espaceSessions.values()])),
         async close() {
           clearInterval(timer);
           ALLOWED_HOSTS = null;

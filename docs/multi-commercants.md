@@ -113,8 +113,32 @@ Si l'en-tête est absent, trop court ou illisible, le serveur retombe sur l'adre
 - **Jeton refusé par Cyclos** (il a expiré chez Cyclos, par exemple après une longue durée) : la durée de vie du jeton n'a été mesurée que jusqu'à 92 minutes. Au premier refus, le serveur essaie une seule fois un autre jeton du même commerçant s'il y en a un, sinon l'écoute s'arrête. La page affiche alors **« Session expirée, reconnectez-vous »** avec un lien « Se reconnecter », et cesse de se rafraîchir toute seule. Il n'y a aucun nouvel essai en boucle. Se reconnecter ouvre de nouveaux jetons et relance l'écoute.
 - Le fait que Cyclos soit lent ou en panne n'est pas une session expirée : l'écoute essaie de se reconnecter avec des pauses de plus en plus longues.
 
+## L'espace commerçants (`/espace`)
+
+Une page d'entrée qui regroupe les outils du commerçant. Elle n'existe que dans ce mode : sans `CAISSE_MULTI_MERCHANT=true`, toutes les adresses `/espace` répondent 404 (elle a besoin de la liste blanche, des freins et du réglage des relais, qui n'existent que dans ce mode).
+
+Ce que voit le commerçant :
+
+1. `GET /espace` sans session : un formulaire (identifiant Cyclos, mot de passe).
+2. Il se connecte (`POST /espace/connexion`). Le serveur vérifie le compte auprès de Cyclos (canal `CYCLOS_CHANNEL`, `main`), lit son numéro interne et son e-mail, et contrôle `CAISSE_ALLOWED_USERS`. Le mot de passe sert à **un seul** appel à Cyclos (le jeton de session) puis il est oublié : jamais gardé, jamais écrit dans le journal.
+3. Si le compte est autorisé : la page avec deux liens, « Notifications de caisse » (vers `/caisse`) et « Relevé de transactions » (vers `ESPACE_RELEVE_URL`, ou « Bientôt disponible » sans lien si le réglage est vide).
+4. `POST /espace/deconnexion` ferme le jeton chez Cyclos et la session sur le serveur.
+
+Points à connaître :
+
+- **Même message dans tous les refus** : mauvais mot de passe, compte inconnu, compte valide mais absent de la liste, liste vide. La page répond 401 avec « Identifiants incorrects ou accès non autorisé. ». Le visiteur ne peut donc pas savoir qui est sur la liste. Le journal du serveur, lui, garde la ligne « compte refusé ... numéro interne Cyclos : ... » décrite plus haut, pour l'administrateur.
+- **Session séparée de `/caisse`** : cookie `espace_session` (limité à `/espace`), jeton Cyclos à part. Après être passé par l'espace, le commerçant se reconnecte en ouvrant `/caisse`. C'est voulu, les sessions ne sont pas partagées. La connexion à l'espace n'ouvre aucune écoute.
+- **Mêmes freins que les autres connexions**, avec les mêmes compteurs (un refus sur `/connexion` compte aussi sur `/espace`), la même lecture de l'adresse (`CAISSE_TRUSTED_PROXY_HOPS`, même ligne « adresse lue » dans le journal), les mêmes durées de session et les mêmes en-têtes de sécurité.
+- **Liste modifiée** : comme pour la caisse, elle est lue au démarrage ; redémarrer après un changement.
+
+Réglage de l'espace :
+
+| Réglage | Rôle | Défaut |
+|---|---|---|
+| `ESPACE_RELEVE_URL` | Adresse du relevé de transactions : adresse `http(s)` complète, ou chemin du site commençant par `/`. Vide : « Bientôt disponible », sans lien. Une valeur invalide empêche le démarrage | vide |
+
 ## Ce qui n'est pas dans ce mode
 
 - Pas de mémoire du mot de passe, donc pas de reconnexion automatique après expiration du jeton : le commerçant se reconnecte lui-même.
 - Pas de liste blanche par groupe Cyclos : le groupe n'est pas lisible avec les droits d'un commerçant.
-- Pas d'exécutable multi-commerçants.
+- Pas d'exécutable multi-commerçants (l'espace commerçants n'y existe donc pas non plus).

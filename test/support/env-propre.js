@@ -41,6 +41,7 @@ export const VARIABLES_DU_PROGRAMME = [
   "CAISSE_MULTI_MERCHANT",
   "CAISSE_ALLOWED_USERS",
   "CAISSE_TRUSTED_PROXY_HOPS",
+  "ESPACE_RELEVE_URL",
   // Single executable (launcher.js)
   "CAISSE_OPEN_NETWORK",
 ];

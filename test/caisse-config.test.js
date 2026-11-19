@@ -248,7 +248,7 @@ test("caisse : CAISSE_HIDDEN_DESCRIPTIONS = défaut, vide, ou liste séparée pa
 test("caisse multi : désactivé par défaut, aucun champ du mode multi dans la configuration", () => {
   for (const env of [ENABLED, { ...ENABLED, CAISSE_MULTI_MERCHANT: "false" }, { ...ENABLED, CAISSE_MULTI_MERCHANT: "" }]) {
     const config = readCaisseConfig(env);
-    for (const field of ["multiMerchant", "allowedUsers", "trustedProxyHops", "multiMerchantIgnored"]) {
+    for (const field of ["multiMerchant", "allowedUsers", "trustedProxyHops", "multiMerchantIgnored", "espaceReleveUrl"]) {
       assert.equal(field in config, false, field);
     }
     assert.equal(config.maxListeners, 5);
@@ -338,4 +338,19 @@ test("caisse multi : aucun compte d'écoute exigé ni conservé ; en mono, toujo
   assert.equal(withEnv.credentialsFor(PROTOTYPE_MERCHANT), null, "the environment's account is ignored");
   assert.equal(JSON.stringify(withEnv).includes("mdp-fictif-pour-test"), false);
   assert.throws(() => readCaisseConfig({ CAISSE_ENABLED: "true" }), /exige CAISSE_CYCLOS_LOGIN/);
+});
+
+// Intention: ESPACE_RELEVE_URL (link of the merchants' area to the statement) is read in multi-merchant mode only, empty means "no link",
+// and an invalid value refuses the start without quoting the value.
+test("caisse multi : ESPACE_RELEVE_URL, vide ou valide, sinon démarrage refusé", () => {
+  const multi = { ...ENABLED, CAISSE_MULTI_MERCHANT: "true" };
+  assert.equal(readCaisseConfig(multi).espaceReleveUrl, null);
+  assert.equal(readCaisseConfig({ ...multi, ESPACE_RELEVE_URL: "  " }).espaceReleveUrl, null);
+  assert.equal(readCaisseConfig({ ...multi, ESPACE_RELEVE_URL: " https://releve.exemple.test/ " }).espaceReleveUrl, "https://releve.exemple.test/");
+  assert.equal(readCaisseConfig({ ...multi, ESPACE_RELEVE_URL: "/releve" }).espaceReleveUrl, "/releve");
+  for (const bad of ["javascript:alert(1)", "releve.exemple.test", "//autre.test/x", "ftp://x.test", "https://a b.test", "/a b", "data:text/html,x"]) {
+    assert.throws(() => readCaisseConfig({ ...multi, ESPACE_RELEVE_URL: bad }), (error) => /ESPACE_RELEVE_URL invalide/.test(error.message) && !error.message.includes(bad), bad);
+  }
+  // Without the multi-merchant mode the area does not exist: the setting is not read.
+  assert.equal("espaceReleveUrl" in readCaisseConfig({ ...ENABLED, ESPACE_RELEVE_URL: "x" }), false);
 });

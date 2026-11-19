@@ -194,19 +194,22 @@ button:hover {
 }
 
 /* Logout: the only red button, outlined (red on white, 4.50:1). */
-form[action="/deconnexion"] button {
+form[action="/deconnexion"] button,
+form[action="/espace/deconnexion"] button {
   border-color: var(--rouge);
   background: var(--blanc);
   color: var(--rouge);
 }
 
-form[action="/deconnexion"] button:hover {
+form[action="/deconnexion"] button:hover,
+form[action="/espace/deconnexion"] button:hover {
   border-color: var(--rouge-survol);
   background: var(--rouge-survol);
   color: var(--blanc);
 }
 
-form[action="/deconnexion"] {
+form[action="/deconnexion"],
+form[action="/espace/deconnexion"] {
   margin-top: 1rem;
 }
 
@@ -882,4 +885,55 @@ form[action="/deconnexion"] {
 /* Link back to the login page, in the banner shown when the session of the listening has expired. */
 .caisse-bandeau .caisse-reconnexion {
   font-weight: 700;
+}
+
+/* ---------- Merchants' area (/espace) ---------- */
+
+.espace-liens {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.espace-lien {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  min-height: 3.5rem;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--vert-principal);
+  border-radius: 0.375rem;
+  background: var(--vert-principal);
+  color: var(--blanc);
+  font-family: var(--police-titre);
+  font-size: 1.15rem;
+  text-decoration: none;
+}
+
+a.espace-lien:hover {
+  border-color: var(--vert-principal-survol);
+  background: var(--vert-principal-survol);
+  color: var(--blanc);
+}
+
+/* Not available yet: neutral, not clickable, and said in words. */
+.espace-bientot {
+  border-color: var(--bordure);
+  background: var(--fond-alterne);
+  color: var(--texte);
+}
+
+.espace-bientot-texte {
+  color: var(--texte-secondaire);
+  font-family: var(--police-texte);
+  font-size: 1rem;
+}
+
+.espace-note {
+  color: var(--texte-secondaire);
+  font-size: 0.95rem;
 }
