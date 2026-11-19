@@ -14,7 +14,7 @@ const LOGO_HEIGHT = 40; // 200 x 77 px at that width, rounded
 // Latin accents and French punctuation are fine, but anything else (other
 // scripts, emoji, symbols) has no glyph. Such characters are replaced by "?".
 const WIN_ANSI_EXTRAS = new Set(
-  [..."€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ"].map((c) => c.codePointAt(0)),
+  [..."€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–\u2014˜™š›œžŸ"].map((c) => c.codePointAt(0)),
 );
 
 function isWinAnsi(codePoint) {
