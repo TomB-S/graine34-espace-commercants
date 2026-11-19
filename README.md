@@ -304,7 +304,10 @@ Page d'entrée `/espace`, pour le mode multi-commerçants (`CAISSE_ENABLED=true`
 - Mêmes freins que les autres connexions (5 refus par identifiant et 10 par adresse sur 15 minutes, disjoncteur Cyclos, compteurs
   partagés avec `/connexion`), même lecture de l'adresse (`CAISSE_TRUSTED_PROXY_HOPS`), mêmes sessions (`SESSION_IDLE_MINUTES`,
   `SESSION_MAX_HOURS`) et mêmes en-têtes de sécurité.
-- Sans le mode multi-commerçants (mode à compte d'écoute unique, exécutable), `/espace` n'existe pas : toutes ses adresses répondent 404.
+- En mode multi-commerçants, l'adresse racine `/` (GET et HEAD) redirige vers `/espace` (redirection temporaire 307, sans cache),
+  même pour quelqu'un déjà connecté à `/caisse`. Le formulaire de connexion de `/caisse` reste accessible sur `/connexion`, et les
+  liens « Retour », la déconnexion et le lien « Se reconnecter » y mènent.
+- Sans le mode multi-commerçants (mode à compte d'écoute unique, exécutable), `/espace` n'existe pas : toutes ses adresses répondent 404. Dans ces modes, `/` reste le formulaire de connexion, comme avant.
 
 | Nom | Rôle | Valeur par défaut |
 | --- | --- | --- |
@@ -589,6 +592,7 @@ identifiant (ceux des tests sont fictifs).
   sessions, CSRF), `test/securite.test.js` (en-têtes, CSP, cache, taille des
   requêtes), `test/statique.test.js` (fichiers statiques), `test/demarrage.test.js`
   (démarrage réel), `test/unit.test.js` (`escapeHtml`, `formatAmount`).
+- Racine `/` : `test/racine.test.js`.
 - Espace commerçants : `test/espace.test.js` (connexion, refus uniforme, déconnexion, lien du relevé, freins, séparation des sessions) ;
   `ESPACE_RELEVE_URL` dans `test/caisse-config.test.js`.
 - Un test lancé seul : `node --test test/caisse.test.js`.
