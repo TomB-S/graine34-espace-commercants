@@ -11,7 +11,8 @@
 //   GET    /users/self                      display name of the merchant
 //   GET    /self/accounts                   list of the merchant's accounts
 //   GET    /self/accounts/membre            totals (received, sent, net balance) over a period
-//   GET    /self/accounts/membre/history    transactions, PAGE by page (`direction=credit` keeps the entries received)
+//   GET    /self/accounts/membre/history    transactions, PAGE by page (`direction=credit` keeps the entries received; `datePeriod`
+//                                           once as "begin,end" or twice as begin, end)
 // and, for the cash register page (/caisse):
 //   GET    /push/subscribe                  stream of events (SSE), closed after `streamLifetimeMs` like the real one (about 41 s)
 //   GET    /transfers/{id}  /transactions/{key}   detail of a payment (404 when unknown)
@@ -139,6 +140,7 @@ export async function startFakeCyclos() {
     deleted: [], // tokens closed by DELETE /auth/session
     entries: [], // most recent first, like Cyclos
     pageSize: null, // when set, forces the page size (otherwise the requested one)
+    omitHasNext: false, // true: the history answers without the X-Has-Next-Page header
     totals: null, // when set, replaces the computed totals
     // false: reproduces the real instance, which answers without incoming, outgoing
     // or netInflow (only balances and credit limits).
@@ -306,14 +308,20 @@ export async function startFakeCyclos() {
       const mine = dataOf(token).entries;
       let all = url.searchParams.get("direction") === "credit" ? mine.filter((e) => Number(e.amount) > 0) : mine;
       // `datePeriod=begin,end` (cash register page, recap of yesterday): only the entries dated in the period.
-      const period = url.searchParams.get("datePeriod");
-      if (period) {
-        const [begin, end] = period.split(",").map((d) => Date.parse(d));
+      // The statement (/espace/releve) sends the period as the same parameter twice (begin, end), the end being the last instant
+      // INCLUDED: it filters on begin <= date <= end.
+      const periods = url.searchParams.getAll("datePeriod");
+      if (periods.length === 2) {
+        const [begin, end] = periods.map((d) => Date.parse(d));
+        all = all.filter((e) => Date.parse(e.date) >= begin && Date.parse(e.date) <= end);
+      } else if (periods.length === 1) {
+        const [begin, end] = periods[0].split(",").map((d) => Date.parse(d));
         all = all.filter((e) => Date.parse(e.date) >= begin && Date.parse(e.date) < end);
       }
       const slice = all.slice(page * size, (page + 1) * size);
       const hasNext = (page + 1) * size < all.length;
-      return json(res, 200, slice, { "X-Has-Next-Page": String(hasNext) });
+      // `state.omitHasNext`: answers without the X-Has-Next-Page header (some instances do).
+      return json(res, 200, slice, state.omitHasNext ? {} : { "X-Has-Next-Page": String(hasNext) });
     }
     json(res, 404, { code: "notFound" });
   });
