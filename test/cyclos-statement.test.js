@@ -86,8 +86,8 @@ test("getStatement : seules les lignes de la période sont lues", () =>
     { state: { entries: [entry(1), entry(0, { date: FROM.minus({ days: 5 }).toUTC().toISO() })] } },
   ));
 
-// Intention: the account is the first one of the list (documented limit for a merchant with several accounts).
-test("getStatement : le compte lu est le premier de la liste", () =>
+// Intention: when none of the preferred account types is in the list, the account is the first one (the rule itself is in test/compte-recevant.test.js).
+test("getStatement : sans compte préféré dans la liste, le compte lu est le premier", () =>
   withClient(
     async ({ cyclos, push, token }) => {
       await read(push, token);

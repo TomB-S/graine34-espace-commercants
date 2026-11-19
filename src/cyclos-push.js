@@ -34,6 +34,11 @@ const PLAIN_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const ACCOUNT_TYPE = /^[A-Za-z0-9_.-]{1,60}$/;
 const DEFAULT_TIMEOUT_MS = 15_000;
 
+// The account that receives the payments, by order of preference (type.internalName). Among the accounts of GET /self/accounts the
+// first name of this list that is found wins, whatever the order Cyclos answers in; if none is found, the first account of the list.
+// To change the rule, change this list.
+export const PREFERRED_ACCOUNT_TYPES = ["MonComptePro", "monCompte"];
+
 export function createCyclosPush({ baseUrl, channel = "", fetchImpl = globalThis.fetch, requestTimeoutMs = DEFAULT_TIMEOUT_MS }) {
   const channelHeader = channel ? { Channel: channel } : {};
 
@@ -83,13 +88,16 @@ export function createCyclosPush({ baseUrl, channel = "", fetchImpl = globalThis
     }
   }
 
-  // The account read by the cash register and by the statement: the first one of GET /self/accounts.
+  // The account read by the cash register and by the statement: the first account whose type is in PREFERRED_ACCOUNT_TYPES (in that
+  // order), otherwise the first one of GET /self/accounts. An empty list, or a type that cannot go in a path, gives null.
   async function readAccount(token, signal) {
     const accounts = await getJson("/self/accounts", token, "getAccount", signal);
-    const first = Array.isArray(accounts) ? accounts[0] : null;
-    const accountType = first?.type?.internalName;
+    if (!Array.isArray(accounts)) return null;
+    const typeOf = (account) => account?.type?.internalName;
+    const chosen = PREFERRED_ACCOUNT_TYPES.map((name) => accounts.find((account) => typeOf(account) === name)).find(Boolean) ?? accounts[0];
+    const accountType = typeOf(chosen);
     if (typeof accountType !== "string" || !ACCOUNT_TYPE.test(accountType)) return null;
-    return { accountType, currency: first.currency ?? null };
+    return { accountType, currency: chosen.currency ?? null };
   }
 
   // One page of a list that Cyclos answers page by page. `hasNext` comes from the X-Has-Next-Page header; without it, a full page
@@ -159,7 +167,7 @@ export function createCyclosPush({ baseUrl, channel = "", fetchImpl = globalThis
       return { id, email };
     },
 
-    // Account to read: the first account of GET /self/accounts (a merchant with several accounts gets the first one).
+    // Account to read: see PREFERRED_ACCOUNT_TYPES (then the first of GET /self/accounts when none of them is there).
     // Returns { accountType, currency } or null when the list is empty.
     getAccount: readAccount,
 

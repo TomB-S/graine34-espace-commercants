@@ -271,7 +271,7 @@ compte d'écoute : le navigateur arrive directement sur `/caisse`.
 | `CAISSE_ENABLED` | `true` active la page ; `false` : 404 et aucun identifiant exigé | `false` |
 | `CAISSE_CYCLOS_LOGIN` | Identifiant du compte d'écoute (exigé si activée) | aucun |
 | `CAISSE_CYCLOS_PASSWORD` | Mot de passe du compte d'écoute (exigé si activée, jamais journalisé) | aucun |
-| `CAISSE_ACCOUNT_TYPE` | Type de compte à lire (par exemple `MonComptePro`) ; lettres, chiffres, `.`, `-`, `_` | découverte automatique |
+| `CAISSE_ACCOUNT_TYPE` | Type de compte à lire (par exemple `MonComptePro`) ; lettres, chiffres, `.`, `-`, `_`. Réglé, il passe avant la règle `MonComptePro`, `monCompte`, puis premier de la liste | règle automatique |
 | `CAISSE_POLL_SECONDS` | Rythme de lecture du script (0 à 60). `0` = mode manuel, voir ci-dessous | `3` |
 | `CAISSE_REFRESH_SECONDS` | Rechargement de la page pour un navigateur **sans** JavaScript (2 à 60) | `5` |
 | `CAISSE_IDLE_SECONDS` | Arrêt de l'écoute sans visite (15 à 600) | `45` |
@@ -368,9 +368,12 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
 | `HISTORY_PAGE_SIZE` | Lignes demandées à Cyclos par page (entier positif ; sinon la valeur par défaut) | 200 |
 | `HISTORY_MAX_ROWS` | Plafond de lignes lues pour un ticket (entier positif ; sinon la valeur par défaut). Au-delà, la liste est coupée aux plus récentes avec un avertissement | 2000 |
 
-**Limite du choix de compte.** Le relevé lit le **premier compte** de la liste de Cyclos (`GET /self/accounts`, le premier), comme la
-caisse. Un commerçant qui aurait plusieurs comptes ne voit que le premier : il n'y a pas de choix de compte, et le ticket ne dit pas
-lequel est lu. `CAISSE_ACCOUNT_TYPE` ne s'applique pas au relevé.
+**Compte lu quand il y en a plusieurs.** Le relevé et la caisse lisent le même compte, choisi dans la liste de Cyclos
+(`GET /self/accounts`) par une règle unique : le compte de type `MonComptePro`, sinon celui de type `monCompte`, sinon le premier de
+la liste. L'ordre dans lequel Cyclos répond ne change rien tant qu'un de ces deux types est présent. La liste d'ordre est la
+constante `PREFERRED_ACCOUNT_TYPES` de `src/cyclos-push.js` (pas de réglage par variable d'environnement). Il n'y a pas de choix de
+compte à l'écran, et le ticket ne dit pas lequel est lu. Dans la caisse, `CAISSE_ACCOUNT_TYPE`, s'il est réglé, garde la priorité sur
+cette règle ; il ne s'applique pas au relevé.
 
 ## Comment elle fonctionne
 
