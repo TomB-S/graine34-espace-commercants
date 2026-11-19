@@ -189,7 +189,7 @@ export function createTicketStore({ ticketsKept = 50, seenKept = 200 } = {}) {
   const seenTransactions = boundedSet(seenKept);
   const seenEntities = boundedSet(seenKept);
   let anonymous = 0;
-  let connection = "starting"; // starting, live, reconnecting, degraded, error
+  let connection = "starting"; // starting, live, reconnecting, degraded, error, reauth
   let fallback = false; // the "payment received" notification is off at Cyclos
   let recap = null; // recap of yesterday (see setRecap), null while it has not been read
   let loaded = false; // the first load of the history succeeded (what the page may take as "what was already there")
@@ -346,6 +346,7 @@ export function createTicketStore({ ticketsKept = 50, seenKept = 200 } = {}) {
     },
     // One state to show: the worst first. "fallback" is a live stream whose notification is off.
     status() {
+      if (connection === "reauth") return "reauth"; // the merchant must log in again (multi-merchant mode)
       if (connection === "error" || connection === "degraded" || connection === "reconnecting" || connection === "starting") return connection;
       return fallback ? "fallback" : "live";
     },

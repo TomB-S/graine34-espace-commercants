@@ -241,3 +241,101 @@ test("caisse : CAISSE_HIDDEN_DESCRIPTIONS = défaut, vide, ou liste séparée pa
   assert.deepEqual(readCaisseConfig({ ...ENABLED, CAISSE_HIDDEN_DESCRIPTIONS: " , ,, " }).hiddenDescriptions, []);
   assert.deepEqual(readCaisseConfig({ ...ENABLED, CAISSE_HIDDEN_DESCRIPTIONS: "Un, Deux ,Virement Mobile Pro," }).hiddenDescriptions, ["Un", "Deux", "Virement Mobile Pro"]);
 });
+
+// === Multi-merchant mode: settings only (nothing uses them yet) ===
+
+// Intention: off by default, and then the configuration holds none of the multi-merchant fields.
+test("caisse multi : désactivé par défaut, aucun champ du mode multi dans la configuration", () => {
+  for (const env of [ENABLED, { ...ENABLED, CAISSE_MULTI_MERCHANT: "false" }, { ...ENABLED, CAISSE_MULTI_MERCHANT: "" }]) {
+    const config = readCaisseConfig(env);
+    for (const field of ["multiMerchant", "allowedUsers", "trustedProxyHops", "multiMerchantIgnored"]) {
+      assert.equal(field in config, false, field);
+    }
+    assert.equal(config.maxListeners, 5);
+  }
+  // Off: the multi-merchant variables are not even read (a wrong value does not matter).
+  const config = readCaisseConfig({ ...ENABLED, CAISSE_ALLOWED_USERS: "a b c", CAISSE_TRUSTED_PROXY_HOPS: "x" });
+  assert.equal("allowedUsers" in config, false);
+});
+
+// Intention: the flag only accepts "true" or "false".
+test("caisse multi : valeur invalide du drapeau refusée", () => {
+  for (const bad of ["TRUE", "1", "oui"]) {
+    assert.throws(() => readCaisseConfig({ ...ENABLED, CAISSE_MULTI_MERCHANT: bad }), /CAISSE_MULTI_MERCHANT invalide/, bad);
+  }
+});
+
+// Intention: the defaults of the multi-merchant mode: 30 listeners, no trusted relay, nobody allowed.
+test("caisse multi : valeurs par défaut (30 écouteurs, 0 relais, liste vide donc personne)", () => {
+  const config = readCaisseConfig({ ...ENABLED, CAISSE_MULTI_MERCHANT: "true" });
+  assert.equal(config.multiMerchant, true);
+  assert.equal(config.maxListeners, 30);
+  assert.equal(config.trustedProxyHops, 0);
+  assert.deepEqual(config.allowedUsers, { ids: [], emails: [] });
+});
+
+// Intention: the listener cap has its own range in this mode (up to 200), and is still checked.
+test("caisse multi : plafond d'écouteurs de 1 à 200", () => {
+  const multi = { ...ENABLED, CAISSE_MULTI_MERCHANT: "true" };
+  assert.equal(readCaisseConfig({ ...multi, CAISSE_MAX_LISTENERS: "200" }).maxListeners, 200);
+  assert.equal(readCaisseConfig({ ...multi, CAISSE_MAX_LISTENERS: "1" }).maxListeners, 1);
+  for (const bad of ["0", "201", "abc"]) {
+    assert.throws(() => readCaisseConfig({ ...multi, CAISSE_MAX_LISTENERS: bad }), /CAISSE_MAX_LISTENERS invalide/, bad);
+  }
+  // Without the mode, the old range still holds.
+  assert.throws(() => readCaisseConfig({ ...ENABLED, CAISSE_MAX_LISTENERS: "51" }), /CAISSE_MAX_LISTENERS invalide/);
+});
+
+// Intention: the number of trusted relays, 0 to 5.
+test("caisse multi : nombre de relais de confiance de 0 à 5", () => {
+  const multi = { ...ENABLED, CAISSE_MULTI_MERCHANT: "true" };
+  assert.equal(readCaisseConfig({ ...multi, CAISSE_TRUSTED_PROXY_HOPS: "1" }).trustedProxyHops, 1);
+  assert.equal(readCaisseConfig({ ...multi, CAISSE_TRUSTED_PROXY_HOPS: "5" }).trustedProxyHops, 5);
+  for (const bad of ["6", "-1", "un"]) {
+    assert.throws(() => readCaisseConfig({ ...multi, CAISSE_TRUSTED_PROXY_HOPS: bad }), /CAISSE_TRUSTED_PROXY_HOPS invalide/, bad);
+  }
+});
+
+// Intention: the list takes internal numbers and e-mail addresses, mixed; e-mails are lowercased and trimmed; duplicates dropped.
+test("caisse multi : liste autorisée, numéros internes et e-mails mélangés", () => {
+  const config = readCaisseConfig({
+    ...ENABLED,
+    CAISSE_MULTI_MERCHANT: "true",
+    CAISSE_ALLOWED_USERS: " 1234567890 , Marie@Exemple.TEST,marie@exemple.test, 9876,, ",
+  });
+  assert.deepEqual(config.allowedUsers, { ids: ["1234567890", "9876"], emails: ["marie@exemple.test"] });
+});
+
+// Intention: a bad entry refuses the start, and the message never quotes the entry.
+test("caisse multi : entrée invalide refusée sans être citée", () => {
+  for (const bad of ["12 34", "a@b@c", "x/y", "<script>"]) {
+    assert.throws(
+      () => readCaisseConfig({ ...ENABLED, CAISSE_MULTI_MERCHANT: "true", CAISSE_ALLOWED_USERS: `ok1,${bad}` }),
+      (error) => /CAISSE_ALLOWED_USERS invalide/.test(error.message) && !error.message.includes(bad),
+      bad,
+    );
+  }
+});
+
+// Intention: the executable stays single-merchant: the flag is ignored, flagged for the start message, and nothing else is read.
+test("caisse multi : ignoré dans l'exécutable (connexion qui démarre l'écoute)", () => {
+  const config = readCaisseConfig(
+    { CAISSE_MULTI_MERCHANT: "true", CAISSE_ALLOWED_USERS: "pas valide !", CAISSE_MAX_LISTENERS: "10" },
+    { enabled: true, credentialsFromLogin: true },
+  );
+  assert.equal(config.multiMerchantIgnored, true);
+  for (const field of ["multiMerchant", "allowedUsers", "trustedProxyHops"]) assert.equal(field in config, false, field);
+  assert.equal(config.maxListeners, 10); // the old range and setting, untouched
+});
+
+// Intention: in the multi-merchant mode there is no listening account: nothing is required, and nothing from the environment is kept
+// (no password in the configuration). Without the mode, both are still required.
+test("caisse multi : aucun compte d'écoute exigé ni conservé ; en mono, toujours exigé", () => {
+  const config = readCaisseConfig({ CAISSE_ENABLED: "true", CAISSE_MULTI_MERCHANT: "true" });
+  assert.equal(config.multiMerchant, true);
+  assert.equal(config.credentialsFor(PROTOTYPE_MERCHANT), null);
+  const withEnv = readCaisseConfig({ ...ENABLED, CAISSE_MULTI_MERCHANT: "true" });
+  assert.equal(withEnv.credentialsFor(PROTOTYPE_MERCHANT), null, "the environment's account is ignored");
+  assert.equal(JSON.stringify(withEnv).includes("mdp-fictif-pour-test"), false);
+  assert.throws(() => readCaisseConfig({ CAISSE_ENABLED: "true" }), /exige CAISSE_CYCLOS_LOGIN/);
+});

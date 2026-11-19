@@ -27,6 +27,28 @@ const INTEGER_SETTINGS = [
   ["CAISSE_MAX_LISTENERS", "maxListeners", 5, 1, 50],
 ];
 
+// Multi-merchant mode (CAISSE_MULTI_MERCHANT=true, off by default): each merchant opens the page with his own Cyclos account
+// instead of the single listening account of the environment. The settings below exist ONLY in that mode: with it off, the
+// configuration holds none of these fields and everything behaves as before.
+const MULTI_LISTENERS = ["CAISSE_MAX_LISTENERS", "maxListeners", 30, 1, 200];
+const MULTI_PROXY_HOPS = ["CAISSE_TRUSTED_PROXY_HOPS", "trustedProxyHops", 0, 0, 5];
+
+// Identifiers of the merchants allowed to open the page: the internal Cyclos number (plain name) or an e-mail address
+// (compared without case and without the spaces around it). A bad entry refuses the start; its text is never quoted.
+const ALLOWED_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const ALLOWED_EMAIL = /^[^\s@,]+@[^\s@,]+$/;
+
+function readAllowedUsers(env) {
+  const ids = new Set();
+  const emails = new Set();
+  for (const item of readList(env, "CAISSE_ALLOWED_USERS", [])) {
+    if (ALLOWED_EMAIL.test(item)) emails.add(item.toLowerCase());
+    else if (ALLOWED_ID.test(item)) ids.add(item);
+    else throw new Error("CAISSE_ALLOWED_USERS invalide : numéros internes Cyclos ou adresses e-mail séparés par des virgules");
+  }
+  return { ids: [...ids], emails: [...emails] };
+}
+
 // Type of account goes into a URL path: plain names only.
 const ACCOUNT_TYPE = /^[A-Za-z0-9_.-]{1,60}$/;
 
@@ -82,9 +104,19 @@ export function readCaisseConfig(env = process.env, overrides = {}) {
 
   let login = "";
   let password = "";
+  // `credentialsFromLogin` (executable): the multi-merchant mode is never available there, whatever the environment says.
+  const fromLogin = overrides.credentialsFromLogin === true;
+  const multi = enabled && !fromLogin && (overrides.multiMerchant ?? readBoolean(env, "CAISSE_MULTI_MERCHANT", false));
   if (enabled) {
     for (const setting of INTEGER_SETTINGS) {
-      config[setting[1]] = readInteger(env, setting);
+      config[setting[1]] = readInteger(env, setting[0] === "CAISSE_MAX_LISTENERS" && multi ? MULTI_LISTENERS : setting);
+    }
+    if (multi) {
+      config.multiMerchant = true;
+      config.trustedProxyHops = readInteger(env, MULTI_PROXY_HOPS);
+      config.allowedUsers = readAllowedUsers(env);
+    } else if (fromLogin && env.CAISSE_MULTI_MERCHANT === "true") {
+      config.multiMerchantIgnored = true; // the caller says so once at start; nothing else changes
     }
     config.hidePayerName = readBoolean(env, "CAISSE_HIDE_PAYER_NAME", false);
     config.nameOrder = readNameOrder(env, "CAISSE_NAME_ORDER", "nom-prenom");
@@ -102,16 +134,18 @@ export function readCaisseConfig(env = process.env, overrides = {}) {
 
   // `credentialsFromLogin` (executable only, see startServer): the credentials are not configured at all, they come
   // from the login form of the page. Whatever the environment holds is then ignored, never used.
-  const { login: loginOverride, password: passwordOverride, credentialsFromLogin = false, ...rest } = overrides;
+  const { login: loginOverride, password: passwordOverride, credentialsFromLogin = false, multiMerchant: _multi, ...rest } = overrides;
   Object.assign(config, rest);
   login = loginOverride ?? login;
   password = passwordOverride ?? password;
-  if (credentialsFromLogin) {
+  if (credentialsFromLogin || config.multiMerchant) {
+    // Executable: the credentials come from the page. Multi-merchant: each merchant has his own, and nothing is kept.
     login = "";
     password = "";
   }
 
-  if (config.enabled && !credentialsFromLogin && (login.trim() === "" || password === "")) {
+  // Multi-merchant mode: there is no listening account, every merchant logs in with his own.
+  if (config.enabled && !credentialsFromLogin && !config.multiMerchant && (login.trim() === "" || password === "")) {
     throw new Error(
       "CAISSE_ENABLED=true exige CAISSE_CYCLOS_LOGIN et CAISSE_CYCLOS_PASSWORD (compte d'écoute Cyclos)",
     );
@@ -121,7 +155,7 @@ export function readCaisseConfig(env = process.env, overrides = {}) {
   // merchant, whose credentials come from the environment. In production this
   // is where each merchant's own credentials or access will be looked up.
   config.credentialsFor = (merchantKey) =>
-    config.enabled && merchantKey === PROTOTYPE_MERCHANT ? { login, password } : null;
+    config.enabled && !config.multiMerchant && merchantKey === PROTOTYPE_MERCHANT ? { login, password } : null;
 
   return Object.freeze(config);
 }

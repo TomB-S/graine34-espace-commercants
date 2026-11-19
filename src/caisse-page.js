@@ -21,7 +21,8 @@ function stateBlock(status, e) {
   if (!banner) return "";
   if (banner.level === "info") return `<p class="caisse-etat" role="status">${e(banner.text)}</p>`;
   const kind = banner.level === "error" ? "erreur" : "avertissement";
-  return `<p class="caisse-bandeau ${kind}" role="status"><span class="icone" aria-hidden="true">⚠</span> ${e(banner.text)}</p>`;
+  const link = banner.link ? ` <a class="caisse-reconnexion" href="${e(banner.link.href)}">${e(banner.link.text)}</a>` : "";
+  return `<p class="caisse-bandeau ${kind}" role="status"><span class="icone" aria-hidden="true">⚠</span> ${e(banner.text)}${link}</p>`;
 }
 
 // Small badge of the header: only while the listening works. It disappears during a reconnection.
@@ -87,7 +88,7 @@ export function renderCaissePage(view, { refreshSeconds, pollSeconds = 3, hidePa
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/png" href="/icon.png">
   <link rel="stylesheet" href="${e(stylesheetHref)}">
-  <noscript><meta http-equiv="refresh" content="${e(refreshSeconds)}"></noscript>
+  ${view.status === "reauth" ? "" : `<noscript><meta http-equiv="refresh" content="${e(refreshSeconds)}"></noscript>`}
   <script type="module" src="/caisse.js"></script>
   <title>${e(TITLE)}</title>
 </head>
@@ -106,7 +107,7 @@ export function renderCaissePage(view, { refreshSeconds, pollSeconds = 3, hidePa
   <div class="caisse-zone" id="caisse-zone-contenu">
   ${main}
   </div>
-  <p class="caisse-actualisation" id="caisse-actualisation">${e(pollFooterText(pollSeconds === 0 ? 0 : refreshSeconds))}</p>
+  <p class="caisse-actualisation" id="caisse-actualisation">${view.status === "reauth" ? "" : e(pollFooterText(pollSeconds === 0 ? 0 : refreshSeconds))}</p>
   </div>
 </body>
 </html>`;

@@ -116,6 +116,15 @@ export function createCyclosPush({ baseUrl, channel = "", fetchImpl = globalThis
       return typeof body?.id === "string" && PLAIN_ID.test(body.id) ? body.id : null;
     },
 
+    // Identity of the user of this token for the whitelist of the multi-merchant mode: { id, email }. `id` is null when it cannot be
+    // read reliably; `email` is null when Cyclos does not give a plain address (it may not, depending on the profile settings).
+    async getIdentity(token, signal) {
+      const body = await getJson("/users/self?fields=id,email", token, "getIdentity", signal);
+      const id = typeof body?.id === "string" && PLAIN_ID.test(body.id) ? body.id : null;
+      const email = typeof body?.email === "string" && body.email.length <= 254 && /^[^\s@,]+@[^\s@,]+$/.test(body.email.trim()) ? body.email.trim() : null;
+      return { id, email };
+    },
+
     // Account to read, same rule as the statement: the first account of GET /self/accounts.
     // Returns { accountType, currency } or null when the list is empty.
     async getAccount(token, signal) {

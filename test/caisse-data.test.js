@@ -323,3 +323,11 @@ appTest("caisse/data : la première visite attend la lecture initiale et répond
   assert.equal(data.tickets.length, 2, "no empty starting list");
   assert.notEqual(data.status, "starting");
 });
+
+// Intention: the state "reauth" (multi-merchant mode: the session expired) has its own banner, with the way back to the login page.
+test("caisse/data : état « reconnexion nécessaire », bannière et lien pour se reconnecter", () => {
+  const data = renderCaisseData({ status: "reauth", tickets: [], recap: null }, { hidePayerName: false, now: 1 }, { formatAmount: String });
+  assert.deepEqual(data.banner, { level: "error", text: "Session expirée, reconnectez-vous", link: { text: "Se reconnecter", href: "/" } });
+  assert.equal(data.status, "reauth");
+  assert.equal(data.recap, null, "no recap of yesterday while the listening is over");
+});

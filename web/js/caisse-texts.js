@@ -3,6 +3,9 @@
 export const TEXTS = {
   starting: "Connexion à Cyclos en cours",
   reconnecting: "Connexion interrompue, reconnexion en cours. Les nouveaux paiements peuvent apparaître avec du retard.",
+  // Multi-merchant mode: the Cyclos session of the listening is gone, the merchant has to log in again.
+  reauth: "Session expirée, reconnectez-vous",
+  reconnectLink: "Se reconnecter",
   unreadable: "Impossible de lire les paiements pour le moment. Prévenir l'équipe La Graine 34.",
   offline: "Connexion au serveur interrompue.",
   emptyHelp: "Le prochain paiement s'affichera ici dès qu'il sera reçu.",

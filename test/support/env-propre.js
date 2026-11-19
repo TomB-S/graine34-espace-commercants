@@ -37,6 +37,10 @@ export const VARIABLES_DU_PROGRAMME = [
   "CAISSE_HIDE_PAYER_NAME",
   "CAISSE_HIDDEN_DESCRIPTIONS",
   "CAISSE_NAME_ORDER",
+  // Multi-merchant mode (caisse-config.js)
+  "CAISSE_MULTI_MERCHANT",
+  "CAISSE_ALLOWED_USERS",
+  "CAISSE_TRUSTED_PROXY_HOPS",
   // Single executable (launcher.js)
   "CAISSE_OPEN_NETWORK",
 ];
