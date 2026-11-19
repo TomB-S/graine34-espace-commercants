@@ -288,19 +288,29 @@ jamais afficher sa valeur). Quand la page est désactivée, les autres variables
 
 Page d'entrée `/espace`, pour le mode multi-commerçants (`CAISSE_ENABLED=true` et `CAISSE_MULTI_MERCHANT=true`, voir
 `docs/multi-commercants.md`). Le commerçant s'y connecte avec son compte Cyclos (canal `CYCLOS_CHANNEL`, `main` en production) ;
-**seulement s'il figure dans `CAISSE_ALLOWED_USERS`**, il voit deux liens : « Notifications de caisse » (vers `/caisse`) et
-« Relevé de transactions » (vers l'adresse de `ESPACE_RELEVE_URL`, ou « Bientôt disponible » sans lien si le réglage est vide).
+**seulement s'il figure dans `CAISSE_ALLOWED_USERS`**, il voit deux entrées : « Notifications de caisse » (un bouton qui ouvre `/caisse`
+sans nouvelle saisie du mot de passe) et « Relevé de transactions » (un lien vers l'adresse de `ESPACE_RELEVE_URL`, ou « Bientôt
+disponible » sans lien si le réglage est vide). Si `ESPACE_RELEVE_URL` est réglé, une phrase précise que le relevé demandera sa propre connexion.
 
 | Adresse | Rôle |
 | --- | --- |
-| `GET /espace` | Sans session : le formulaire. Avec une session valide : la page des deux liens |
+| `GET /espace` | Sans session : le formulaire. Avec une session valide : la page des deux entrées |
 | `POST /espace/connexion` | Vérifie le compte auprès de Cyclos et la liste blanche ; ne garde que le jeton de session |
+| `POST /espace/caisse` | Origine du site et jeton CSRF exigés, session de l'espace valide : ouvre la session de `/caisse` à partir du jeton Cyclos déjà obtenu, puis redirige vers `/caisse` |
 | `POST /espace/deconnexion` | Ferme la session chez Cyclos et sur le serveur (jeton CSRF exigé) |
 
 - Un mauvais mot de passe, un compte valide mais absent de la liste et une liste vide donnent **la même réponse** (401) et le même
   message, « Identifiants incorrects ou accès non autorisé. », pour ne pas révéler qui est sur la liste.
-- La session de l'espace est **séparée** de celle de `/caisse` (autre cookie `espace_session`, autre jeton Cyclos) : le commerçant
-  se reconnecte en ouvrant `/caisse`. C'est voulu.
+- Le bouton « Notifications de caisse » est un formulaire (méthode POST, jeton CSRF, vérification d'origine), sans JavaScript.
+  Le serveur vérifie de nouveau, auprès de Cyclos, que le jeton fonctionne encore et que le compte figure toujours dans la liste,
+  puis crée la session de `/caisse` (autre cookie `session`, autre jeton CSRF) à partir du jeton de l'espace. Le mot de passe n'existe
+  plus à ce stade : il n'est jamais conservé. Si le jeton n'est plus valable chez Cyclos, la session de l'espace se termine et le
+  commerçant se connecte de nouveau. La connexion directe par `/connexion` (identifiant et mot de passe) fonctionne comme avant.
+- Les deux sessions locales (espace et caisse) **partagent le même jeton Cyclos**. Il n'est fermé chez Cyclos que lorsque plus aucune
+  session locale ne le détient : se déconnecter de la caisse arrête l'écoute et ferme la caisse, mais l'espace reste connecté ;
+  se déconnecter de l'espace laisse la caisse ouverte ; le jeton se ferme avec la dernière des deux (déconnexion ou expiration).
+  L'arrêt de l'écoute pour inactivité (45 secondes sans visite) ne ferme aucun jeton en mode multi-commerçants : l'écoute n'emprunte que
+  le jeton, elle ne le ferme pas.
 - Mêmes freins que les autres connexions (5 refus par identifiant et 10 par adresse sur 15 minutes, disjoncteur Cyclos, compteurs
   partagés avec `/connexion`), même lecture de l'adresse (`CAISSE_TRUSTED_PROXY_HOPS`), mêmes sessions (`SESSION_IDLE_MINUTES`,
   `SESSION_MAX_HOURS`) et mêmes en-têtes de sécurité.
@@ -593,7 +603,8 @@ identifiant (ceux des tests sont fictifs).
   requêtes), `test/statique.test.js` (fichiers statiques), `test/demarrage.test.js`
   (démarrage réel), `test/unit.test.js` (`escapeHtml`, `formatAmount`).
 - Racine `/` : `test/racine.test.js`.
-- Espace commerçants : `test/espace.test.js` (connexion, refus uniforme, déconnexion, lien du relevé, freins, séparation des sessions) ;
+- Espace commerçants : `test/espace.test.js` (connexion, refus uniforme, déconnexion, lien du relevé, freins, séparation des cookies) ;
+  `test/connexion-unique.test.js` (bouton vers la caisse sans mot de passe, refus, jeton partagé, arrêt de l'écoute, phrase de la page) ;
   `ESPACE_RELEVE_URL` dans `test/caisse-config.test.js`.
 - Un test lancé seul : `node --test test/caisse.test.js`.
 
