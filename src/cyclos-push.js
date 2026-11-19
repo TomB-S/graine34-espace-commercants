@@ -12,8 +12,16 @@
 //   PushUnavailableError  network error, timeout, 429, 5xx, unreadable answer, any other status
 //                         (`status` holds the HTTP status when there is one)
 
+import { withComputedTotals } from "./releve-calcul.js";
+
 export class PushAuthError extends Error {}
-export class PushForbiddenError extends Error {}
+export class PushForbiddenError extends Error {
+  // `accountsDenied`: the refusal comes from the list of money accounts (no account, or no right to read it): the statement says so.
+  constructor(message, { accountsDenied = false } = {}) {
+    super(message);
+    this.accountsDenied = accountsDenied;
+  }
+}
 export class PushUnavailableError extends Error {
   constructor(message, { status = null, cause } = {}) {
     super(message, { cause });
@@ -75,6 +83,32 @@ export function createCyclosPush({ baseUrl, channel = "", fetchImpl = globalThis
     }
   }
 
+  // The account read by the cash register and by the statement: the first one of GET /self/accounts.
+  async function readAccount(token, signal) {
+    const accounts = await getJson("/self/accounts", token, "getAccount", signal);
+    const first = Array.isArray(accounts) ? accounts[0] : null;
+    const accountType = first?.type?.internalName;
+    if (typeof accountType !== "string" || !ACCOUNT_TYPE.test(accountType)) return null;
+    return { accountType, currency: first.currency ?? null };
+  }
+
+  // One page of a list that Cyclos answers page by page. `hasNext` comes from the X-Has-Next-Page header; without it, a full page
+  // is taken to mean "there may be more".
+  async function getPage(path, token, what, pageSize, signal) {
+    const { response } = await request(path, { headers: { "Session-Token": token }, signal });
+    checkStatus(response, what);
+    let lines;
+    try {
+      lines = await response.json();
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      throw new PushUnavailableError(`unreadable answer on ${what}`, { cause: error });
+    }
+    if (!Array.isArray(lines)) throw new PushUnavailableError(`unexpected answer on ${what}`);
+    const header = response.headers.get("x-has-next-page");
+    return { lines, hasNext: header === null ? lines.length >= pageSize : header === "true" };
+  }
+
   return {
     // Exchanges login + password for a Cyclos session token (same call as the login of
     // the statement: Basic + Channel). Returns the token only.
@@ -125,15 +159,9 @@ export function createCyclosPush({ baseUrl, channel = "", fetchImpl = globalThis
       return { id, email };
     },
 
-    // Account to read, same rule as the statement: the first account of GET /self/accounts.
+    // Account to read: the first account of GET /self/accounts (a merchant with several accounts gets the first one).
     // Returns { accountType, currency } or null when the list is empty.
-    async getAccount(token, signal) {
-      const accounts = await getJson("/self/accounts", token, "getAccount", signal);
-      const first = Array.isArray(accounts) ? accounts[0] : null;
-      const accountType = first?.type?.internalName;
-      if (typeof accountType !== "string" || !ACCOUNT_TYPE.test(accountType)) return null;
-      return { accountType, currency: first.currency ?? null };
-    },
+    getAccount: readAccount,
 
     // Is the internal notification "payment received" enabled? true, false, or null when the answer does not say (the caller
     // treats null as "not enabled": fallback mode). On the real instance the settings are NOT at the root of the answer: they are
@@ -180,18 +208,56 @@ export function createCyclosPush({ baseUrl, channel = "", fetchImpl = globalThis
         pageSize: String(pageSize),
         skipTotalCount: "true",
       });
-      const { response } = await request(`/self/accounts/${accountType}/history?${query}`, { headers: { "Session-Token": token }, signal });
-      checkStatus(response, "getCreditsPeriod");
-      let lines;
+      return getPage(`/self/accounts/${accountType}/history?${query}`, token, "getCreditsPeriod", pageSize, signal);
+    },
+
+    // Statement of the account over a period, for /espace/releve: the name shown by Cyclos, the totals of the period and ALL the
+    // transactions (credits AND debits), most recent first, read page by page. `from` and `until` are ISO texts with offset (the
+    // end is the last instant included). Reading stops at `maxRows` lines: `truncated` is then true, and the totals Cyclos gives
+    // stay as they are, while the totals this code would compute are never made from a cut list (see withComputedTotals).
+    // At most about maxRows / pageSize + 1 calls, one after the other. Errors are the three kinds above; a 403 or an empty list on
+    // the accounts carries `accountsDenied`. Returns { merchantName, currency, totals, entries, truncated }.
+    async getStatement(token, { from, until, pageSize, maxRows }, signal) {
+      let merchantName = null;
       try {
-        lines = await response.json();
+        const body = await getJson("/users/self?fields=display", token, "getDisplayName", signal);
+        merchantName = typeof body?.display === "string" && body.display ? body.display : null;
       } catch (error) {
-        if (signal?.aborted) throw error;
-        throw new PushUnavailableError("unreadable answer on getCreditsPeriod", { cause: error });
+        // A 401 means the session is over; any other failure only leaves the name out.
+        if (error instanceof PushAuthError || signal?.aborted) throw error;
       }
-      if (!Array.isArray(lines)) throw new PushUnavailableError("unexpected answer on getCreditsPeriod");
-      const header = response.headers.get("x-has-next-page");
-      return { lines, hasNext: header === null ? lines.length >= pageSize : header === "true" };
+
+      let account;
+      try {
+        account = await readAccount(token, signal);
+      } catch (error) {
+        if (error instanceof PushForbiddenError) throw new PushForbiddenError(error.message, { accountsDenied: true });
+        throw error;
+      }
+      if (!account) throw new PushForbiddenError("no usable account", { accountsDenied: true });
+
+      const period = new URLSearchParams();
+      period.append("datePeriod", from);
+      period.append("datePeriod", until);
+      const totals = await getJson(`/self/accounts/${account.accountType}?${period}`, token, "getStatementTotals", signal);
+
+      const entries = [];
+      let truncated = false;
+      for (let page = 0; ; page += 1) {
+        const query = `${period}&page=${page}&pageSize=${pageSize}`;
+        const { lines, hasNext } = await getPage(`/self/accounts/${account.accountType}/history?${query}`, token, "getStatementHistory", pageSize, signal);
+        entries.push(...lines);
+        if (entries.length > maxRows || (entries.length === maxRows && hasNext)) {
+          truncated = true;
+          entries.length = maxRows;
+          break;
+        }
+        // An empty page ends the reading whatever the header says: no endless loop on an odd answer.
+        if (!hasNext || lines.length === 0) break;
+      }
+      // Cyclos' own totals are kept; without them they are computed here, from a complete list only.
+      const digits = account.currency?.decimalDigits ?? 2;
+      return { merchantName, currency: account.currency, totals: withComputedTotals(totals, entries, truncated, digits), entries, truncated };
     },
 
     // Detail of a transfer: one call. Never give a transaction id here (they differ).

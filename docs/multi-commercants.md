@@ -121,7 +121,7 @@ Ce que voit le commerçant :
 
 1. `GET /espace` sans session : un formulaire (identifiant Cyclos, mot de passe).
 2. Il se connecte (`POST /espace/connexion`). Le serveur vérifie le compte auprès de Cyclos (canal `CYCLOS_CHANNEL`, `main`), lit son numéro interne et son e-mail, et contrôle `CAISSE_ALLOWED_USERS`. Le mot de passe sert à **un seul** appel à Cyclos (le jeton de session) puis il est oublié : jamais gardé, jamais écrit dans le journal.
-3. Si le compte est autorisé : la page avec deux entrées, « Notifications de caisse » (un bouton, voir plus bas) et « Relevé de transactions » (un lien vers `ESPACE_RELEVE_URL`, ou « Bientôt disponible » sans lien si le réglage est vide). Si `ESPACE_RELEVE_URL` est réglé, une phrase dit que le relevé demandera sa propre connexion ; sinon, aucune phrase.
+3. Si le compte est autorisé : la page avec deux entrées, « Notifications de caisse » (un bouton, voir plus bas) et « Relevé de transactions » (un lien vers `/espace/releve`, même session, aucune seconde connexion).
 4. Le bouton « Notifications de caisse » envoie `POST /espace/caisse` : le commerçant arrive sur `/caisse` sans retaper son mot de passe.
 5. `POST /espace/deconnexion` ferme la session de l'espace (et le jeton chez Cyclos si plus rien ne l'utilise, voir plus bas).
 
@@ -139,14 +139,30 @@ Points à connaître :
 - **Mêmes freins que les autres connexions**, avec les mêmes compteurs (un refus sur `/connexion` compte aussi sur `/espace`), la même lecture de l'adresse (`CAISSE_TRUSTED_PROXY_HOPS`, même ligne « adresse lue » dans le journal), les mêmes durées de session et les mêmes en-têtes de sécurité.
 - **Liste modifiée** : comme pour la caisse, elle est lue au démarrage ; redémarrer après un changement.
 
-Réglage de l'espace :
+Le réglage `ESPACE_RELEVE_URL` n'existe plus : le relevé fait partie du site (`/espace/releve`). S'il figure encore dans un environnement, il est ignoré.
 
-| Réglage | Rôle | Défaut |
-|---|---|---|
-| `ESPACE_RELEVE_URL` | Adresse du relevé de transactions : adresse `http(s)` complète, ou chemin du site commençant par `/`. Vide : « Bientôt disponible », sans lien. Une valeur invalide empêche le démarrage | vide |
+## Le relevé de transactions (`/espace/releve`)
+
+Le ticket de fin de service, ouvert depuis l'espace. **Une seule connexion** : il lit chez Cyclos avec le jeton de la session de l'espace
+(`espace_session`, jeton CSRF de cette session), sans second formulaire ni mot de passe. Même mode que l'espace : sans
+`CAISSE_MULTI_MERCHANT=true`, `/espace/releve` répond 404, et il n'est pas dans l'exécutable.
+
+- `GET /espace/releve` : les filtres (début, fin, raccourcis `?preset=aujourdhui|hier|6h`). `POST /espace/releve/ticket` : le ticket
+  à l'écran. `POST /espace/releve/ticket.pdf` : le PDF. Chaque POST exige l'origine du site et le jeton CSRF de la session de l'espace ;
+  les données sont relues chez Cyclos à chaque demande (rien ne vient du navigateur que les deux dates).
+- **Une lecture à la fois par session** (429 sinon) et une lecture limitée à 60 secondes : jusqu'à une douzaine d'appels Cyclos de suite,
+  et le PDF relit tout.
+- Un 401 de Cyclos ferme la session de l'espace (retour à `/espace`), comme le bouton de la caisse. La déconnexion se fait depuis l'espace.
+- Pages sans aucun script (politique de sécurité sans `script-src` ni `connect-src` sur `/espace/releve*`).
+- Réglages : `HISTORY_PAGE_SIZE` (200 lignes par page) et `HISTORY_MAX_ROWS` (2000 lignes au plus). Au-delà du plafond, la liste est
+  coupée aux plus récentes avec un avertissement. Sans totaux donnés par Cyclos (le cas de l'instance réelle), ils sont calculés si
+  la liste est complète, sinon « Non disponible » (jamais un total inventé).
+- **Limite : un seul compte.** Le relevé lit le premier compte de `GET /self/accounts` (comme la caisse). Un commerçant qui aurait
+  plusieurs comptes ne voit que le premier, sans choix et sans que le ticket dise lequel.
+- Le détail (heure de Paris, changement d'heure, PDF en Helvetica, impression 80 mm) est dans le README, « Relevé de transactions ».
 
 ## Ce qui n'est pas dans ce mode
 
 - Pas de mémoire du mot de passe, donc pas de reconnexion automatique après expiration du jeton : le commerçant se reconnecte lui-même.
 - Pas de liste blanche par groupe Cyclos : le groupe n'est pas lisible avec les droits d'un commerçant.
-- Pas d'exécutable multi-commerçants (l'espace commerçants n'y existe donc pas non plus).
+- Pas d'exécutable multi-commerçants (l'espace commerçants et le relevé n'y existent donc pas non plus).

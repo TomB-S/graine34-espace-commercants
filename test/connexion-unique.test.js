@@ -13,12 +13,11 @@ import { entry } from "./support/fake-cyclos.js";
 
 const MARIE = { id: "u-marie", login: "marie", password: "mdp-marie-fictif", email: "marie@exemple.test" };
 const ZOE = { id: "u-zoe", login: "zoe", password: "mdp-zoe-fictif", email: "zoe@exemple.test" };
-const RELEVE = "https://releve.exemple.test/";
 
 const options = ({ more = {}, caisse = {}, hooks = {} } = {}) => ({
   cyclosChannel: "main",
   caisseHooks: { ...CAISSE_OPTIONS.caisseHooks, ...hooks },
-  caisse: { enabled: true, multiMerchant: true, allowedUsers: { ids: ["u-marie"], emails: [] }, espaceReleveUrl: null, ...caisse },
+  caisse: { enabled: true, multiMerchant: true, allowedUsers: { ids: ["u-marie"], emails: [] }, ...caisse },
   ...more,
 });
 
@@ -340,29 +339,17 @@ appTest("connexion unique : arrêt de l'écoute pour inactivité, l'espace n'est
 // === The page of the area ===
 
 // Intention: the button of the page is a POST form with the CSRF token, no script, same classes as the link beside it; no sentence
-// about a second login. The sentence about the statement exists only when ESPACE_RELEVE_URL is set.
-appTest("espace : bouton Notifications de caisse (formulaire POST), sans phrase de seconde connexion, sans ESPACE_RELEVE_URL aucune phrase", options(), async (app) => {
+// about a second login, neither for the cash register nor for the statement (both use the session of the area).
+appTest("espace : bouton Notifications de caisse (formulaire POST), aucune phrase de seconde connexion", options(), async (app) => {
   seed(app);
   const b = browser(app);
   await b.enter();
   const page = await (await b.request("/espace")).text();
   assert.match(page, /<form class="espace-lien-form" method="post" action="\/espace\/caisse">\s*<input type="hidden" name="csrf" value="[0-9a-f]{64}">\s*<button type="submit" class="espace-lien">Notifications de caisse<\/button>/);
+  assert.match(page, /<a class="espace-lien" href="\/espace\/releve">Relevé de transactions<\/a>/);
   assert.doesNotMatch(page, /<script/i);
-  assert.doesNotMatch(page, /seconde connexion|connecter une seconde fois/);
-  assert.doesNotMatch(page, /espace-note/, "no sentence at all without the statement address");
-  assert.doesNotMatch(page, /propre connexion/);
-  assert.match(page, /Bientôt disponible/);
-});
-
-appTest("espace : avec ESPACE_RELEVE_URL, une phrase dit que le relevé demande sa propre connexion", options({ caisse: { espaceReleveUrl: RELEVE } }), async (app) => {
-  seed(app);
-  const b = browser(app);
-  await b.enter();
-  const page = await (await b.request("/espace")).text();
-  assert.match(page, /<p class="espace-note">Le relevé de transactions vous demandera sa propre connexion\.<\/p>/);
-  assert.doesNotMatch(page, /seconde connexion|connecter une seconde fois/);
-  assert.match(page, new RegExp(`<a class="espace-lien" href="${RELEVE.replace(/[./]/g, "\\$&")}">Relevé de transactions</a>`));
-  assert.match(page, /action="\/espace\/caisse"/);
+  assert.doesNotMatch(page, /seconde connexion|connecter une seconde fois|propre connexion|espace-note/);
+  assert.doesNotMatch(page, /Bientôt disponible/);
 });
 
 // Intention: GET on the new address is not an action (no session is opened by a link or an image).

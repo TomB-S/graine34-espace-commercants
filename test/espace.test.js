@@ -2,7 +2,7 @@
 // The merchants' area (/espace): the entrance page of the merchants. The real server in multi-merchant mode against a fake Cyclos.
 // Login with the merchant's own Cyclos account, allowed only if CAISSE_ALLOWED_USERS lists the account; a wrong password, an
 // account that is not listed and an empty list all get the very same answer; logout closes both sides; the link to the
-// statement depends on ESPACE_RELEVE_URL; the brakes of the logins apply; the session of the area is apart from the one of
+// statement is a link to /espace/releve (same session); the brakes of the logins apply; the session of the area is apart from the one of
 // /caisse. The password is never kept (session record, log, answer). All names and secrets are fictitious.
 import "./support/env-propre.js";
 import assert from "node:assert/strict";
@@ -23,7 +23,7 @@ const REFUSED = "Identifiants incorrects ou accès non autorisé.";
 const options = (allowed = { ids: ["u-marie", "u-paul"], emails: [] }, more = {}, caisse = {}) => ({
   cyclosChannel: "main",
   caisseHooks: CAISSE_OPTIONS.caisseHooks,
-  caisse: { enabled: true, multiMerchant: true, allowedUsers: allowed, espaceReleveUrl: null, ...caisse },
+  caisse: { enabled: true, multiMerchant: true, allowedUsers: allowed, ...caisse },
   ...more,
 });
 
@@ -181,24 +181,19 @@ appTest("espace : déconnexion, jeton Cyclos fermé, session détruite, jeton CS
   assert.equal((await b.logout(csrf)).status, 303, "without a session: just back to the page");
 });
 
-// Intention: the link to the statement is shown when ESPACE_RELEVE_URL is set, otherwise "Bientôt disponible" with no link.
-appTest("espace : lien du relevé présent quand ESPACE_RELEVE_URL est réglé", options(undefined, {}, { espaceReleveUrl: "https://releve.exemple.test/?a=1&b=2" }), async (app) => {
+// Intention: the statement is an entry of the page, a link inside this site (no other address, no "coming soon"), next to the form button of the cash register.
+appTest("espace : « Relevé de transactions » est un lien interne vers /espace/releve", options(), async (app) => {
   seed(app);
   const b = browser(app);
   await b.enter(WHO.marie);
   const page = await (await b.request("/espace")).text();
-  assert.match(page, /<a class="espace-lien" href="https:\/\/releve\.exemple\.test\/\?a=1&amp;b=2">Relevé de transactions<\/a>/);
-  assert.doesNotMatch(page, /Bientôt disponible/);
-});
-
-appTest("espace : sans ESPACE_RELEVE_URL, « Bientôt disponible » et aucun lien cliquable", options(), async (app) => {
-  seed(app);
-  const b = browser(app);
-  await b.enter(WHO.marie);
-  const page = await (await b.request("/espace")).text();
-  assert.match(page, /Bientôt disponible/);
-  assert.match(page, /Relevé de transactions/);
-  assert.equal([...page.matchAll(/<a [^>]*>/g)].filter((m) => !m[0].includes("/style.css")).length, 0, "no link at all: the cash register is a form button");
+  assert.match(page, /<a class="espace-lien" href="\/espace\/releve">Relevé de transactions<\/a>/);
+  assert.doesNotMatch(page, /Bientôt disponible|propre connexion/);
+  const links = [...page.matchAll(/<a [^>]*href="([^"]*)"/g)].map((m) => m[1]).filter((href) => !href.startsWith("/style.css"));
+  assert.deepEqual(links, ["/espace/releve"], "the only link of the page stays inside the site");
+  assert.match(page, /action="\/espace\/caisse"/);
+  assert.equal((await b.request("/espace/releve")).status, 200, "the link opens the statement with the same session, no second login");
+  assert.equal(app.cyclos.calls("POST", "/auth/session").length, 1);
 });
 
 // Intention: the same brakes as the other logins: 5 refusals of one identifier turn it away without reaching Cyclos, and the
@@ -309,9 +304,9 @@ appTest("espace : caisse désactivée, 404", { cyclosChannel: "main" }, async (a
   assert.equal((await fetch(`${app.base}/espace`)).status, 404);
 });
 
-// Intention: for real, `node src/server.js` with the environment variables: the start still says "Canal Cyclos : main", the setting
-// ESPACE_RELEVE_URL is read from the environment, and the area works end to end.
-test("node src/server.js : l'espace lit ESPACE_RELEVE_URL, le démarrage affiche toujours « Canal Cyclos : main »", async () => {
+// Intention: for real, `node src/server.js` with the environment variables: the start still says "Canal Cyclos : main", the area works
+// end to end, and the old setting ESPACE_RELEVE_URL (removed: the statement is part of the site) is not read any more, even with a bad value.
+test("node src/server.js : l'espace fonctionne, ESPACE_RELEVE_URL n'est plus lu, le démarrage affiche toujours « Canal Cyclos : main »", async () => {
   const cyclos = await startFakeCyclos();
   cyclos.addUser("marie", WHO.marie.password, { id: WHO.marie.id, email: WHO.marie.email, entries: [] });
   const port = 20000 + Math.floor(Math.random() * 20000);
@@ -324,7 +319,7 @@ test("node src/server.js : l'espace lit ESPACE_RELEVE_URL, le démarrage affiche
       CAISSE_ENABLED: "true",
       CAISSE_MULTI_MERCHANT: "true",
       CAISSE_ALLOWED_USERS: WHO.marie.id,
-      ESPACE_RELEVE_URL: "https://releve.exemple.test/",
+      ESPACE_RELEVE_URL: "javascript:alert(1)",
     }),
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -344,7 +339,8 @@ test("node src/server.js : l'espace lit ESPACE_RELEVE_URL, le démarrage affiche
     });
     assert.equal(login.status, 303);
     const page = await (await fetch(`${base}/espace`, { headers: { Cookie: login.headers.get("set-cookie").split(";")[0] } })).text();
-    assert.match(page, /href="https:\/\/releve\.exemple\.test\/"/);
+    assert.match(page, /href="\/espace\/releve"/);
+    assert.ok(!page.includes("javascript:"));
     assert.ok(!output.includes(WHO.marie.password));
   } finally {
     child.kill("SIGTERM");

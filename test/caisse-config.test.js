@@ -340,17 +340,15 @@ test("caisse multi : aucun compte d'écoute exigé ni conservé ; en mono, toujo
   assert.throws(() => readCaisseConfig({ CAISSE_ENABLED: "true" }), /exige CAISSE_CYCLOS_LOGIN/);
 });
 
-// Intention: ESPACE_RELEVE_URL (link of the merchants' area to the statement) is read in multi-merchant mode only, empty means "no link",
-// and an invalid value refuses the start without quoting the value.
-test("caisse multi : ESPACE_RELEVE_URL, vide ou valide, sinon démarrage refusé", () => {
+// Intention: ESPACE_RELEVE_URL is gone (the statement is part of the site, at /espace/releve): the old setting is not read any more, whatever
+// its value, in both modes, and does not refuse the start.
+test("caisse multi : ESPACE_RELEVE_URL n'est plus lu, même avec une valeur invalide", () => {
   const multi = { ...ENABLED, CAISSE_MULTI_MERCHANT: "true" };
-  assert.equal(readCaisseConfig(multi).espaceReleveUrl, null);
-  assert.equal(readCaisseConfig({ ...multi, ESPACE_RELEVE_URL: "  " }).espaceReleveUrl, null);
-  assert.equal(readCaisseConfig({ ...multi, ESPACE_RELEVE_URL: " https://releve.exemple.test/ " }).espaceReleveUrl, "https://releve.exemple.test/");
-  assert.equal(readCaisseConfig({ ...multi, ESPACE_RELEVE_URL: "/releve" }).espaceReleveUrl, "/releve");
-  for (const bad of ["javascript:alert(1)", "releve.exemple.test", "//autre.test/x", "ftp://x.test", "https://a b.test", "/a b", "data:text/html,x"]) {
-    assert.throws(() => readCaisseConfig({ ...multi, ESPACE_RELEVE_URL: bad }), (error) => /ESPACE_RELEVE_URL invalide/.test(error.message) && !error.message.includes(bad), bad);
+  for (const value of ["", "  ", "https://releve.exemple.test/", "/releve", "javascript:alert(1)", "//autre.test/x"]) {
+    for (const env of [multi, ENABLED]) {
+      const config = readCaisseConfig({ ...env, ESPACE_RELEVE_URL: value });
+      assert.equal("espaceReleveUrl" in config, false, value);
+      assert.deepEqual(JSON.parse(JSON.stringify(config)), JSON.parse(JSON.stringify(readCaisseConfig(env))), value); // (functions are not compared)
+    }
   }
-  // Without the multi-merchant mode the area does not exist: the setting is not read.
-  assert.equal("espaceReleveUrl" in readCaisseConfig({ ...ENABLED, ESPACE_RELEVE_URL: "x" }), false);
 });

@@ -80,7 +80,9 @@ script refuse de continuer si ce Node est trop ancien. Résultat :
 script y ajoute la signature locale (ad hoc) sans laquelle le système tue le
 programme au lancement ; elle ne remplace pas une vraie signature de diffusion.
 `esbuild`, l'outil qui regroupe le code, n'est qu'une dépendance de fabrication : il
-n'est pas dans l'exécutable.
+n'est pas dans l'exécutable. Le relevé de transactions (`/espace/releve`, mode multi-commerçants) n'en fait pas partie : le fabricant
+laisse `releve-pdf.js` et `pdfkit` hors du fichier et **s'arrête avec une erreur s'ils y entrent quand même**, et le contrôle de
+démarrage (`tools/smoke-exe.js`) vérifie que `/espace` et `/espace/releve` y répondent 404.
 
 **Lancement.** Un double clic (ou la commande `./build/graine34-notif-caisse`) ouvre une fenêtre de terminal.
 Le programme :
@@ -181,13 +183,13 @@ Le workflow n'utilise aucun secret et demande seulement la permission de lire le
 
 ```
 src/                 le serveur et la logique côté Node
-  server.js            serveur HTTP : connexion, sessions, /caisse, déconnexion, statiques
+  server.js            serveur HTTP : connexion, sessions, /caisse, /espace, déconnexion, statiques
   assets.js            lecture des fichiers statiques de web/ (disque, ou fichiers embarqués dans l'exécutable)
   main.js              point d'entrée de l'exécutable
   launcher.js          démarrage de l'exécutable : réglages, port libre, navigateur
-  caisse-config.js     lecture et validation des variables CAISSE_* et ESPACE_RELEVE_URL
+  caisse-config.js     lecture et validation des variables CAISSE_*
   sse-parser.js        analyseur du flux d'événements Cyclos (SSE), sans accès réseau
-  cyclos-push.js       appels Cyclos : flux, transfert, historique, réglage
+  cyclos-push.js       appels Cyclos : flux, transfert, historique, réglage, relevé (nom, totaux, historique paginé)
   ticket-store.js      tickets en mémoire : modèle, doublons, tri, état
   cyclos-listener.js   boucle d'écoute d'un commerçant : réouverture, chien de garde, reconnexion
   payment-processor.js événements reçus, tickets, filet de sécurité par l'historique
@@ -195,6 +197,11 @@ src/                 le serveur et la logique côté Node
   caisse-page.js       HTML de la page /caisse (fonctions pures), complète sans script
   caisse-data.js       bannière, textes d'un ticket et JSON de /caisse/data (fonctions pures)
   espace-page.js       HTML de la page d'entrée /espace (fonctions pures)
+  format.js            échappement HTML, message d'erreur, montants à la française (fonctions pures)
+  releve-calcul.js     relevé : plages de dates (heure de Paris), montants exacts en BigInt, totaux, ticket (fonctions pures)
+  releve-page.js       relevé : HTML des filtres, du ticket et des refus (fonctions pures)
+  releve-routes.js     relevé : routes /espace/releve (origine, session, CSRF, une lecture à la fois, erreurs Cyclos)
+  releve-pdf.js        relevé : PDF du ticket (pdfkit), chargé au premier PDF, hors de l'exécutable
 web/                 tout ce que le navigateur reçoit
   style.css            feuille de style unique (charte La Graine 34, classes de la caisse comprises)
   images/              logo-lagraine34.png (servi sur /logo.png), icon-lagraine34.png (servi sur /icon.png :
@@ -238,7 +245,7 @@ Générales (celles de la mission 2A, sauf `PORT` qui vaut ici 3001 par défaut)
 | `SESSION_MAX_HOURS` | Durée maximale d'une session de la page | `8` |
 | `COOKIE_SECURE` | `true` : cookie `Secure` et en-tête HSTS (à activer derrière HTTPS) | désactivé |
 
-Les variables `CAISSE_*` sont décrites dans « Activer et lancer la caisse » et `ESPACE_RELEVE_URL` dans « Espace commerçants ». Une valeur
+Les variables `CAISSE_*` sont décrites dans « Activer et lancer la caisse ». Une valeur
 numérique générale absente ou invalide est remplacée par sa valeur par défaut ; seule la
 valeur exacte `true` active `COOKIE_SECURE`.
 
@@ -289,8 +296,8 @@ jamais afficher sa valeur). Quand la page est désactivée, les autres variables
 Page d'entrée `/espace`, pour le mode multi-commerçants (`CAISSE_ENABLED=true` et `CAISSE_MULTI_MERCHANT=true`, voir
 `docs/multi-commercants.md`). Le commerçant s'y connecte avec son compte Cyclos (canal `CYCLOS_CHANNEL`, `main` en production) ;
 **seulement s'il figure dans `CAISSE_ALLOWED_USERS`**, il voit deux entrées : « Notifications de caisse » (un bouton qui ouvre `/caisse`
-sans nouvelle saisie du mot de passe) et « Relevé de transactions » (un lien vers l'adresse de `ESPACE_RELEVE_URL`, ou « Bientôt
-disponible » sans lien si le réglage est vide). Si `ESPACE_RELEVE_URL` est réglé, une phrase précise que le relevé demandera sa propre connexion.
+sans nouvelle saisie du mot de passe) et « Relevé de transactions » (un lien vers `/espace/releve`, qui
+utilise la même session : une seule connexion pour l'espace, la caisse et le relevé).
 
 | Adresse | Rôle |
 | --- | --- |
@@ -319,9 +326,51 @@ disponible » sans lien si le réglage est vide). Si `ESPACE_RELEVE_URL` est ré
   liens « Retour », la déconnexion et le lien « Se reconnecter » y mènent.
 - Sans le mode multi-commerçants (mode à compte d'écoute unique, exécutable), `/espace` n'existe pas : toutes ses adresses répondent 404. Dans ces modes, `/` reste le formulaire de connexion, comme avant.
 
+Le réglage `ESPACE_RELEVE_URL` n'existe plus : le relevé fait partie du site. S'il figure encore dans un environnement, il est ignoré.
+
+## Relevé de transactions
+
+Le ticket de fin de service des commerçants (outil de la mission 2A) fait partie de l'espace : `/espace/releve`, **en mode
+multi-commerçants seulement** (sans ce mode, toutes ces adresses répondent 404, comme `/espace`). Il n'a pas de connexion propre : il
+utilise la session de l'espace et son jeton Cyclos (une seule connexion pour l'espace, la caisse et le relevé ; le mot de passe n'est jamais
+conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants absent), pdfkit non plus.
+
+| Adresse | Rôle |
+| --- | --- |
+| `GET /espace/releve` | Les filtres : début et fin, avec trois raccourcis `?preset=aujourdhui`, `hier`, `6h` |
+| `POST /espace/releve/ticket` | Le ticket à l'écran, relu chez Cyclos pour les deux dates saisies |
+| `POST /espace/releve/ticket.pdf` | Le même ticket en PDF (téléchargement), relu chez Cyclos |
+
+- Chaque POST exige l'origine du site, une session d'espace valide et son jeton CSRF. Seules les deux dates viennent du navigateur.
+  Un GET sur `/espace/releve/ticket` ou `ticket.pdf` renvoie aux filtres ; sans session, tout renvoie à `/espace`.
+- **Une lecture à la fois par session** : la lecture fait jusqu'à une douzaine d'appels Cyclos de suite, et le PDF relit tout. Une
+  seconde demande de la même session pendant une lecture reçoit 429 (page, `Retry-After: 5`) sans rien lire. Une lecture entière est
+  limitée à 60 secondes (502 au-delà, journalisé « délai dépassé »).
+- Un 401 de Cyclos pendant la lecture ferme la session de l'espace (retour à `/espace`), comme pour la caisse. Un 403 sur la liste des
+  comptes (ou une liste vide) affiche « Accès aux comptes refusé », un autre 403 « Accès refusé » : la session reste ouverte. Une panne
+  ou un réseau coupé donne 502 avec une page de retour (jamais un PDF à moitié envoyé).
+- Les pages du relevé n'ont **aucun script** : leur politique de sécurité n'a ni `script-src` ni `connect-src` (celle de l'outil
+  d'origine), alors que le reste du site garde celle qui laisse tourner le script de `/caisse`. Pas de bouton de déconnexion : un lien
+  « Retour à l'espace » (la déconnexion se fait depuis l'espace).
+- L'impression à l'écran est le ticket de 80 mm de la feuille de style commune (même bloc `@media print` que l'outil d'origine).
+- Le détail : dates saisies et lues en heure de Paris, au plus 31 jours, début jamais dans le futur, fin future ramenée à maintenant ;
+  une heure qui n'existe pas (passage à l'heure d'été) est refusée ; une heure double (passage à l'heure d'hiver) prend la seconde
+  occurrence, sans avertissement. Les montants sont calculés en entiers exacts. Cyclos répond le plus récent d'abord, le ticket
+  se lit du plus ancien au plus récent.
+- Totaux : ceux de Cyclos sont repris tels quels ; sur l'instance réelle Cyclos n'en donne pas, ils sont alors calculés à partir des
+  transactions lues, **seulement si la liste est complète**. Liste coupée au plafond, ou montant illisible : « Non disponible » trois
+  fois, avec un avertissement (page et PDF), jamais un total inventé.
+- Le PDF n'imprime que les lettres de Windows-1252 (accents français, €, guillemets) ; tout autre caractère devient `?` (la page
+  les affiche tous).
+
 | Nom | Rôle | Valeur par défaut |
 | --- | --- | --- |
-| `ESPACE_RELEVE_URL` | Adresse du relevé : adresse `http(s)` complète, ou chemin du site commençant par `/`. Vide : « Bientôt disponible ». Lue au démarrage ; une valeur invalide empêche le démarrage (sans afficher la valeur) | vide |
+| `HISTORY_PAGE_SIZE` | Lignes demandées à Cyclos par page (entier positif ; sinon la valeur par défaut) | 200 |
+| `HISTORY_MAX_ROWS` | Plafond de lignes lues pour un ticket (entier positif ; sinon la valeur par défaut). Au-delà, la liste est coupée aux plus récentes avec un avertissement | 2000 |
+
+**Limite du choix de compte.** Le relevé lit le **premier compte** de la liste de Cyclos (`GET /self/accounts`, le premier), comme la
+caisse. Un commerçant qui aurait plusieurs comptes ne voit que le premier : il n'y a pas de choix de compte, et le ticket ne dit pas
+lequel est lu. `CAISSE_ACCOUNT_TYPE` ne s'applique pas au relevé.
 
 ## Comment elle fonctionne
 
@@ -603,9 +652,13 @@ identifiant (ceux des tests sont fictifs).
   requêtes), `test/statique.test.js` (fichiers statiques), `test/demarrage.test.js`
   (démarrage réel), `test/unit.test.js` (`escapeHtml`, `formatAmount`).
 - Racine `/` : `test/racine.test.js`.
-- Espace commerçants : `test/espace.test.js` (connexion, refus uniforme, déconnexion, lien du relevé, freins, séparation des cookies) ;
-  `test/connexion-unique.test.js` (bouton vers la caisse sans mot de passe, refus, jeton partagé, arrêt de l'écoute, phrase de la page) ;
-  `ESPACE_RELEVE_URL` dans `test/caisse-config.test.js`.
+- Espace commerçants : `test/espace.test.js` (connexion, refus uniforme, déconnexion, lien interne du relevé, freins, séparation des cookies) ;
+  `test/connexion-unique.test.js` (bouton vers la caisse sans mot de passe, refus, jeton partagé, arrêt de l'écoute, texte de la page) ;
+  `test/caisse-config.test.js` (l'ancien réglage `ESPACE_RELEVE_URL` n'est plus lu).
+- Relevé : `test/releve-calcul.test.js` (plages de dates, changement d'heure, montants exacts, totaux, ticket : fonctions pures, portés
+  de l'outil d'origine avec les mêmes attentes), `test/cyclos-statement.test.js` (lecture Cyclos : pagination, crédits et débits,
+  plafond, « Non disponible », erreurs), `test/releve.test.js` (pages, session et jeton de l'espace, origine, CSRF, une lecture à la fois,
+  politique de sécurité sans script, impression, 404 hors mode multi), `test/releve-pdf.test.js` (PDF, texte du PDF, mêmes contrôles).
 - Un test lancé seul : `node --test test/caisse.test.js`.
 
 ## Sécurité en bref

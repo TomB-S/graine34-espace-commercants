@@ -17,6 +17,9 @@ import { renderCaissePage, renderCaisseRefused } from "./caisse-page.js";
 import { renderEspaceLogin, renderEspaceHome, REFUSED_TEXT } from "./espace-page.js";
 import { renderCaisseData } from "./caisse-data.js";
 import { inExecutable, readAsset } from "./assets.js";
+import { escapeHtml, errorMessage, formatAmount } from "./format.js";
+import { readHistoryLimits } from "./releve-calcul.js";
+import { createReleveRoutes, DEFAULT_READ_TIMEOUT_MS, RELEVE_PATH } from "./releve-routes.js";
 
 
 // Cyclos API address. CYCLOS_BASE_URL overrides the public demo (default),
@@ -90,6 +93,11 @@ let LONG_PAUSE_MS = LOGIN_LONG_PAUSE_MS;
 const pageLogin = { inFlight: false, refusals: 0, lockedUntil: 0 };
 // Host header accepted when the login is typed on the page (null = not checked): only this machine's own names.
 let ALLOWED_HOSTS = null;
+const CSP_WITH_SCRIPT = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+const CSP_NO_SCRIPT = "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+// Statement (/espace/releve): lines read per page and in all, and the time allowed for one reading. Set by startServer().
+let HISTORY = readHistoryLimits({});
+let RELEVE_TIMEOUT_MS = DEFAULT_READ_TIMEOUT_MS;
 
 // Local session store: our session id (the cookie value) ->
 // { sessionToken, csrfToken, createdAt, lastSeenAt }.
@@ -293,20 +301,6 @@ function serveStatic(req, res, asset) {
   res.end(asset.body);
 }
 
-// Values come from a remote API (or the user): escape them before putting them in HTML.
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
-// An error message: never conveyed by colour alone (icon + "Erreur :" label).
-function errorMessage(text) {
-  return `<p class="erreur" role="alert"><span class="icone" aria-hidden="true">⚠</span> <strong>Erreur :</strong> ${text}</p>`;
-}
-
 function htmlPage(title, body, { toolName = "Notification de paiement" } = {}) {
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -393,21 +387,6 @@ function renderAccessDenied(csrfToken) {
   ${errorMessage("Votre compte n'a pas l'autorisation d'utiliser cet outil.")}
   ${links}`,
   );
-}
-
-// Cyclos refuses (403) or gives nothing (empty list) on GET /self/accounts:
-// either no money account, or no banking right for the API session. The
-// `signed` adds "+" to positive amounts; negative ones always keep their "-".
-function formatAmount(value, digits = 2, { signed = false } = {}) {
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(String(value));
-  if (!match) return String(value);
-  const [, minus, integer, decimals = ""] = match;
-  const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
-  const number =
-    digits > 0 ? `${grouped},${decimals.padEnd(digits, "0")}` : grouped;
-  const isZero = /^[0,\u202f]*$/.test(number);
-  if (minus && !isZero) return `-${number}`;
-  return signed && !isZero ? `+${number}` : number;
 }
 
 function send(res, status, contentType, body, headers = {}) {
@@ -676,7 +655,7 @@ async function handleMultiLogin(req, res, address) {
 const espaceCookie = (value, maxAgeSeconds) => cookieHeader(value, maxAgeSeconds, { name: ESPACE_COOKIE, path: "/espace" });
 
 function espaceView(session) {
-  return renderEspaceHome({ csrfToken: session.csrfToken, releveUrl: CAISSE.espaceReleveUrl ?? null }, ESPACE_HELPERS);
+  return renderEspaceHome({ csrfToken: session.csrfToken }, ESPACE_HELPERS);
 }
 
 // POST /espace/connexion. The password is used for ONE call to Cyclos (the session token), then goes out of scope: it is never
@@ -826,6 +805,10 @@ async function handleEspaceCaisse(req, res) {
 async function handleEspace(req, res, pathname) {
   if (!CAISSE.multiMerchant || !CAISSE_RUNTIME) {
     send(res, 404, "text/plain", "Page introuvable");
+    return;
+  }
+  if (pathname === RELEVE_PATH || pathname.startsWith(`${RELEVE_PATH}/`)) {
+    if (!(await RELEVE.handle(req, res, pathname))) send(res, 404, "text/plain", "Page introuvable");
     return;
   }
   const route = `${req.method} ${pathname}`;
@@ -999,6 +982,30 @@ let clearCookie = cookieHeader("", 0);
 // What the cash register page needs from this file, given to caisse-page.js.
 const ESPACE_HELPERS = { escapeHtml, htmlPage, errorMessage };
 // `loginHref` is a function: the mode is known only once the server has started.
+// The statement of /espace/releve: its routes live in releve-routes.js, they only need these pieces of this file.
+const RELEVE = createReleveRoutes({
+  helpers: ESPACE_HELPERS,
+  send,
+  redirect,
+  readBody,
+  isSameOrigin,
+  isValidCsrf,
+  findSession: (req) => getSession(req, espaceSessions, ESPACE_COOKIE),
+  async endSession(found, res) {
+    espaceSessions.delete(found.id);
+    await closeSessionTokens(found.session);
+    redirect(res, "/espace", { "Set-Cookie": espaceCookie("", 0) });
+  },
+  push: () => CAISSE_RUNTIME.push,
+  limits: () => HISTORY,
+  readTimeoutMs: () => RELEVE_TIMEOUT_MS,
+  // The PDF module (and pdfkit with it) is loaded at the first PDF only. The build of the single executable leaves it out (the area
+  // does not exist there): see tools/build-sea.js.
+  async pdf(model, statement) {
+    const { renderTicketPdf, pdfFilename } = await import("./releve-pdf.js");
+    return { bytes: await renderTicketPdf(model), filename: pdfFilename(statement) };
+  },
+});
 const CAISSE_HELPERS = { escapeHtml, formatAmount, htmlPage, errorMessage, logoutForm, stylesheetHref: STYLE_HREF, loginHref };
 
 // What /caisse and /caisse/data share: the session, the identity of the visitor, the registration check and the
@@ -1135,10 +1142,10 @@ const server = http.createServer(async (req, res) => {
 
   // Security headers, on every response. writeHead() later merges its own
   // headers with these.
-  res.setHeader(
-    "Content-Security-Policy",
-    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
-  );
+  // The cash register page runs scripts from this address; the pages of the statement have none, so they allow none (no script-src,
+  // no connect-src: the policy of the original statement tool).
+  const statementPage = pathname === RELEVE_PATH || pathname.startsWith(`${RELEVE_PATH}/`);
+  res.setHeader("Content-Security-Policy", statementPage ? CSP_NO_SCRIPT : CSP_WITH_SCRIPT);
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   // The login page posts to /connexion, whose Origin check needs a usable
@@ -1361,6 +1368,8 @@ export function startServer(options = {}) {
     CAISSE = Object.freeze({ ...CAISSE, tokenFor: listenerTokenFor, tokenRefused: listenerTokenRefused });
   }
   ALLOWED_HOSTS = null;
+  HISTORY = options.history ?? readHistoryLimits(process.env);
+  RELEVE_TIMEOUT_MS = options.releveTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
   BASE = baseUrl(options.cyclosBaseUrl ?? process.env.CYCLOS_BASE_URL);
   COOKIE_SECURE = options.cookieSecure ?? process.env.COOKIE_SECURE === "true";
   IDLE_MS = options.idleMs ?? envNumber("SESSION_IDLE_MINUTES", 20) * 60_000;

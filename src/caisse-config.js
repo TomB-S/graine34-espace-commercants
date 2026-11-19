@@ -49,26 +49,6 @@ function readAllowedUsers(env) {
   return { ids: [...ids], emails: [...emails] };
 }
 
-// Address of the statement tool, linked from the merchants' area (/espace). An absolute http(s) address, or a path of this site
-// (starting with a single "/"). Empty or not set: the link is not offered ("Bientôt disponible"). The value is never quoted in an error.
-function readReleveUrl(env) {
-  const value = (env.ESPACE_RELEVE_URL ?? "").trim();
-  if (value === "") return null;
-  let valid = false;
-  if (value.startsWith("/")) {
-    valid = !value.startsWith("//") && !/[\s\\]/.test(value);
-  } else {
-    try {
-      const url = new URL(value);
-      valid = (url.protocol === "https:" || url.protocol === "http:") && !/\s/.test(value);
-    } catch {
-      valid = false;
-    }
-  }
-  if (!valid) throw new Error("ESPACE_RELEVE_URL invalide : adresse http(s) complète ou chemin commençant par / attendu");
-  return value;
-}
-
 // Type of account goes into a URL path: plain names only.
 const ACCOUNT_TYPE = /^[A-Za-z0-9_.-]{1,60}$/;
 
@@ -135,7 +115,6 @@ export function readCaisseConfig(env = process.env, overrides = {}) {
       config.multiMerchant = true;
       config.trustedProxyHops = readInteger(env, MULTI_PROXY_HOPS);
       config.allowedUsers = readAllowedUsers(env);
-      config.espaceReleveUrl = readReleveUrl(env);
     } else if (fromLogin && env.CAISSE_MULTI_MERCHANT === "true") {
       config.multiMerchantIgnored = true; // the caller says so once at start; nothing else changes
     }
