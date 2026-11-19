@@ -1,6 +1,5 @@
 // HTML of the merchants' area (/espace): pure functions, state in, text out. The entrance of the merchants: a login form,
-// then, once the account has been checked and allowed, two entries (cash register notifications: a POST form that looks like a
-// link, so that the cash register opens without a second login; statement: a link).
+// then, once the account has been checked and allowed, two entries (cash register notifications and statement of transactions).
 //
 // Same rules as the cash register page: no inline script, no inline style (the CSP forbids them), every value that is not a
 // constant goes through escapeHtml. The helpers of server.js are given by the caller (importing server.js from here would be a
@@ -27,13 +26,9 @@ export function renderEspaceLogin({ message = null } = {}, { htmlPage, errorMess
   );
 }
 
-// The page of a connected merchant. `releveUrl`: address of the statement, or null (then "Bientôt disponible", no link).
-export function renderEspaceHome({ csrfToken, releveUrl = null }, { htmlPage, escapeHtml }) {
-  const releve = releveUrl
-    ? `<li><a class="espace-lien" href="${escapeHtml(releveUrl)}">Relevé de transactions</a></li>`
-    : `<li><span class="espace-lien espace-bientot">Relevé de transactions <span class="espace-bientot-texte">Bientôt disponible</span></span></li>`;
-  // The notifications open with the account already checked here; the statement is another site, with its own login.
-  const releveNote = releveUrl ? `<p class="espace-note">Le relevé de transactions vous demandera sa propre connexion.</p>` : "";
+// The page of a connected merchant: two entries. The cash register notifications are a POST form that looks like a link, so that the
+// cash register opens without a second login; the statement is a link to /espace/releve, which uses the same session.
+export function renderEspaceHome({ csrfToken }, { htmlPage, escapeHtml }) {
   return htmlPage(
     TITLE,
     `<h1>${TITLE}</h1>
@@ -45,9 +40,8 @@ export function renderEspaceHome({ csrfToken, releveUrl = null }, { htmlPage, es
         <button type="submit" class="espace-lien">Notifications de caisse</button>
       </form>
     </li>
-    ${releve}
+    <li><a class="espace-lien" href="/espace/releve">Relevé de transactions</a></li>
   </ul>
-  ${releveNote}
   <form method="post" action="/espace/deconnexion">
     <input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}">
     <button type="submit">Se déconnecter</button>

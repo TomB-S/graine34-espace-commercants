@@ -185,7 +185,7 @@ src/                 le serveur et la logique côté Node
   assets.js            lecture des fichiers statiques de web/ (disque, ou fichiers embarqués dans l'exécutable)
   main.js              point d'entrée de l'exécutable
   launcher.js          démarrage de l'exécutable : réglages, port libre, navigateur
-  caisse-config.js     lecture et validation des variables CAISSE_* et ESPACE_RELEVE_URL
+  caisse-config.js     lecture et validation des variables CAISSE_*
   sse-parser.js        analyseur du flux d'événements Cyclos (SSE), sans accès réseau
   cyclos-push.js       appels Cyclos : flux, transfert, historique, réglage
   ticket-store.js      tickets en mémoire : modèle, doublons, tri, état
@@ -238,7 +238,7 @@ Générales (celles de la mission 2A, sauf `PORT` qui vaut ici 3001 par défaut)
 | `SESSION_MAX_HOURS` | Durée maximale d'une session de la page | `8` |
 | `COOKIE_SECURE` | `true` : cookie `Secure` et en-tête HSTS (à activer derrière HTTPS) | désactivé |
 
-Les variables `CAISSE_*` sont décrites dans « Activer et lancer la caisse » et `ESPACE_RELEVE_URL` dans « Espace commerçants ». Une valeur
+Les variables `CAISSE_*` sont décrites dans « Activer et lancer la caisse ». Une valeur
 numérique générale absente ou invalide est remplacée par sa valeur par défaut ; seule la
 valeur exacte `true` active `COOKIE_SECURE`.
 
@@ -289,8 +289,8 @@ jamais afficher sa valeur). Quand la page est désactivée, les autres variables
 Page d'entrée `/espace`, pour le mode multi-commerçants (`CAISSE_ENABLED=true` et `CAISSE_MULTI_MERCHANT=true`, voir
 `docs/multi-commercants.md`). Le commerçant s'y connecte avec son compte Cyclos (canal `CYCLOS_CHANNEL`, `main` en production) ;
 **seulement s'il figure dans `CAISSE_ALLOWED_USERS`**, il voit deux entrées : « Notifications de caisse » (un bouton qui ouvre `/caisse`
-sans nouvelle saisie du mot de passe) et « Relevé de transactions » (un lien vers l'adresse de `ESPACE_RELEVE_URL`, ou « Bientôt
-disponible » sans lien si le réglage est vide). Si `ESPACE_RELEVE_URL` est réglé, une phrase précise que le relevé demandera sa propre connexion.
+sans nouvelle saisie du mot de passe) et « Relevé de transactions » (un lien vers `/espace/releve`, qui
+utilise la même session : une seule connexion pour l'espace, la caisse et le relevé).
 
 | Adresse | Rôle |
 | --- | --- |
@@ -319,9 +319,7 @@ disponible » sans lien si le réglage est vide). Si `ESPACE_RELEVE_URL` est ré
   liens « Retour », la déconnexion et le lien « Se reconnecter » y mènent.
 - Sans le mode multi-commerçants (mode à compte d'écoute unique, exécutable), `/espace` n'existe pas : toutes ses adresses répondent 404. Dans ces modes, `/` reste le formulaire de connexion, comme avant.
 
-| Nom | Rôle | Valeur par défaut |
-| --- | --- | --- |
-| `ESPACE_RELEVE_URL` | Adresse du relevé : adresse `http(s)` complète, ou chemin du site commençant par `/`. Vide : « Bientôt disponible ». Lue au démarrage ; une valeur invalide empêche le démarrage (sans afficher la valeur) | vide |
+Le réglage `ESPACE_RELEVE_URL` n'existe plus : le relevé fait partie du site. S'il figure encore dans un environnement, il est ignoré.
 
 ## Comment elle fonctionne
 
@@ -603,9 +601,9 @@ identifiant (ceux des tests sont fictifs).
   requêtes), `test/statique.test.js` (fichiers statiques), `test/demarrage.test.js`
   (démarrage réel), `test/unit.test.js` (`escapeHtml`, `formatAmount`).
 - Racine `/` : `test/racine.test.js`.
-- Espace commerçants : `test/espace.test.js` (connexion, refus uniforme, déconnexion, lien du relevé, freins, séparation des cookies) ;
-  `test/connexion-unique.test.js` (bouton vers la caisse sans mot de passe, refus, jeton partagé, arrêt de l'écoute, phrase de la page) ;
-  `ESPACE_RELEVE_URL` dans `test/caisse-config.test.js`.
+- Espace commerçants : `test/espace.test.js` (connexion, refus uniforme, déconnexion, lien interne du relevé, freins, séparation des cookies) ;
+  `test/connexion-unique.test.js` (bouton vers la caisse sans mot de passe, refus, jeton partagé, arrêt de l'écoute, texte de la page) ;
+  `test/caisse-config.test.js` (l'ancien réglage `ESPACE_RELEVE_URL` n'est plus lu).
 - Un test lancé seul : `node --test test/caisse.test.js`.
 
 ## Sécurité en bref

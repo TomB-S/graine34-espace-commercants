@@ -655,7 +655,7 @@ async function handleMultiLogin(req, res, address) {
 const espaceCookie = (value, maxAgeSeconds) => cookieHeader(value, maxAgeSeconds, { name: ESPACE_COOKIE, path: "/espace" });
 
 function espaceView(session) {
-  return renderEspaceHome({ csrfToken: session.csrfToken, releveUrl: CAISSE.espaceReleveUrl ?? null }, ESPACE_HELPERS);
+  return renderEspaceHome({ csrfToken: session.csrfToken }, ESPACE_HELPERS);
 }
 
 // POST /espace/connexion. The password is used for ONE call to Cyclos (the session token), then goes out of scope: it is never

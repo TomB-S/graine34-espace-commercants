@@ -933,21 +933,3 @@ button.espace-lien:hover {
   background: var(--vert-principal-survol);
   color: var(--blanc);
 }
-
-/* Not available yet: neutral, not clickable, and said in words. */
-.espace-bientot {
-  border-color: var(--bordure);
-  background: var(--fond-alterne);
-  color: var(--texte);
-}
-
-.espace-bientot-texte {
-  color: var(--texte-secondaire);
-  font-family: var(--police-texte);
-  font-size: 1rem;
-}
-
-.espace-note {
-  color: var(--texte-secondaire);
-  font-size: 0.95rem;
-}

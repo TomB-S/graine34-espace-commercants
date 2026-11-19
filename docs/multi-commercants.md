@@ -121,7 +121,7 @@ Ce que voit le commerçant :
 
 1. `GET /espace` sans session : un formulaire (identifiant Cyclos, mot de passe).
 2. Il se connecte (`POST /espace/connexion`). Le serveur vérifie le compte auprès de Cyclos (canal `CYCLOS_CHANNEL`, `main`), lit son numéro interne et son e-mail, et contrôle `CAISSE_ALLOWED_USERS`. Le mot de passe sert à **un seul** appel à Cyclos (le jeton de session) puis il est oublié : jamais gardé, jamais écrit dans le journal.
-3. Si le compte est autorisé : la page avec deux entrées, « Notifications de caisse » (un bouton, voir plus bas) et « Relevé de transactions » (un lien vers `ESPACE_RELEVE_URL`, ou « Bientôt disponible » sans lien si le réglage est vide). Si `ESPACE_RELEVE_URL` est réglé, une phrase dit que le relevé demandera sa propre connexion ; sinon, aucune phrase.
+3. Si le compte est autorisé : la page avec deux entrées, « Notifications de caisse » (un bouton, voir plus bas) et « Relevé de transactions » (un lien vers `/espace/releve`, même session, aucune seconde connexion).
 4. Le bouton « Notifications de caisse » envoie `POST /espace/caisse` : le commerçant arrive sur `/caisse` sans retaper son mot de passe.
 5. `POST /espace/deconnexion` ferme la session de l'espace (et le jeton chez Cyclos si plus rien ne l'utilise, voir plus bas).
 
@@ -139,11 +139,7 @@ Points à connaître :
 - **Mêmes freins que les autres connexions**, avec les mêmes compteurs (un refus sur `/connexion` compte aussi sur `/espace`), la même lecture de l'adresse (`CAISSE_TRUSTED_PROXY_HOPS`, même ligne « adresse lue » dans le journal), les mêmes durées de session et les mêmes en-têtes de sécurité.
 - **Liste modifiée** : comme pour la caisse, elle est lue au démarrage ; redémarrer après un changement.
 
-Réglage de l'espace :
-
-| Réglage | Rôle | Défaut |
-|---|---|---|
-| `ESPACE_RELEVE_URL` | Adresse du relevé de transactions : adresse `http(s)` complète, ou chemin du site commençant par `/`. Vide : « Bientôt disponible », sans lien. Une valeur invalide empêche le démarrage | vide |
+Le réglage `ESPACE_RELEVE_URL` n'existe plus : le relevé fait partie du site (`/espace/releve`). S'il figure encore dans un environnement, il est ignoré.
 
 ## Ce qui n'est pas dans ce mode
 
