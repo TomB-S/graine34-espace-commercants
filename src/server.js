@@ -701,9 +701,11 @@ async function handleEspaceLogin(req, res) {
 
   const { push, manager } = CAISSE_RUNTIME;
   let token = null;
+  let merchantId = null;
   try {
     token = await createCyclosSession(login, password);
     const decision = await manager.authorize(await push.getIdentity(token));
+    if (decision.ok) merchantId = decision.merchantKey;
     if (!decision.ok) {
       // Not on the list (or an empty list, or an identity that cannot be read): counted like a wrong password, token closed.
       LOGIN_GUARD.recordRefusal(who);
@@ -730,7 +732,9 @@ async function handleEspaceLogin(req, res) {
   LOGIN_GUARD.recordSuccess(who);
   const id = randomUUID();
   const now = Date.now();
-  espaceSessions.set(id, { sessionToken: token, csrfToken: randomBytes(32).toString("hex"), createdAt: now, lastSeenAt: now });
+  // merchantId: the merchant's own Cyclos number, checked against the list just above; /espace/caisse needs it. Not called
+  // `merchantKey` on purpose: closing this session must not stop the listening of the cash register.
+  espaceSessions.set(id, { sessionToken: token, merchantId, csrfToken: randomBytes(32).toString("hex"), createdAt: now, lastSeenAt: now });
   redirect(res, "/espace", { "Set-Cookie": espaceCookie(id, Math.floor(MAX_MS / 1000)) });
 }
 
@@ -846,12 +850,27 @@ function isExpired(session, now = Date.now()) {
 // nothing left to listen for, and when another one is (another tablet) the listener starts again at its next visit with that
 // session's token, instead of keeping a token that has just been closed. Failures are ignored on purpose, as for the page token.
 function closeSessionTokens(session) {
-  const jobs = [closeCyclosSession(session.sessionToken)];
-  if (session.listenerToken) jobs.push(closeCyclosSession(session.listenerToken));
+  const jobs = [];
+  for (const token of new Set([session.sessionToken, session.listenerToken])) {
+    if (token && !tokenStillUsed(token)) jobs.push(closeCyclosSession(token));
+  }
   if (session.merchantKey && CAISSE_RUNTIME) {
     jobs.push(CAISSE_RUNTIME.manager.stop(session.merchantKey, "déconnexion").catch(() => {}));
   }
   return Promise.all(jobs);
+}
+
+// A Cyclos token can be shared by the session of the area and the one of /caisse (the merchant who enters /caisse from the area
+// does not type his password again). It is closed at Cyclos only when no local session holds it any more: the session that ends
+// is already out of its store when this is asked. An expired record that has not been swept yet still counts: the sweep closes
+// the token when it removes that record.
+function tokenStillUsed(token) {
+  for (const store of [sessions, espaceSessions]) {
+    for (const held of store.values()) {
+      if (held.sessionToken === token || held.listenerToken === token) return true;
+    }
+  }
+  return false;
 }
 
 // Removes an expired session and tries to close its Cyclos token (fire and forget).

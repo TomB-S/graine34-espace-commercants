@@ -89,7 +89,7 @@ appTest("espace : connexion réussie d'un compte autorisé, deux liens, canal ma
 
   const records = app.server.inspectEspaceSessions();
   assert.equal(records.length, 1);
-  assert.deepEqual(Object.keys(records[0]).sort(), ["createdAt", "csrfToken", "lastSeenAt", "sessionToken"]);
+  assert.deepEqual(Object.keys(records[0]).sort(), ["createdAt", "csrfToken", "lastSeenAt", "merchantId", "sessionToken"]);
   assert.ok(!JSON.stringify(records).includes(WHO.marie.password));
   assert.ok(!everything(app).includes(WHO.marie.password));
   assert.ok(!page.includes(WHO.marie.password));
