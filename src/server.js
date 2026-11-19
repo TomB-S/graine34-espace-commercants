@@ -346,11 +346,11 @@ function renderLoginFailed() {
     "Connexion échouée",
     `<h1>Connexion échouée</h1>
   ${errorMessage("Identifiant ou mot de passe incorrect.")}
-  <p><a href="/">Réessayer</a></p>`,
+  <p><a href="${loginHref()}">Réessayer</a></p>`,
   );
 }
 
-function renderTooManyAttempts(retryAfterSeconds, back = "/") {
+function renderTooManyAttempts(retryAfterSeconds, back = loginHref()) {
   const minutes = Math.ceil(retryAfterSeconds / 60);
   return htmlPage(
     "Trop de tentatives",
@@ -365,7 +365,7 @@ function renderForbidden(message, csrfToken, backHref = null) {
     ? `<p><a href="${backHref}">Retour</a></p>`
     : csrfToken
       ? `<p><a href="/caisse">Retour à la caisse</a></p>`
-      : `<p><a href="/">Retour</a></p>`;
+      : `<p><a href="${loginHref()}">Retour</a></p>`;
   return htmlPage(
     "Requête refusée",
     `<h1>Requête refusée</h1>
@@ -386,7 +386,7 @@ function logoutForm(csrfToken) {
 function renderAccessDenied(csrfToken) {
   const links = csrfToken
     ? `<p><a href="/caisse">Retour</a></p>\n  ${logoutForm(csrfToken)}`
-    : `<p><a href="/">Retour</a></p>`;
+    : `<p><a href="${loginHref()}">Retour</a></p>`;
   return htmlPage(
     "Accès refusé",
     `<h1>Accès refusé</h1>
@@ -421,6 +421,12 @@ function send(res, status, contentType, body, headers = {}) {
 function redirect(res, location, headers = {}) {
   res.writeHead(303, { Location: location, ...headers });
   res.end();
+}
+
+// Address of the login form of /caisse. "/" as always; in the multi-merchant mode "/" leads to the merchants' area, so the same form
+// stays reachable at /connexion (GET) and every link or redirect that used to point to "/" points there.
+function loginHref() {
+  return CAISSE.multiMerchant ? "/connexion" : "/";
 }
 
 // Opens the local session for a Cyclos session token (form login) and sends the visitor to /caisse.
@@ -474,7 +480,7 @@ function waitInWords(ms) {
   return `${minutes} minute${minutes > 1 ? "s" : ""}`;
 }
 
-function renderLoginProblem(title, text, { retry = true, back = "/" } = {}) {
+function renderLoginProblem(title, text, { retry = true, back = loginHref() } = {}) {
   return htmlPage(
     title,
     `<h1>${escapeHtml(title)}</h1>
@@ -577,7 +583,7 @@ function renderCaisseNotAllowed() {
 
 // Answers a login turned away by the brakes (429 for an identifier or an address, 503 while Cyclos is given a pause).
 // Returns true when the answer has been sent.
-function answerIfBlocked(res, verdict, back = "/") {
+function answerIfBlocked(res, verdict, back = loginHref()) {
   if (!verdict.blocked) return false;
   const headers = { "Retry-After": String(verdict.retryAfterSeconds) };
   if (verdict.reason === "cyclos") {
@@ -899,7 +905,8 @@ let clearCookie = cookieHeader("", 0);
 
 // What the cash register page needs from this file, given to caisse-page.js.
 const ESPACE_HELPERS = { escapeHtml, htmlPage, errorMessage };
-const CAISSE_HELPERS = { escapeHtml, formatAmount, htmlPage, errorMessage, logoutForm, stylesheetHref: STYLE_HREF };
+// `loginHref` is a function: the mode is known only once the server has started.
+const CAISSE_HELPERS = { escapeHtml, formatAmount, htmlPage, errorMessage, logoutForm, stylesheetHref: STYLE_HREF, loginHref };
 
 // What /caisse and /caisse/data share: the session, the identity of the visitor, the registration check and the
 // visit (touch) that keeps the listener alive. `fail(kind, session)` answers a refusal in the format of the caller
@@ -974,7 +981,7 @@ async function handleCaisse(req, res) {
   }
   const visit = await caisseVisit(req, res, (kind, session, headers = {}) => {
     if (kind === "login") {
-      redirect(res, "/", headers);
+      redirect(res, loginHref(), headers);
       return;
     }
     send(res, REFUSAL_STATUS[kind], "text/html", renderCaisseRefused(kind, session.csrfToken, CAISSE_HELPERS), kind === "busy" ? { "Retry-After": "30" } : {});
@@ -1046,7 +1053,7 @@ const server = http.createServer(async (req, res) => {
   // no-referrer, so this one page uses same-origin (still no referrer leaves the site).
   res.setHeader(
     "Referrer-Policy",
-    route === "GET /" || pathname === "/espace" || pathname.startsWith("/espace/") ? "same-origin" : "no-referrer",
+    route === "GET /" || route === "GET /connexion" || pathname === "/espace" || pathname.startsWith("/espace/") ? "same-origin" : "no-referrer",
   );
   // Statements must not stay in any cache nor in the back button.
   res.setHeader("Cache-Control", "no-store");
@@ -1076,8 +1083,21 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // Multi-merchant mode: the root address is the entrance of the merchants. A temporary redirect (never remembered by the browser,
+    // and the answers are no-store anyway). The login form of /caisse stays reachable at /connexion.
+    if (CAISSE.multiMerchant && pathname === "/" && (req.method === "GET" || req.method === "HEAD")) {
+      res.writeHead(307, { Location: "/espace" });
+      res.end();
+      return;
+    }
+
     switch (route) {
       case "GET /":
+      case "GET /connexion":
+        if (route === "GET /connexion" && !CAISSE.multiMerchant) {
+          send(res, 404, "text/plain", "Page introuvable");
+          return;
+        }
         send(res, 200, "text/html", renderLoginForm());
         return;
 
@@ -1146,7 +1166,7 @@ const server = http.createServer(async (req, res) => {
         const session = getSession(req);
         if (!session) {
           // Nothing to close locally; just make sure the cookie is gone.
-          redirect(res, "/", { "Set-Cookie": clearCookie });
+          redirect(res, loginHref(), { "Set-Cookie": clearCookie });
           return;
         }
 
@@ -1167,7 +1187,7 @@ const server = http.createServer(async (req, res) => {
         sessions.delete(session.id);
         // Close the token on the Cyclos side too, then log out locally either way. (Multi-merchant: both tokens, and the listener.)
         await closeSessionTokens(session.session);
-        redirect(res, "/", { "Set-Cookie": clearCookie });
+        redirect(res, loginHref(), { "Set-Cookie": clearCookie });
         return;
       }
 

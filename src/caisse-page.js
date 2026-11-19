@@ -16,8 +16,8 @@ const TITLE = "Caisse : paiements reçus";
 
 // Banner of the listening, as HTML. Nothing while it works; a warning or an error with an icon and a sentence;
 // "starting" is a neutral line. The three zones below (header badge, banner, content) are the ones the script updates.
-function stateBlock(status, e) {
-  const banner = bannerOf(status);
+function stateBlock(status, e, loginHref) {
+  const banner = bannerOf(status, loginHref);
   if (!banner) return "";
   if (banner.level === "info") return `<p class="caisse-etat" role="status">${e(banner.text)}</p>`;
   const kind = banner.level === "error" ? "erreur" : "avertissement";
@@ -34,7 +34,7 @@ function liveBadge(status) {
 // The page of the merchant. `view`: { status, tickets } from the listener manager. `options`:
 // { refreshSeconds (reload without script), pollSeconds (script), hidePayerName, nameOrder, hiddenDescriptions, now }. `helpers`: see the top of the file.
 export function renderCaissePage(view, { refreshSeconds, pollSeconds = 3, hidePayerName, nameOrder, hiddenDescriptions, now, csrfToken }, helpers) {
-  const { escapeHtml, formatAmount, logoutForm, stylesheetHref = "/style.css" } = helpers;
+  const { escapeHtml, formatAmount, logoutForm, stylesheetHref = "/style.css", loginHref = () => "/" } = helpers;
   const e = escapeHtml;
   const show = (ticket) => ticketDisplay(ticket, { now, formatAmount, hiddenDescriptions });
   const payerOf = (d) => payerText(d, hidePayerName, nameOrder);
@@ -99,11 +99,11 @@ export function renderCaissePage(view, { refreshSeconds, pollSeconds = 3, hidePa
     <span class="caisse-zone" id="caisse-zone-direct">${liveBadge(view.status)}</span>
     ${logoutForm(csrfToken)}
   </header>
-  <div class="page" id="caisse" data-poll-seconds="${e(pollSeconds)}" data-data-url="/caisse/data" data-login-url="/">
+  <div class="page" id="caisse" data-poll-seconds="${e(pollSeconds)}" data-data-url="/caisse/data" data-login-url="${e(loginHref())}">
   <div class="caisse-zone" id="caisse-zone-son"></div>
   <div class="caisse-zone" id="caisse-zone-actualiser"></div>
   <div class="caisse-zone" id="caisse-zone-notif"></div>
-  <div class="caisse-zone" id="caisse-zone-etat">${stateBlock(view.status, e)}</div>
+  <div class="caisse-zone" id="caisse-zone-etat">${stateBlock(view.status, e, loginHref())}</div>
   <div class="caisse-zone" id="caisse-zone-contenu">
   ${main}
   </div>
@@ -115,7 +115,7 @@ export function renderCaissePage(view, { refreshSeconds, pollSeconds = 3, hidePa
 
 // Pages that explain a refusal. `kind`: "denied" (403, not the registered merchant), "unavailable"
 // (503, the service cannot tell or cannot listen right now), "busy" (503, too many listeners).
-export function renderCaisseRefused(kind, csrfToken, { escapeHtml, htmlPage, errorMessage, logoutForm }) {
+export function renderCaisseRefused(kind, csrfToken, { escapeHtml, htmlPage, errorMessage, logoutForm, loginHref = () => "/" }) {
   const pages = {
     denied: {
       title: "Accès à la caisse refusé",
@@ -135,7 +135,7 @@ export function renderCaisseRefused(kind, csrfToken, { escapeHtml, htmlPage, err
     title,
     `<h1>${escapeHtml(title)}</h1>
   ${errorMessage(escapeHtml(text))}
-  <p><a href="/">Retour</a></p>
+  <p><a href="${loginHref()}">Retour</a></p>
   ${csrfToken ? logoutForm(csrfToken) : ""}`,
   );
 }

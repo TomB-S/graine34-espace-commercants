@@ -11,11 +11,11 @@ export const LIST_SIZE = 10;
 
 // Banner of the listening: { level, text } or null. Nothing while it works (the "fallback" state, where the
 // notification setting is not confirmed at Cyclos, is a live stream too). "starting" is a neutral line.
-export function bannerOf(status) {
+export function bannerOf(status, loginHref = "/") {
   if (status === "live" || status === "fallback") return null;
   if (status === "error") return { level: "error", text: TEXTS.unreadable };
   // The listening stopped for good (no retry): the banner says so and offers the way back to the login page.
-  if (status === "reauth") return { level: "error", text: TEXTS.reauth, link: { text: TEXTS.reconnectLink, href: "/" } };
+  if (status === "reauth") return { level: "error", text: TEXTS.reauth, link: { text: TEXTS.reconnectLink, href: loginHref } };
   if (status === "reconnecting" || status === "degraded") return { level: "warning", text: TEXTS.reconnecting };
   return { level: "info", text: TEXTS.starting };
 }
@@ -59,7 +59,7 @@ export function recapOf(recap, now, formatAmount) {
 
 // The JSON of GET /caisse/data. Nothing but what the page shows, plus what the script needs to follow the payments
 // (keys, source, date in milliseconds). No identifier of Cyclos, no session data.
-export function renderCaisseData(view, { hidePayerName, nameOrder, hiddenDescriptions, now }, { formatAmount }) {
+export function renderCaisseData(view, { hidePayerName, nameOrder, hiddenDescriptions, now }, { formatAmount, loginHref }) {
   // Only the payments of today (Paris time). With none, and while the listening works, the recap of yesterday takes their place.
   const today = ticketsOfDay(view.tickets, now);
   const tickets = today.slice(0, LIST_SIZE + 1).map((ticket) => {
@@ -81,5 +81,5 @@ export function renderCaisseData(view, { hidePayerName, nameOrder, hiddenDescrip
   // `loaded`: the first load of the history is done, so the page may take what it sees as "already there" (see new-payments.js).
   const live = view.status === "live" || view.status === "fallback";
   const recap = today.length === 0 && live ? recapOf(view.recap, now, formatAmount) : null;
-  return { status: view.status, banner: bannerOf(view.status), now, loaded: view.loaded === true, recap, tickets };
+  return { status: view.status, banner: bannerOf(view.status, loginHref?.() ?? "/"), now, loaded: view.loaded === true, recap, tickets };
 }

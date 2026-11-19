@@ -268,7 +268,7 @@ appTest("espace : session séparée de celle de /caisse", options(), async (app)
   await b.enter(WHO.marie);
   const caisse = await b.request("/caisse");
   assert.equal(caisse.status, 303, "no cash register session: back to its login");
-  assert.equal(caisse.headers.get("location"), "/");
+  assert.equal(caisse.headers.get("location"), "/connexion", "the form of /caisse, since / now leads to the area");
   const data = await b.request("/caisse/data");
   assert.equal(data.status, 401);
   // Logging in on /caisse opens its own session and does not touch the one of the area.
