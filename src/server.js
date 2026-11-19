@@ -565,6 +565,34 @@ function renderCaisseNotAllowed() {
   );
 }
 
+// Answers a login turned away by the brakes (429 for an identifier or an address, 503 while Cyclos is given a pause).
+// Returns true when the answer has been sent.
+function answerIfBlocked(res, verdict) {
+  if (!verdict.blocked) return false;
+  const headers = { "Retry-After": String(verdict.retryAfterSeconds) };
+  if (verdict.reason === "cyclos") {
+    send(res, 503, "text/html", renderLoginProblem("Cyclos demande de patienter", `Les connexions sont suspendues quelques instants. Réessayez dans ${waitInWords(verdict.retryAfterSeconds * 1000)}.`), headers);
+  } else {
+    send(res, 429, "text/html", renderTooManyAttempts(verdict.retryAfterSeconds), headers);
+  }
+  return true;
+}
+
+// Address of the visitor of a login. Behind relays (multi-merchant mode only) it comes from X-Forwarded-For, counted from the
+// right. In that mode the line "adresse lue ..." helps to set CAISSE_TRUSTED_PROXY_HOPS after a real test: what was read, and
+// what it was read from.
+function loginAddress(req) {
+  const reading = clientAddressOf(req, CAISSE.trustedProxyHops ?? 0);
+  if (CAISSE.multiMerchant) {
+    console.log(
+      `adresse lue ${reading.address} (${reading.fromHeader ? "X-Forwarded-For" : "connexion directe"}, adresse de la connexion ${
+        req.socket.remoteAddress ?? "inconnue"
+      }, ${reading.headerEntries} entrée(s) X-Forwarded-For, relais de confiance ${CAISSE.trustedProxyHops})`,
+    );
+  }
+  return reading.address;
+}
+
 // POST /connexion in the multi-merchant mode. The merchant types HIS Cyclos login and password. The password is used for exactly
 // two calls to Cyclos (the page token, then the listening token) and then goes out of scope: it is never stored, logged or answered.
 //  1. the brakes (per identifier, per address, circuit breaker on Cyclos);
@@ -577,16 +605,7 @@ async function handleMultiLogin(req, res, address) {
   const password = form.get("password") ?? "";
   const who = { identifier: login, address };
 
-  const verdict = LOGIN_GUARD.check(who);
-  if (verdict.blocked) {
-    const headers = { "Retry-After": String(verdict.retryAfterSeconds) };
-    if (verdict.reason === "cyclos") {
-      send(res, 503, "text/html", renderLoginProblem("Cyclos demande de patienter", `Les connexions sont suspendues quelques instants. Réessayez dans ${waitInWords(verdict.retryAfterSeconds * 1000)}.`), headers);
-    } else {
-      send(res, 429, "text/html", renderTooManyAttempts(verdict.retryAfterSeconds), headers);
-    }
-    return;
-  }
+  if (answerIfBlocked(res, LOGIN_GUARD.check(who))) return;
   if (!login || !password) {
     send(res, 401, "text/html", renderLoginFailed());
     return;
@@ -684,10 +703,10 @@ function isValidCsrf(session, submitted) {
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
-function getSessionId(req) {
+function getSessionId(req, cookieName = COOKIE) {
   for (const part of (req.headers.cookie ?? "").split(";")) {
     const [name, ...value] = part.trim().split("=");
-    if (name === COOKIE) return value.join("=");
+    if (name === cookieName) return value.join("=");
   }
   return null;
 }
@@ -716,15 +735,17 @@ function expireSession(id, session) {
 }
 
 // Returns { id, session } for a valid session cookie, otherwise null.
-// An expired session is deleted and treated as absent.
-function getSession(req) {
-  const id = getSessionId(req);
-  const session = id ? sessions.get(id) : undefined;
+// An expired session is deleted and treated as absent. `store` and `cookieName` default to the ones of the cash register;
+// another area with its own sessions passes its own.
+function getSession(req, store = sessions, cookieName = COOKIE) {
+  const id = getSessionId(req, cookieName);
+  const session = id ? store.get(id) : undefined;
   if (!session) return null;
 
   const now = Date.now();
   if (isExpired(session, now)) {
-    expireSession(id, session);
+    store.delete(id);
+    void closeSessionTokens(session);
     return null;
   }
 
@@ -744,8 +765,8 @@ function sweep(now = Date.now()) {
   LOGIN_GUARD?.sweep(now);
 }
 
-function cookieHeader(value, maxAgeSeconds) {
-  return `${COOKIE}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}${COOKIE_SECURE ? "; Secure" : ""}`;
+function cookieHeader(value, maxAgeSeconds, { name = COOKIE, path = "/" } = {}) {
+  return `${name}=${value}; HttpOnly; SameSite=Lax; Path=${path}; Max-Age=${maxAgeSeconds}${COOKIE_SECURE ? "; Secure" : ""}`;
 }
 
 let clearCookie = cookieHeader("", 0);
@@ -945,17 +966,7 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        // Behind relays (multi-merchant mode only) the address comes from X-Forwarded-For, counted from the right.
-        const reading = clientAddressOf(req, CAISSE.trustedProxyHops ?? 0);
-        const ip = reading.address;
-        if (CAISSE.multiMerchant) {
-          // Help to set CAISSE_TRUSTED_PROXY_HOPS after a real test: what was read, and what it was read from.
-          console.log(
-            `adresse lue ${ip} (${reading.fromHeader ? "X-Forwarded-For" : "connexion directe"}, adresse de la connexion ${
-              req.socket.remoteAddress ?? "inconnue"
-            }, ${reading.headerEntries} entrée(s) X-Forwarded-For, relais de confiance ${CAISSE.trustedProxyHops})`,
-          );
-        }
+        const ip = loginAddress(req);
         if (CAISSE.multiMerchant) {
           await handleMultiLogin(req, res, ip);
           return;
