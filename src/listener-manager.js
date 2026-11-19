@@ -194,6 +194,17 @@ export function createListenerManager({
 
     touch,
 
+    // Multi-merchant mode: a merchant logs in again. A listener that ended in "error" or "reauth" would stay dead until the idle delay
+    // (his visits keep it alive): stop it now, so that his next visit starts a fresh one with the new token. A working one is left alone.
+    async restartIfStopped(merchantKey) {
+      const entry = entries.get(merchantKey);
+      if (!entry) return false;
+      const status = entry.store.status();
+      if (status !== "error" && status !== "reauth") return false;
+      await stopEntry(merchantKey, "nouvelle connexion");
+      return true;
+    },
+
     // Stops the listener of one merchant now (his logout): stream cut, Cyclos session closed, tickets forgotten.
     stop: (merchantKey, reason = null) => stopEntry(merchantKey, reason),
 

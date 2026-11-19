@@ -13,6 +13,11 @@
 //   `reauthMax` times in a row, state "error" and the loop STOPS (no hammering of the login: Cyclos may
 //   lock an account after too many tries). Credentials refused at the very first login: "error" at once.
 // - 403 (login or stream): state "error", the loop stops, no automatic retry.
+// - Token mode (multi-merchant, `config.tokenFor` exists): the listener never sees a password. The Cyclos session token is LENT by
+//   the caller (the token opened for the listening when the merchant logged in), looked up at each start and never closed here: it
+//   belongs to the merchant's session, which closes it at logout. A 401 means the token is dead and nothing can renew it: the
+//   caller is told (`config.tokenRefused`), and the listener tries ONE other token if the caller has one (another session of the
+//   same merchant), otherwise it stops with the state "reauth" (the merchant must log in again). No retry loop, ever.
 // - After any period of trouble the payments may have been missed: the processor is told
 //   (`recovered`) so that it can read the history (the "safety net", see payment-processor.js).
 //
@@ -26,6 +31,9 @@ const KNOWN_ERRORS = [PushAuthError, PushForbiddenError, PushUnavailableError];
 
 // The configuration has no credentials for this merchant (nothing to try, nothing to retry).
 class NoCredentialsError extends Error {}
+
+// Token mode: no usable token is lent (none, or only ones Cyclos already refused).
+class NoTokenError extends Error {}
 
 // Default logger: one line per call, prefixed. Callers give their own in tests.
 export function consoleLog() {
@@ -105,6 +113,16 @@ export function createListener({
   let reopening = true; // no stream is open right now
   let sessionLost = false; // the processor says the token no longer works
   let shortStreams = 0;
+  const borrowed = typeof config.tokenFor === "function"; // token mode: the token is lent, not ours to close
+  const refused = new Set(); // token mode: tokens Cyclos refused (each is tried once, never again)
+
+  // Token mode: the token is dead. Tell the caller once, remember it, drop it.
+  function refuseToken() {
+    if (!borrowed || !token) return;
+    refused.add(token);
+    config.tokenRefused?.(merchantKey, token);
+    token = null;
+  }
 
   const ctx = {
     token: () => token,
@@ -128,6 +146,13 @@ export function createListener({
 
   // Logs in with the credentials of the configuration. They are looked up each time and not kept here.
   async function authenticate() {
+    if (borrowed) {
+      const lent = config.tokenFor(merchantKey);
+      if (typeof lent !== "string" || lent === "" || refused.has(lent)) throw new NoTokenError("no usable token for this merchant");
+      token = lent;
+      everLoggedIn = true;
+      return;
+    }
     const credentials = config.credentialsFor(merchantKey);
     if (!credentials) throw new NoCredentialsError("no credentials for this merchant");
     const fresh = await push.createSession(credentials.login, credentials.password, stopSignal.signal);
@@ -236,6 +261,7 @@ export function createListener({
         if (sessionLost) {
           // authLost() came while no connection was open: same outcome as a 401.
           sessionLost = false;
+          if (borrowed) refuseToken();
           token = null;
         }
         if (!token) await authenticate();
@@ -252,9 +278,23 @@ export function createListener({
           giveUp("aucun identifiant d'écoute configuré");
           break;
         }
+        if (error instanceof NoTokenError) {
+          // Nothing can renew the token: the merchant has to log in again. Not retried.
+          store.setConnection("reauth");
+          log.error("écoute arrêtée : session Cyclos refusée ou absente, reconnexion nécessaire");
+          break;
+        }
         if (error instanceof PushForbiddenError) {
           giveUp("accès refusé par Cyclos (403)");
           break;
+        }
+        if (error instanceof PushAuthError && borrowed) {
+          // A token that Cyclos refuses is never tried again; another lent token, if any, is tried by the next turn of the loop.
+          refuseToken();
+          needsRecovery = true;
+          sessionLost = false;
+          log.info("jeton Cyclos refusé (401)");
+          continue;
         }
         if (error instanceof PushAuthError) {
           const duringLogin = !token;
@@ -292,7 +332,7 @@ export function createListener({
     // The loop is over (stop, or error state): close the Cyclos session if there is one.
     const last = token;
     token = null;
-    if (last) await push.closeSession(last);
+    if (last && !borrowed) await push.closeSession(last);
     reopening = true;
   }
 
