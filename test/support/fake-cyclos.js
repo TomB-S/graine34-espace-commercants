@@ -229,7 +229,9 @@ export async function startFakeCyclos() {
       // The default user keeps the display name tests may have changed in `state.displayName`.
       const display = !user || user.id === USER.id ? state.displayName : user.display;
       // `state.omitUserId`: the answer has no id (the registration check must then refuse, never guess).
-      return json(res, 200, { id: state.omitUserId ? undefined : (user?.id ?? USER.id), display });
+      // `email` only for the users added with one (the multi-merchant whitelist can match it).
+      const email = user?.own?.email;
+      return json(res, 200, { id: state.omitUserId ? undefined : (user?.id ?? USER.id), display, ...(email ? { email } : {}) });
     }
     if (key === "GET /self/notification-settings/data-for-edit") return json(res, 200, state.notificationSettings);
     const detail = /^GET \/(transfers|transactions)\/([^/]+)$/.exec(key);
@@ -328,11 +330,12 @@ export async function startFakeCyclos() {
     calls: (method, path) => state.requests.filter((r) => r.method === method && r.path === path),
     // A second user able to log in (tests of the registration check).
     // With `entries` (and optionally `transfers`, `transactions`), the user has data of his own, apart from the shared ones.
-    addUser: (login, password, { id, display = "Autre Utilisateur de Test", entries, transfers, transactions }) =>
+    addUser: (login, password, { id, display = "Autre Utilisateur de Test", email, entries, transfers, transactions }) =>
       state.users.set(login, {
         password,
         id,
         display,
+        ...(email ? { email } : {}),
         ...(entries ? { entries, transfers: transfers ?? new Map(), transactions: transactions ?? new Map() } : {}),
       }),
     // Same as push(), but only for the open streams of this user (and replayed only to him).

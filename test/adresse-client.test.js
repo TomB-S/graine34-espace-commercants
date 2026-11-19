@@ -57,16 +57,20 @@ const MULTI = (hops) => ({
   caisse: { ...CAISSE_OPTIONS.caisse, multiMerchant: true, trustedProxyHops: hops },
 });
 
+// A refused password. Every call types another identifier: in the multi-merchant mode the brakes also count per identifier
+// (5), so that only the limit per address (10) is reached here.
+let typed = 0;
 const fail = (app, forwardedFor) =>
   app.request("/connexion", {
     method: "POST",
-    form: { login: "x", password: "faux" },
+    form: { login: `x${(typed += 1)}`, password: "faux" },
     headers: { Origin: app.base, ...(forwardedFor ? { "X-Forwarded-For": forwardedFor } : {}) },
   });
 
-// Intention: behind 1 relay, the limit of 5 failures counts each visitor apart, and a header forged by the visitor does not help.
-appTest("adresse client : 1 relais, la limite de 5 échecs compte chaque visiteur séparément", MULTI(1), async (app) => {
-  for (let i = 0; i < 5; i += 1) assert.equal((await fail(app, "203.0.113.5")).status, 401);
+// Intention: behind 1 relay, the limit of 10 failures per address (multi-merchant mode) counts each visitor apart, and a header
+// forged by the visitor does not help.
+appTest("adresse client : 1 relais, la limite d'échecs compte chaque visiteur séparément", MULTI(1), async (app) => {
+  for (let i = 0; i < 10; i += 1) assert.equal((await fail(app, "203.0.113.5")).status, 401);
   assert.equal((await fail(app, "203.0.113.5")).status, 429, "même visiteur : bloqué");
   assert.equal((await fail(app, "198.51.100.77, 203.0.113.5")).status, 429, "entrée forgée à gauche : toujours le même visiteur");
   assert.equal((await fail(app, "203.0.113.6")).status, 401, "autre visiteur : pas bloqué");
@@ -74,7 +78,7 @@ appTest("adresse client : 1 relais, la limite de 5 échecs compte chaque visiteu
 
 // Intention: with the default 0 relays in this mode, all the visitors share the address of the relay: the header changes nothing.
 appTest("adresse client : 0 relais, l'en-tête ne contourne pas la limite", MULTI(0), async (app) => {
-  for (let i = 0; i < 5; i += 1) assert.equal((await fail(app, `203.0.113.${i + 1}`)).status, 401);
+  for (let i = 0; i < 10; i += 1) assert.equal((await fail(app, `203.0.113.${i + 1}`)).status, 401);
   assert.equal((await fail(app, "203.0.113.200")).status, 429);
 });
 

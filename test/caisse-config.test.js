@@ -327,3 +327,15 @@ test("caisse multi : ignoré dans l'exécutable (connexion qui démarre l'écout
   for (const field of ["multiMerchant", "allowedUsers", "trustedProxyHops"]) assert.equal(field in config, false, field);
   assert.equal(config.maxListeners, 10); // the old range and setting, untouched
 });
+
+// Intention: in the multi-merchant mode there is no listening account: nothing is required, and nothing from the environment is kept
+// (no password in the configuration). Without the mode, both are still required.
+test("caisse multi : aucun compte d'écoute exigé ni conservé ; en mono, toujours exigé", () => {
+  const config = readCaisseConfig({ CAISSE_ENABLED: "true", CAISSE_MULTI_MERCHANT: "true" });
+  assert.equal(config.multiMerchant, true);
+  assert.equal(config.credentialsFor(PROTOTYPE_MERCHANT), null);
+  const withEnv = readCaisseConfig({ ...ENABLED, CAISSE_MULTI_MERCHANT: "true" });
+  assert.equal(withEnv.credentialsFor(PROTOTYPE_MERCHANT), null, "the environment's account is ignored");
+  assert.equal(JSON.stringify(withEnv).includes("mdp-fictif-pour-test"), false);
+  assert.throws(() => readCaisseConfig({ CAISSE_ENABLED: "true" }), /exige CAISSE_CYCLOS_LOGIN/);
+});

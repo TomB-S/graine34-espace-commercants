@@ -138,12 +138,14 @@ export function readCaisseConfig(env = process.env, overrides = {}) {
   Object.assign(config, rest);
   login = loginOverride ?? login;
   password = passwordOverride ?? password;
-  if (credentialsFromLogin) {
+  if (credentialsFromLogin || config.multiMerchant) {
+    // Executable: the credentials come from the page. Multi-merchant: each merchant has his own, and nothing is kept.
     login = "";
     password = "";
   }
 
-  if (config.enabled && !credentialsFromLogin && (login.trim() === "" || password === "")) {
+  // Multi-merchant mode: there is no listening account, every merchant logs in with his own.
+  if (config.enabled && !credentialsFromLogin && !config.multiMerchant && (login.trim() === "" || password === "")) {
     throw new Error(
       "CAISSE_ENABLED=true exige CAISSE_CYCLOS_LOGIN et CAISSE_CYCLOS_PASSWORD (compte d'écoute Cyclos)",
     );
@@ -153,7 +155,7 @@ export function readCaisseConfig(env = process.env, overrides = {}) {
   // merchant, whose credentials come from the environment. In production this
   // is where each merchant's own credentials or access will be looked up.
   config.credentialsFor = (merchantKey) =>
-    config.enabled && merchantKey === PROTOTYPE_MERCHANT ? { login, password } : null;
+    config.enabled && !config.multiMerchant && merchantKey === PROTOTYPE_MERCHANT ? { login, password } : null;
 
   return Object.freeze(config);
 }

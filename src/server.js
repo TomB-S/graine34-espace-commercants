@@ -9,9 +9,10 @@ import {
 import { fileURLToPath } from "node:url";
 import { readCaisseConfig, PROTOTYPE_MERCHANT } from "./caisse-config.js";
 import { clientAddressOf } from "./client-address.js";
-import { createCyclosPush, PushAuthError } from "./cyclos-push.js";
+import { createCyclosPush, PushAuthError, PushForbiddenError, PushUnavailableError } from "./cyclos-push.js";
 import { describeError } from "./cyclos-listener.js";
 import { createListenerManager } from "./listener-manager.js";
+import { createLoginGuard } from "./login-guard.js";
 import { renderCaissePage, renderCaisseRefused } from "./caisse-page.js";
 import { renderCaisseData } from "./caisse-data.js";
 import { inExecutable, readAsset } from "./assets.js";
@@ -30,6 +31,8 @@ let CHANNEL = "";
 let CAISSE = readCaisseConfig({});
 // Cash register runtime ({ push, manager }), created by startServer() when the page is enabled, otherwise null.
 let CAISSE_RUNTIME = null;
+// Multi-merchant mode only: the brakes on the logins (see login-guard.js), otherwise null.
+let LOGIN_GUARD = null;
 const PORT = envNumber("PORT", 3001);
 const COOKIE = "session";
 
@@ -413,11 +416,12 @@ function redirect(res, location, headers = {}) {
 // Opens the local session for a Cyclos session token (form login) and sends the visitor to /caisse.
 // `credentials` ({ login, password }, only when the login starts the listening) live in the session record and nowhere
 // else: they disappear with it (logout, 20 minutes without use, maximum duration, refusal by Cyclos).
-function openSession(res, sessionToken, credentials = null) {
+function openSession(res, sessionToken, credentials = null, extra = {}) {
   const id = randomUUID();
   const now = Date.now();
   sessions.set(id, {
     sessionToken,
+    ...extra,
     csrfToken: randomBytes(32).toString("hex"),
     createdAt: now,
     lastSeenAt: now,
@@ -533,6 +537,104 @@ async function handlePageLogin(res, login, password) {
   openSession(res, sessionToken, { login, password });
 }
 
+// Token for the listening of a merchant of the multi-merchant mode: the one of his freshest open session that has one. Looked up
+// at each use, never copied. null when none (the merchant must log in again).
+function listenerTokenFor(merchantKey) {
+  const now = Date.now();
+  let best = null;
+  for (const session of sessions.values()) {
+    if (session.merchantKey !== merchantKey || !session.listenerToken || isExpired(session, now)) continue;
+    if (!best || session.lastSeenAt > best.lastSeenAt) best = session;
+  }
+  return best ? best.listenerToken : null;
+}
+
+// Cyclos refused this listening token (401): the sessions holding it forget it, the page stays open and says the merchant must
+// log in again.
+function listenerTokenRefused(merchantKey, token) {
+  for (const session of sessions.values()) {
+    if (session.merchantKey === merchantKey && session.listenerToken === token) session.listenerToken = null;
+  }
+}
+
+function renderCaisseNotAllowed() {
+  return renderLoginProblem(
+    "Accès à la caisse refusé",
+    "Ce compte n'est pas autorisé à ouvrir la caisse. Contactez La Graine 34 pour demander l'accès.",
+    { retry: false },
+  );
+}
+
+// POST /connexion in the multi-merchant mode. The merchant types HIS Cyclos login and password. The password is used for exactly
+// two calls to Cyclos (the page token, then the listening token) and then goes out of scope: it is never stored, logged or answered.
+//  1. the brakes (per identifier, per address, circuit breaker on Cyclos);
+//  2. the page token (a refused password is counted by the brakes);
+//  3. who he is (Cyclos number, e-mail address) and the whitelist: a refusal is a 403 with a clear message, the token is closed;
+//  4. the listening token, then the session: it holds both tokens and the merchant's key, never the password.
+async function handleMultiLogin(req, res, address) {
+  const form = new URLSearchParams(await readBody(req));
+  const login = form.get("login") ?? "";
+  const password = form.get("password") ?? "";
+  const who = { identifier: login, address };
+
+  const verdict = LOGIN_GUARD.check(who);
+  if (verdict.blocked) {
+    const headers = { "Retry-After": String(verdict.retryAfterSeconds) };
+    if (verdict.reason === "cyclos") {
+      send(res, 503, "text/html", renderLoginProblem("Cyclos demande de patienter", `Les connexions sont suspendues quelques instants. Réessayez dans ${waitInWords(verdict.retryAfterSeconds * 1000)}.`), headers);
+    } else {
+      send(res, 429, "text/html", renderTooManyAttempts(verdict.retryAfterSeconds), headers);
+    }
+    return;
+  }
+  if (!login || !password) {
+    send(res, 401, "text/html", renderLoginFailed());
+    return;
+  }
+
+  const { push, manager } = CAISSE_RUNTIME;
+  let pageToken = null;
+  let listenerToken = null;
+  let merchantKey = null;
+  try {
+    pageToken = await createCyclosSession(login, password);
+    const identity = await push.getIdentity(pageToken);
+    const decision = await manager.authorize(identity);
+    if (!decision.ok) {
+      // Not on the whitelist (403), or the identity could not be read: no listening token is opened. The attempt counts like a refusal.
+      LOGIN_GUARD.recordRefusal(who);
+      await closeCyclosSession(pageToken);
+      pageToken = null;
+      send(res, 403, "text/html", renderCaisseNotAllowed());
+      return;
+    }
+    merchantKey = decision.merchantKey;
+    listenerToken = await createCyclosSession(login, password);
+  } catch (error) {
+    for (const token of [pageToken, listenerToken]) if (token) await closeCyclosSession(token);
+    if (error instanceof LoginError || error instanceof PushAuthError) {
+      LOGIN_GUARD.recordRefusal(who);
+      send(res, 401, "text/html", renderLoginFailed());
+      return;
+    }
+    if (error instanceof AccessDeniedError || error instanceof PushForbiddenError) {
+      send(res, 403, "text/html", renderAccessDenied());
+      return;
+    }
+    if (error instanceof CyclosUnavailableError || error instanceof PushUnavailableError) {
+      LOGIN_GUARD.recordCyclosFailure();
+      console.error(`Cyclos injoignable ou en erreur : ${error.message}`);
+      send(res, 502, "text/html", renderLoginProblem("Cyclos ne répond pas", "Impossible de joindre Cyclos pour le moment. Réessayez dans quelques instants."));
+      return;
+    }
+    throw error;
+  }
+
+  LOGIN_GUARD.recordSuccess(who);
+  await manager.restartIfStopped(merchantKey); // a listener that died of an expired token starts again with the new one
+  openSession(res, pageToken, null, { listenerToken, merchantKey, cyclosUserId: merchantKey });
+}
+
 // Reads a POST body as text, refusing anything above `limit` bytes.
 // Rejects with BodyTooLargeError, from the declared Content-Length when there
 // is one, or while streaming (chunked bodies). Nothing above the limit is kept.
@@ -594,10 +696,23 @@ function isExpired(session, now = Date.now()) {
   return now - session.lastSeenAt > IDLE_MS || now - session.createdAt > MAX_MS;
 }
 
+// Ends the Cyclos side of a session that is already out of `sessions`: closes its page token and, in the multi-merchant mode, the
+// token opened for the listening. The listener of the merchant is stopped too: when no other session of his is open there is
+// nothing left to listen for, and when another one is (another tablet) the listener starts again at its next visit with that
+// session's token, instead of keeping a token that has just been closed. Failures are ignored on purpose, as for the page token.
+function closeSessionTokens(session) {
+  const jobs = [closeCyclosSession(session.sessionToken)];
+  if (session.listenerToken) jobs.push(closeCyclosSession(session.listenerToken));
+  if (session.merchantKey && CAISSE_RUNTIME) {
+    jobs.push(CAISSE_RUNTIME.manager.stop(session.merchantKey, "déconnexion").catch(() => {}));
+  }
+  return Promise.all(jobs);
+}
+
 // Removes an expired session and tries to close its Cyclos token (fire and forget).
 function expireSession(id, session) {
   sessions.delete(id);
-  closeCyclosSession(session.sessionToken);
+  void closeSessionTokens(session);
 }
 
 // Returns { id, session } for a valid session cookie, otherwise null.
@@ -626,6 +741,7 @@ function sweep(now = Date.now()) {
   for (const [ip, entry] of loginFailures) {
     if (now - entry.windowStart >= LOGIN_WINDOW_MS) loginFailures.delete(ip);
   }
+  LOGIN_GUARD?.sweep(now);
 }
 
 function cookieHeader(value, maxAgeSeconds) {
@@ -649,6 +765,17 @@ async function caisseVisit(req, res, fail, { wait = false } = {}) {
   }
   const { id, session } = found;
   const { push, manager } = CAISSE_RUNTIME;
+
+  // Multi-merchant mode: the merchant was identified and checked against the whitelist at login. His key is in HIS session record,
+  // set by the server, never read from the request: the cookie of one merchant can only ever reach his own listener.
+  if (session.merchantKey) {
+    const visit = wait ? await manager.touchAndWait(session.merchantKey) : manager.touch(session.merchantKey);
+    if (!visit.ok) {
+      fail("busy", session);
+      return null;
+    }
+    return { session, view: visit.view };
+  }
 
   // Cyclos user id of the visitor, read once per session (null = could not be read reliably).
   if (session.cyclosUserId === undefined) {
@@ -829,6 +956,10 @@ const server = http.createServer(async (req, res) => {
             }, ${reading.headerEntries} entrée(s) X-Forwarded-For, relais de confiance ${CAISSE.trustedProxyHops})`,
           );
         }
+        if (CAISSE.multiMerchant) {
+          await handleMultiLogin(req, res, ip);
+          return;
+        }
         const blockedUntil = loginBlockedUntil(ip);
         if (blockedUntil) {
           const retryAfter = Math.ceil((blockedUntil - Date.now()) / 1000);
@@ -891,8 +1022,8 @@ const server = http.createServer(async (req, res) => {
         }
 
         sessions.delete(session.id);
-        // Close the token on the Cyclos side too, then log out locally either way.
-        await closeCyclosSession(session.session.sessionToken);
+        // Close the token on the Cyclos side too, then log out locally either way. (Multi-merchant: both tokens, and the listener.)
+        await closeSessionTokens(session.session);
         redirect(res, "/", { "Set-Cookie": clearCookie });
         return;
       }
@@ -969,6 +1100,10 @@ export function startServer(options = {}) {
     LONG_PAUSE_MS = options.loginLongPauseMs ?? LOGIN_LONG_PAUSE_MS;
     Object.assign(pageLogin, { inFlight: false, refusals: 0, lockedUntil: 0 });
   }
+  if (CAISSE.multiMerchant) {
+    // The listener asks for its token here and tells here when Cyclos refused it: no password anywhere in the configuration.
+    CAISSE = Object.freeze({ ...CAISSE, tokenFor: listenerTokenFor, tokenRefused: listenerTokenRefused });
+  }
   ALLOWED_HOSTS = null;
   BASE = baseUrl(options.cyclosBaseUrl ?? process.env.CYCLOS_BASE_URL);
   COOKIE_SECURE = options.cookieSecure ?? process.env.COOKIE_SECURE === "true";
@@ -978,6 +1113,7 @@ export function startServer(options = {}) {
   clearCookie = cookieHeader("", 0);
   sessions.clear();
   loginFailures.clear();
+  LOGIN_GUARD = CAISSE.multiMerchant ? createLoginGuard(options.loginGuard) : null;
 
   return new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -997,6 +1133,8 @@ export function startServer(options = {}) {
         port: server.address().port,
         sweep,
         caisseEnabled: CAISSE.enabled,
+        // For the tests: a copy of the session records (to check what a session holds, and what it does not).
+        inspectSessions: () => JSON.parse(JSON.stringify([...sessions.values()])),
         async close() {
           clearInterval(timer);
           ALLOWED_HOSTS = null;
