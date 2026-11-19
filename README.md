@@ -137,6 +137,46 @@ Pour arrêter : `Ctrl+C` (la fermeture de la fenêtre arrête aussi le programme
 **État des essais.** Testé sur macOS avec un faux Cyclos (démarrage, port occupé, connexion sur la page, mauvais mot de passe,
 pauses). **Non testé** sur Windows et Linux : ouverture du navigateur (`rundll32` sous Windows, `xdg-open` sous Linux), double clic, pare-feu, SmartScreen.
 
+### Fabrication automatique (GitHub Actions)
+
+Le fichier [.github/workflows/build.yml](.github/workflows/build.yml) fabrique les exécutables pour Windows, macOS et Linux.
+Il ne se lance pas à chaque push : seulement à la demande, ou quand une étiquette de version `v*` est publiée.
+
+**Lancer la fabrication.** Sur GitHub, onglet **Actions**, workflow « Fabrication des exécutables », bouton **Run workflow**
+(branche `main`), puis **Run workflow**. Le travail « Tests » (Node 24, `npm test`) passe d'abord ; s'il échoue, rien n'est fabriqué.
+Ensuite quatre travaux tournent en parallèle, avec Node 26 : `linux-x64` (`ubuntu-24.04`), `windows-x64` (`windows-2025`),
+`macos-arm64` (`macos-15`, Apple Silicon) et `macos-x64` (`macos-15-intel`, Mac Intel). Chacun lance `npm ci`, `npm run build:exe`,
+puis un **contrôle de démarrage** (`node tools/smoke-exe.js`) : l'exécutable est lancé sans navigateur (`CAISSE_NO_BROWSER=true`)
+sur le port 3101, la page de connexion et un fichier intégré doivent répondre, puis le programme est arrêté. Aucun identifiant n'est
+utilisé, Cyclos n'est jamais appelé. Le même contrôle se lance en local après une fabrication : `node tools/smoke-exe.js`.
+
+**Télécharger.** Ouvrir l'exécution terminée (onglet Actions, clic sur l'exécution) : les fichiers sont dans la section
+**Artifacts**, en bas de la page. Ils sont **conservés 7 jours**, puis supprimés : relancer la fabrication si besoin. Chaque fichier
+fait environ 140 Mo.
+
+| Fichier | Système |
+| --- | --- |
+| `graine34-notif-caisse-linux-x64.tar.gz` | Linux, processeur Intel/AMD 64 bits |
+| `graine34-notif-caisse-windows-x64.exe` | Windows 64 bits |
+| `graine34-notif-caisse-macos-arm64.tar.gz` | Mac Apple Silicon (M1 et suivants) |
+| `graine34-notif-caisse-macos-x64.tar.gz` | Mac à processeur Intel |
+
+Sous Linux et macOS, le fichier est une archive `.tar.gz` : un zip d'artefact ferait perdre le droit d'exécution. Après
+l'extraction (`tar -xzf graine34-notif-caisse-<système>.tar.gz`), le droit est normalement conservé. S'il manque quand même :
+`chmod +x graine34-notif-caisse`.
+
+**Les exécutables ne sont pas signés.** Aucune signature de code n'est faite à ce stade, des alertes de sécurité sont donc
+attendues :
+
+- **macOS** : le fichier téléchargé reçoit une quarantaine et le système refuse de l'ouvrir. Après extraction, dans le terminal :
+  `xattr -d com.apple.quarantine graine34-notif-caisse`, puis `./graine34-notif-caisse`. La signature ad hoc ajoutée à la
+  fabrication évite seulement que le système tue le programme au lancement, elle ne remplace pas une signature de diffusion.
+- **Windows** : SmartScreen peut afficher « Windows a protégé votre ordinateur » ; **Informations complémentaires**, puis **Exécuter
+  quand même**.
+- **Linux** : si le droit d'exécution manque, `chmod +x graine34-notif-caisse`.
+
+Le workflow n'utilise aucun secret et demande seulement la permission de lire le dépôt (`contents: read`).
+
 ## Arborescence
 
 ```
