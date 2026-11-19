@@ -82,14 +82,14 @@ appTest("espace : connexion réussie d'un compte autorisé, deux liens, canal ma
 
   const page = await (await b.request("/espace")).text();
   assert.match(page, /Notifications de caisse/);
-  assert.match(page, /href="\/caisse"/);
+  assert.match(page, /<form class="espace-lien-form" method="post" action="\/espace\/caisse">/);
   assert.match(page, /Relevé de transactions/);
   assert.match(page, /action="\/espace\/deconnexion"/);
   assert.doesNotMatch(page, /name="password"/);
 
   const records = app.server.inspectEspaceSessions();
   assert.equal(records.length, 1);
-  assert.deepEqual(Object.keys(records[0]).sort(), ["createdAt", "csrfToken", "lastSeenAt", "sessionToken"]);
+  assert.deepEqual(Object.keys(records[0]).sort(), ["createdAt", "csrfToken", "lastSeenAt", "merchantId", "sessionToken"]);
   assert.ok(!JSON.stringify(records).includes(WHO.marie.password));
   assert.ok(!everything(app).includes(WHO.marie.password));
   assert.ok(!page.includes(WHO.marie.password));
@@ -198,7 +198,7 @@ appTest("espace : sans ESPACE_RELEVE_URL, « Bientôt disponible » et aucun lie
   const page = await (await b.request("/espace")).text();
   assert.match(page, /Bientôt disponible/);
   assert.match(page, /Relevé de transactions/);
-  assert.equal([...page.matchAll(/<a [^>]*>/g)].filter((m) => !m[0].includes('href="/caisse"') && !m[0].includes("/style.css")).length, 0, "the only link is the cash register");
+  assert.equal([...page.matchAll(/<a [^>]*>/g)].filter((m) => !m[0].includes("/style.css")).length, 0, "no link at all: the cash register is a form button");
 });
 
 // Intention: the same brakes as the other logins: 5 refusals of one identifier turn it away without reaching Cyclos, and the
@@ -268,7 +268,7 @@ appTest("espace : session séparée de celle de /caisse", options(), async (app)
   await b.enter(WHO.marie);
   const caisse = await b.request("/caisse");
   assert.equal(caisse.status, 303, "no cash register session: back to its login");
-  assert.equal(caisse.headers.get("location"), "/");
+  assert.equal(caisse.headers.get("location"), "/connexion", "the form of /caisse, since / now leads to the area");
   const data = await b.request("/caisse/data");
   assert.equal(data.status, 401);
   // Logging in on /caisse opens its own session and does not touch the one of the area.

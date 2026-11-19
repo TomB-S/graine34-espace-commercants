@@ -445,11 +445,11 @@ appTest("multi : page « Session expirée, reconnectez-vous », sans rafraîchis
   const calls = app.cyclos.state.requests.length;
   const html = await (await app.request("/caisse")).text();
   assert.match(html, /Session expirée, reconnectez-vous/);
-  assert.match(html, /<a class="caisse-reconnexion" href="\/">Se reconnecter<\/a>/);
+  assert.match(html, /<a class="caisse-reconnexion" href="\/connexion">Se reconnecter<\/a>/);
   assert.doesNotMatch(html, /http-equiv="refresh"/);
   assert.doesNotMatch(html, /Mise à jour automatique/);
   const data = await dataOf(app);
-  assert.deepEqual(data.banner, { level: "error", text: "Session expirée, reconnectez-vous", link: { text: "Se reconnecter", href: "/" } });
+  assert.deepEqual(data.banner, { level: "error", text: "Session expirée, reconnectez-vous", link: { text: "Se reconnecter", href: "/connexion" } });
   assert.equal(app.cyclos.state.requests.length, calls, "reading the page does not call Cyclos");
 });
 

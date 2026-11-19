@@ -1,5 +1,6 @@
 // HTML of the merchants' area (/espace): pure functions, state in, text out. The entrance of the merchants: a login form,
-// then, once the account has been checked and allowed, two links (cash register notifications, statement).
+// then, once the account has been checked and allowed, two entries (cash register notifications: a POST form that looks like a
+// link, so that the cash register opens without a second login; statement: a link).
 //
 // Same rules as the cash register page: no inline script, no inline style (the CSP forbids them), every value that is not a
 // constant goes through escapeHtml. The helpers of server.js are given by the caller (importing server.js from here would be a
@@ -31,15 +32,22 @@ export function renderEspaceHome({ csrfToken, releveUrl = null }, { htmlPage, es
   const releve = releveUrl
     ? `<li><a class="espace-lien" href="${escapeHtml(releveUrl)}">Relevé de transactions</a></li>`
     : `<li><span class="espace-lien espace-bientot">Relevé de transactions <span class="espace-bientot-texte">Bientôt disponible</span></span></li>`;
+  // The notifications open with the account already checked here; the statement is another site, with its own login.
+  const releveNote = releveUrl ? `<p class="espace-note">Le relevé de transactions vous demandera sa propre connexion.</p>` : "";
   return htmlPage(
     TITLE,
     `<h1>${TITLE}</h1>
   <p>Que souhaitez-vous faire ?</p>
   <ul class="espace-liens">
-    <li><a class="espace-lien" href="/caisse">Notifications de caisse</a></li>
+    <li>
+      <form class="espace-lien-form" method="post" action="/espace/caisse">
+        <input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}">
+        <button type="submit" class="espace-lien">Notifications de caisse</button>
+      </form>
+    </li>
     ${releve}
   </ul>
-  <p class="espace-note">Pour ouvrir les notifications de caisse, vous devrez vous connecter une seconde fois.</p>
+  ${releveNote}
   <form method="post" action="/espace/deconnexion">
     <input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}">
     <button type="submit">Se déconnecter</button>
