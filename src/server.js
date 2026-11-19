@@ -18,6 +18,8 @@ import { renderEspaceLogin, renderEspaceHome, REFUSED_TEXT } from "./espace-page
 import { renderCaisseData } from "./caisse-data.js";
 import { inExecutable, readAsset } from "./assets.js";
 import { escapeHtml, errorMessage, formatAmount } from "./format.js";
+import { readHistoryLimits } from "./releve-calcul.js";
+import { createReleveRoutes, DEFAULT_READ_TIMEOUT_MS, RELEVE_PATH } from "./releve-routes.js";
 
 
 // Cyclos API address. CYCLOS_BASE_URL overrides the public demo (default),
@@ -91,6 +93,11 @@ let LONG_PAUSE_MS = LOGIN_LONG_PAUSE_MS;
 const pageLogin = { inFlight: false, refusals: 0, lockedUntil: 0 };
 // Host header accepted when the login is typed on the page (null = not checked): only this machine's own names.
 let ALLOWED_HOSTS = null;
+const CSP_WITH_SCRIPT = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+const CSP_NO_SCRIPT = "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+// Statement (/espace/releve): lines read per page and in all, and the time allowed for one reading. Set by startServer().
+let HISTORY = readHistoryLimits({});
+let RELEVE_TIMEOUT_MS = DEFAULT_READ_TIMEOUT_MS;
 
 // Local session store: our session id (the cookie value) ->
 // { sessionToken, csrfToken, createdAt, lastSeenAt }.
@@ -800,6 +807,10 @@ async function handleEspace(req, res, pathname) {
     send(res, 404, "text/plain", "Page introuvable");
     return;
   }
+  if (pathname === RELEVE_PATH || pathname.startsWith(`${RELEVE_PATH}/`)) {
+    if (!(await RELEVE.handle(req, res, pathname))) send(res, 404, "text/plain", "Page introuvable");
+    return;
+  }
   const route = `${req.method} ${pathname}`;
   switch (route) {
     case "GET /espace": {
@@ -971,6 +982,24 @@ let clearCookie = cookieHeader("", 0);
 // What the cash register page needs from this file, given to caisse-page.js.
 const ESPACE_HELPERS = { escapeHtml, htmlPage, errorMessage };
 // `loginHref` is a function: the mode is known only once the server has started.
+// The statement of /espace/releve: its routes live in releve-routes.js, they only need these pieces of this file.
+const RELEVE = createReleveRoutes({
+  helpers: ESPACE_HELPERS,
+  send,
+  redirect,
+  readBody,
+  isSameOrigin,
+  isValidCsrf,
+  findSession: (req) => getSession(req, espaceSessions, ESPACE_COOKIE),
+  async endSession(found, res) {
+    espaceSessions.delete(found.id);
+    await closeSessionTokens(found.session);
+    redirect(res, "/espace", { "Set-Cookie": espaceCookie("", 0) });
+  },
+  push: () => CAISSE_RUNTIME.push,
+  limits: () => HISTORY,
+  readTimeoutMs: () => RELEVE_TIMEOUT_MS,
+});
 const CAISSE_HELPERS = { escapeHtml, formatAmount, htmlPage, errorMessage, logoutForm, stylesheetHref: STYLE_HREF, loginHref };
 
 // What /caisse and /caisse/data share: the session, the identity of the visitor, the registration check and the
@@ -1107,10 +1136,10 @@ const server = http.createServer(async (req, res) => {
 
   // Security headers, on every response. writeHead() later merges its own
   // headers with these.
-  res.setHeader(
-    "Content-Security-Policy",
-    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
-  );
+  // The cash register page runs scripts from this address; the pages of the statement have none, so they allow none (no script-src,
+  // no connect-src: the policy of the original statement tool).
+  const statementPage = pathname === RELEVE_PATH || pathname.startsWith(`${RELEVE_PATH}/`);
+  res.setHeader("Content-Security-Policy", statementPage ? CSP_NO_SCRIPT : CSP_WITH_SCRIPT);
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   // The login page posts to /connexion, whose Origin check needs a usable
@@ -1333,6 +1362,8 @@ export function startServer(options = {}) {
     CAISSE = Object.freeze({ ...CAISSE, tokenFor: listenerTokenFor, tokenRefused: listenerTokenRefused });
   }
   ALLOWED_HOSTS = null;
+  HISTORY = options.history ?? readHistoryLimits(process.env);
+  RELEVE_TIMEOUT_MS = options.releveTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
   BASE = baseUrl(options.cyclosBaseUrl ?? process.env.CYCLOS_BASE_URL);
   COOKIE_SECURE = options.cookieSecure ?? process.env.COOKIE_SECURE === "true";
   IDLE_MS = options.idleMs ?? envNumber("SESSION_IDLE_MINUTES", 20) * 60_000;

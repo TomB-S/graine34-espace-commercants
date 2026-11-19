@@ -42,6 +42,9 @@ export const VARIABLES_DU_PROGRAMME = [
   "CAISSE_ALLOWED_USERS",
   "CAISSE_TRUSTED_PROXY_HOPS",
   "ESPACE_RELEVE_URL",
+  // Statement of the area (releve-calcul.js, read by startServer)
+  "HISTORY_PAGE_SIZE",
+  "HISTORY_MAX_ROWS",
   // Single executable (launcher.js)
   "CAISSE_OPEN_NETWORK",
 ];
