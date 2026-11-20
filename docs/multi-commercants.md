@@ -59,9 +59,16 @@ Fermé par défaut : sans `MonComptePro`, ou si Cyclos refuse (403) la lecture d
 
 Un commerçant est autorisé si son numéro **ou** son e-mail est dans la liste. Les deux sortes peuvent être mélangées. Une liste vide ne restreint personne (c'est alors `MonComptePro` seul qui décide). Une identité illisible est toujours refusée.
 
-> **À COMPLÉTER : où trouver le numéro interne dans l'administration de Cyclos**
->
-> (Chemin dans les menus de l'administration, capture ou description à ajouter ici.)
+### Où trouver le numéro interne dans Cyclos
+
+1. Dans l'administration Cyclos (adresse `.../lagraine34/classic`), ouvrir **Utilisateurs**, puis la fiche du membre.
+2. Le numéro interne est le long nombre à la fin de l'adresse du navigateur, juste après `profile!id=`.
+
+Cette méthode a été vérifiée : pour le compte de test, le nombre lu dans l'adresse est identique à l'id renvoyé par l'API (`GET /users/self`).
+
+Attention : le champ « Identifiant » affiché dans la fiche (par exemple un numéro à 8 chiffres) est un autre numéro. Il ne marche pas dans `CAISSE_ALLOWED_USERS`.
+
+Rappel : la liste est facultative. Sans liste, tout membre avec un compte `MonComptePro` est accepté. La liste sert seulement à restreindre.
 
 ### Après un changement de liste : redémarrer
 
