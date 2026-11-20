@@ -362,3 +362,25 @@ appTest("connexion unique : GET /espace/caisse n'ouvre rien", options(), async (
   assert.equal(res.headers.get("location"), "/espace");
   assert.equal(app.server.inspectSessions().length, 0);
 });
+
+// Intention: the button towards the cash register looks at the account again: the list is empty here, and when the member no longer has
+// a MonComptePro account (accounts changed after the login of the area) the answer is 403 and no session of /caisse is opened; when
+// Cyclos fails on the accounts, the answer is the neutral 502.
+appTest("connexion unique : bouton vers la caisse, MonComptePro revérifié (liste vide)", options({ caisse: { allowedUsers: { ids: [], emails: [] } } }), async (app) => {
+  seed(app);
+  const b = browser(app);
+  assert.equal((await b.enter()).status, 303);
+  app.cyclos.state.accountsBody = [{ type: { internalName: "monCompte" } }, { type: { internalName: "compteurBonus" } }];
+  let res = await b.toCaisse();
+  assert.equal(res.status, 403);
+  assert.match(await res.text(), /Ce compte n'est pas autorisé à ouvrir la caisse/);
+  assert.equal(b.jar.get("session") ?? "", "", "no session of /caisse");
+  assert.ok(app.logs.some((l) => l.endsWith("compte refusé (pas de compte MonComptePro), numéro interne Cyclos : u-marie")));
+  app.cyclos.state.accountsBody = undefined;
+  app.cyclos.force("GET /self/accounts", 500);
+  res = await b.toCaisse();
+  assert.equal(res.status, 502);
+  assert.match(await res.text(), /Cyclos ne répond pas/);
+  app.cyclos.state.forced.delete("GET /self/accounts");
+  assert.equal((await b.toCaisse()).status, 303);
+});

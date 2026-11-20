@@ -27,8 +27,8 @@ const options = (allowed = { ids: ["u-marie", "u-paul"], emails: [] }, more = {}
   ...more,
 });
 
-function seed(app) {
-  for (const w of Object.values(WHO)) app.cyclos.addUser(w.login, w.password, { id: w.id, email: w.email, entries: [] });
+function seed(app, profiles = {}) {
+  for (const w of Object.values(WHO)) app.cyclos.addUser(w.login, w.password, { id: w.id, email: w.email, entries: [], ...(profiles[w.login] ? { profile: profiles[w.login] } : {}) });
   app.cyclos.state.push.lifetimeMs = null;
 }
 
@@ -147,16 +147,56 @@ appTest("espace : compte hors liste, mauvais mot de passe, inconnu : même répo
   assert.ok(!everything(app).includes(WHO.zoe.password));
 });
 
-// Intention: an empty list refuses everybody, with the same message.
-appTest("espace : liste vide, personne n'entre", options({ ids: [], emails: [] }), async (app) => {
+// Intention: an empty list does not restrict: a merchant (MonComptePro) enters, a private member (monCompte + compteurBonus) gets the
+// same refusal as a wrong password.
+appTest("espace : liste vide, le commerçant entre, le particulier est refusé", options({ ids: [], emails: [] }), async (app) => {
+  seed(app, { zoe: "particulier" });
+  const b = browser(app);
+  assert.equal((await b.enter(WHO.marie)).status, 303);
+  const c = browser(app);
+  const res = await c.enter(WHO.zoe);
+  assert.equal(res.status, 401);
+  assert.ok((await res.text()).includes(REFUSED));
+  assert.equal(app.server.inspectEspaceSessions().length, 1);
+  assert.ok(app.logs.some((l) => l.endsWith("compte refusé (pas de compte MonComptePro), numéro interne Cyclos : u-zoe")));
+});
+
+// Intention: list filled = on the list AND MonComptePro; a "Billets" account alone is not enough.
+appTest("espace : liste remplie, la liste restreint et ne remplace pas MonComptePro", options({ ids: ["u-marie", "u-zoe"], emails: [] }), async (app) => {
+  seed(app, { zoe: "particulier", paul: "commercant-billets" });
+  assert.equal((await browser(app).enter(WHO.marie)).status, 303, "on the list, merchant");
+  assert.equal((await browser(app).enter(WHO.paul)).status, 401, "merchant (with Billets) off the list");
+  assert.ok(app.logs.some((l) => l.endsWith("compte refusé (absent de CAISSE_ALLOWED_USERS), numéro interne Cyclos : u-paul")));
+  assert.equal((await browser(app).enter(WHO.zoe)).status, 401, "private member on the list");
+});
+
+appTest("espace : un compte Billets seul est refusé", options({ ids: [], emails: [] }), async (app) => {
+  seed(app, { marie: "billets-seul" });
+  assert.equal((await browser(app).enter(WHO.marie)).status, 401);
+  assert.equal((await browser(app).enter(WHO.paul)).status, 303);
+});
+
+// Intention: Cyclos failing on /self/accounts: neutral 502 "Cyclos ne répond pas", token closed, no session. A 403 gives the
+// usual refusal and is not counted by the brake.
+appTest("espace : erreur de Cyclos sur /self/accounts -> 502 neutre ; 403 -> refus uniforme non compté", options({ ids: [], emails: [] }), async (app) => {
   seed(app);
   const b = browser(app);
-  for (const who of Object.values(WHO)) {
-    const res = await b.enter(who);
-    assert.equal(res.status, 401, who.login);
+  app.cyclos.force("GET /self/accounts", 500);
+  let res = await b.enter(WHO.marie);
+  assert.equal(res.status, 502);
+  const html = await res.text();
+  assert.match(html, /Cyclos ne répond pas/);
+  assert.ok(!html.includes("MonComptePro"));
+  assert.equal(app.server.inspectEspaceSessions().length, 0);
+  await until(() => app.cyclos.state.deleted.length === 1, "token closed");
+  app.cyclos.force("GET /self/accounts", 403);
+  for (let i = 0; i < 6; i += 1) {
+    res = await b.enter(WHO.marie);
+    assert.equal(res.status, 401, `try ${i + 1}`);
     assert.ok((await res.text()).includes(REFUSED));
   }
-  assert.equal(app.server.inspectEspaceSessions().length, 0);
+  app.cyclos.state.forced.delete("GET /self/accounts");
+  assert.equal((await b.enter(WHO.marie)).status, 303);
 });
 
 // Intention: logout closes the Cyclos token and the local session; it needs the CSRF token of the area's session.

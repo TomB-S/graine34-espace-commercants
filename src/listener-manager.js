@@ -171,16 +171,23 @@ export function createListenerManager({
       return identity.id;
     },
 
+    // Multi mode: true when CAISSE_ALLOWED_USERS has entries (the list then restricts); false = no restriction by list.
+    get listRestricts() {
+      return multi && allowed.size > 0;
+    },
+
     // Is this visitor the registered merchant? `visitorId`: his Cyclos user id, or null when unreadable.
     // Returns { ok: true, merchantKey } | { ok: false, status: 403 | 503 }.
     // Multi-merchant mode: `visitorId` is { id, email } (a plain id is taken as { id }); allowed if the whitelist lists the
     // number or the e-mail address, and the key is then the visitor's own number. A refusal is logged with the number only.
-    async authorize(visitorId) {
+    // `open` (multi mode only): the list does not restrict (it is empty), so only the identity is checked here; the caller then
+    // requires the professional account.
+    async authorize(visitorId, { open = false } = {}) {
       if (closed) return { ok: false, status: 503 };
       if (multi) {
         const visitor = typeof visitorId === "string" ? { id: visitorId } : (visitorId ?? {});
         if (typeof visitor.id !== "string" || !MERCHANT_ID.test(visitor.id)) return { ok: false, status: 403 };
-        if (!allowed.isAllowed(visitor)) {
+        if (!open && !allowed.isAllowed(visitor)) {
           log.error(refusedAccountLine(visitor.id));
           return { ok: false, status: 403 };
         }

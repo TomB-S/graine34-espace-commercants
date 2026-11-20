@@ -37,7 +37,9 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 // The account that receives the payments, by order of preference (type.internalName). Among the accounts of GET /self/accounts the
 // first name of this list that is found wins, whatever the order Cyclos answers in; if none is found, the first account of the list.
 // To change the rule, change this list.
-export const PREFERRED_ACCOUNT_TYPES = ["MonComptePro", "monCompte"];
+// The type of a professional account is also what decides who may use the multi-merchant mode (see hasProAccount).
+export const PRO_ACCOUNT_TYPE = "MonComptePro";
+export const PREFERRED_ACCOUNT_TYPES = [PRO_ACCOUNT_TYPE, "monCompte"];
 
 export function createCyclosPush({ baseUrl, channel = "", fetchImpl = globalThis.fetch, requestTimeoutMs = DEFAULT_TIMEOUT_MS }) {
   const channelHeader = channel ? { Channel: channel } : {};
@@ -165,6 +167,13 @@ export function createCyclosPush({ baseUrl, channel = "", fetchImpl = globalThis
       const id = typeof body?.id === "string" && PLAIN_ID.test(body.id) ? body.id : null;
       const email = typeof body?.email === "string" && body.email.length <= 254 && /^[^\s@,]+@[^\s@,]+$/.test(body.email.trim()) ? body.email.trim() : null;
       return { id, email };
+    },
+
+    // Does this member own an account whose type is exactly PRO_ACCOUNT_TYPE? Exact comparison on type.internalName (never on the
+    // displayed name: "Mon Compte Pro Billets" is another type). Any error of Cyclos is thrown to the caller, which refuses.
+    async hasProAccount(token, signal) {
+      const accounts = await getJson("/self/accounts", token, "hasProAccount", signal);
+      return Array.isArray(accounts) && accounts.some((account) => account?.type?.internalName === PRO_ACCOUNT_TYPE);
     },
 
     // Account to read: see PREFERRED_ACCOUNT_TYPES (then the first of GET /self/accounts when none of them is there).

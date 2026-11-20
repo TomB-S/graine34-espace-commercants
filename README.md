@@ -295,21 +295,23 @@ jamais afficher sa valeur). Quand la page est désactivée, les autres variables
 
 Page d'entrée `/espace`, pour le mode multi-commerçants (`CAISSE_ENABLED=true` et `CAISSE_MULTI_MERCHANT=true`, voir
 `docs/multi-commercants.md`). Le commerçant s'y connecte avec son compte Cyclos (canal `CYCLOS_CHANNEL`, `main` en production) ;
-**seulement s'il figure dans `CAISSE_ALLOWED_USERS`**, il voit deux entrées : « Notifications de caisse » (un bouton qui ouvre `/caisse`
+**seulement s'il possède un compte de type interne `MonComptePro`** (et, si `CAISSE_ALLOWED_USERS` est remplie, s'il figure aussi dans cette liste), il voit deux entrées : « Notifications de caisse » (un bouton qui ouvre `/caisse`
 sans nouvelle saisie du mot de passe) et « Relevé de transactions » (un lien vers `/espace/releve`, qui
 utilise la même session : une seule connexion pour l'espace, la caisse et le relevé).
 
 | Adresse | Rôle |
 | --- | --- |
 | `GET /espace` | Sans session : le formulaire. Avec une session valide : la page des deux entrées |
-| `POST /espace/connexion` | Vérifie le compte auprès de Cyclos et la liste blanche ; ne garde que le jeton de session |
+| `POST /espace/connexion` | Vérifie le compte auprès de Cyclos : présence d'un compte `MonComptePro`, puis la liste si elle est remplie ; ne garde que le jeton de session |
 | `POST /espace/caisse` | Origine du site et jeton CSRF exigés, session de l'espace valide : ouvre la session de `/caisse` à partir du jeton Cyclos déjà obtenu, puis redirige vers `/caisse` |
 | `POST /espace/deconnexion` | Ferme la session chez Cyclos et sur le serveur (jeton CSRF exigé) |
 
-- Un mauvais mot de passe, un compte valide mais absent de la liste et une liste vide donnent **la même réponse** (401) et le même
-  message, « Identifiants incorrects ou accès non autorisé. », pour ne pas révéler qui est sur la liste.
+- Un mauvais mot de passe, un compte valide sans `MonComptePro` et un compte valide absent de la liste (quand elle est remplie)
+  donnent **la même réponse** (401) et le même message, « Identifiants incorrects ou accès non autorisé. », pour ne pas révéler
+  qui est accepté. Si Cyclos ne répond pas pendant la lecture des comptes, la réponse est « Cyclos ne répond pas » (502), qui ne dit
+  rien du membre ; un 403 de Cyclos sur cette lecture donne le refus habituel. Ces deux cas ne comptent pas comme un échec du membre dans le frein de connexion (5 échecs en 15 minutes par adresse).
 - Le bouton « Notifications de caisse » est un formulaire (méthode POST, jeton CSRF, vérification d'origine), sans JavaScript.
-  Le serveur vérifie de nouveau, auprès de Cyclos, que le jeton fonctionne encore et que le compte figure toujours dans la liste,
+  Le serveur vérifie de nouveau, auprès de Cyclos, que le jeton fonctionne encore et que le compte a toujours un compte `MonComptePro` (et figure toujours dans la liste, si elle est remplie),
   puis crée la session de `/caisse` (autre cookie `session`, autre jeton CSRF) à partir du jeton de l'espace. Le mot de passe n'existe
   plus à ce stade : il n'est jamais conservé. Si le jeton n'est plus valable chez Cyclos, la session de l'espace se termine et le
   commerçant se connecte de nouveau. La connexion directe par `/connexion` (identifiant et mot de passe) fonctionne comme avant.

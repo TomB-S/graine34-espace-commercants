@@ -171,19 +171,19 @@ appTest("pdf : sans session, origine étrangère, CSRF faux, dates invalides -> 
     assert.match(html, /<h1>Choisir la plage horaire<\/h1>/);
     assert.ok(!html.includes('"><b>'));
   }
-  assert.equal(app.cyclos.calls("GET", "/self/accounts").length, 0);
+  assert.equal(app.cyclos.calls("GET", "/self/accounts").length, 1);
 });
 
 // Intention: a Cyclos failure at the time of the PDF is answered as a page, never as a "fake PDF" or a half-sent PDF.
 appTest("pdf : Cyclos en panne -> 502 en page, aucun PDF ; 401 -> session fermée ; 403 -> refus", options(), async (app) => {
   const { b, csrf } = await connected(app, history(3));
   assert.equal((await pdf(b, { csrf, ...RANGE })).status, 200);
-  app.cyclos.force("GET /self/accounts/membre", 500);
+  app.cyclos.force("GET /self/accounts/MonComptePro", 500);
   const failed = await pdf(b, { csrf, ...RANGE });
   assert.equal(failed.status, 502);
   assert.match(failed.headers.get("content-type"), /^text\/html/);
   assert.equal(failed.headers.get("content-disposition"), null);
-  app.cyclos.state.forced.delete("GET /self/accounts/membre");
+  app.cyclos.state.forced.delete("GET /self/accounts/MonComptePro");
   app.cyclos.force("GET /self/accounts", 403);
   assert.equal((await pdf(b, { csrf, ...RANGE })).status, 403);
   app.cyclos.state.forced.delete("GET /self/accounts");
@@ -204,14 +204,14 @@ appTest("pdf : un accès en GET renvoie aux filtres", options(), async (app) => 
 // Intention: the ticket and the PDF share the one-reading-at-a-time rule of the session.
 appTest("pdf : refusé (429) pendant qu'une lecture du ticket est en cours pour la même session", options({ releveTimeoutMs: 600 }), async (app) => {
   const { b, csrf } = await connected(app, history(3));
-  app.cyclos.force("GET /self/accounts/membre/history", "hang");
+  app.cyclos.force("GET /self/accounts/MonComptePro/history", "hang");
   const first = b.ticket({ csrf, ...RANGE });
   await until(() => historyCalls(app).length === 1, "lecture en cours");
   const second = await pdf(b, { csrf, ...RANGE });
   assert.equal(second.status, 429);
   assert.match(second.headers.get("content-type"), /^text\/html/);
   assert.equal((await first).status, 502);
-  app.cyclos.state.forced.delete("GET /self/accounts/membre/history");
+  app.cyclos.state.forced.delete("GET /self/accounts/MonComptePro/history");
   assert.equal((await pdf(b, { csrf, ...RANGE })).status, 200, "garde libérée");
 });
 

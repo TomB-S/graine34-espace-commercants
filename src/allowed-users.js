@@ -30,3 +30,10 @@ export function refusedAccountLine(id) {
   const shown = typeof id === "string" && PLAIN_ID.test(id) ? id : "illisible";
   return `compte refusé (absent de CAISSE_ALLOWED_USERS), numéro interne Cyclos : ${shown}`;
 }
+
+// The other reason of refusal in the multi-merchant mode: the member has no account of type MonComptePro (or Cyclos forbids the
+// reading of his accounts). Same rule: the internal number only.
+export function refusedNoProAccountLine(id, reason = "pas de compte MonComptePro") {
+  const shown = typeof id === "string" && PLAIN_ID.test(id) ? id : "illisible";
+  return `compte refusé (${reason}), numéro interne Cyclos : ${shown}`;
+}

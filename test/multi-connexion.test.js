@@ -27,10 +27,11 @@ const multi = (allowed = { ids: ["u-marie", "u-paul"], emails: [] }, more = {}) 
 });
 
 // The three merchants exist at Cyclos, each with one payment of his own. Returns nothing.
-function seed(app, { emailOf = true } = {}) {
+function seed(app, { emailOf = true, profiles = {} } = {}) {
   for (const w of Object.values(WHO)) {
     app.cyclos.addUser(w.login, w.password, {
       id: w.id,
+      ...(profiles[w.login] ? { profile: profiles[w.login] } : {}),
       display: w.client,
       ...(emailOf ? { email: w.email } : {}),
       entries: [entry(Number(w.amount), { amount: w.amount, description: `Achat de ${w.login}`, who: w.client })],
@@ -127,12 +128,78 @@ appTest("multi : compte hors liste blanche, refus clair 403, rien d'ouvert", mul
   assert.equal((await app.request("/caisse")).status, 303, "no session: back to the form");
 });
 
-// Intention: an empty list refuses everybody.
-appTest("multi : liste vide, personne n'entre", multi({ ids: [], emails: [] }), async (app) => {
+// Intention: an empty list does not restrict: the professional account (MonComptePro) decides. A private member (monCompte +
+// compteurBonus) is refused with the usual page, a merchant is accepted; the log says why, with the number only.
+appTest("multi : liste vide, le commerçant entre, le particulier est refusé (pas de MonComptePro)", multi({ ids: [], emails: [] }), async (app) => {
+  seed(app, { profiles: { zoe: "particulier" } });
+  const b = browsers(app);
+  assert.equal((await b.login("marie")).status, 303);
+  assert.equal((await b.login("paul")).status, 303);
+  const res = await b.login("zoe");
+  assert.equal(res.status, 403);
+  assert.match(await res.text(), /Ce compte n'est pas autorisé à ouvrir la caisse/);
+  assert.equal(res.headers.get("set-cookie"), null);
+  assert.equal(app.server.inspectSessions().length, 2);
+  assert.ok(app.logs.some((l) => l.endsWith("compte refusé (pas de compte MonComptePro), numéro interne Cyclos : u-zoe")));
+  await until(() => app.cyclos.state.deleted.length === 1, "token of the refused account closed");
+  assert.ok(!everything(app).includes(WHO.zoe.password));
+  assert.ok(!everything(app).includes("zoe@exemple.test"));
+});
+
+// Intention: the list only restricts, it never widens: a merchant on the list gets in, a merchant off the list is refused (list
+// reason in the log), a private member who IS on the list is refused too (no MonComptePro).
+appTest("multi : liste remplie, il faut être dans la liste ET avoir MonComptePro", multi({ ids: ["u-marie", "u-zoe"], emails: [] }), async (app) => {
+  seed(app, { profiles: { zoe: "particulier" } });
+  const b = browsers(app);
+  assert.equal((await b.login("marie")).status, 303, "merchant on the list");
+  assert.equal((await b.login("paul")).status, 403, "merchant off the list");
+  assert.ok(app.logs.some((l) => l.endsWith("compte refusé (absent de CAISSE_ALLOWED_USERS), numéro interne Cyclos : u-paul")));
+  assert.equal((await b.login("zoe")).status, 403, "private member on the list");
+  assert.ok(app.logs.some((l) => l.endsWith("compte refusé (pas de compte MonComptePro), numéro interne Cyclos : u-zoe")));
+});
+
+// Intention: the type is compared exactly: a merchant who also has the "Billets" account is accepted, an account of the "Billets"
+// type alone is not a MonComptePro.
+appTest("multi : un compte Billets seul ne suffit pas, MonComptePro + Billets passe", multi({ ids: [], emails: [] }), async (app) => {
+  seed(app, { profiles: { marie: "commercant-billets", paul: "billets-seul" } });
+  const b = browsers(app);
+  assert.equal((await b.login("marie")).status, 303);
+  assert.equal((await b.login("paul")).status, 403);
+});
+
+// Intention: when Cyclos fails while the accounts are read, the answer is the neutral "Cyclos ne répond pas" (502), nothing is
+// opened, the token is closed, and the member is not counted as a failure (the next try, Cyclos being back, works).
+appTest("multi : erreur de Cyclos sur /self/accounts, refus neutre sans compter d'échec", multi({ ids: [], emails: [] }), async (app) => {
   seed(app);
   const b = browsers(app);
-  for (const name of ["marie", "paul", "zoe"]) assert.equal((await b.login(name)).status, 403, name);
+  app.cyclos.force("GET /self/accounts", 500);
+  const res = await b.login("marie");
+  assert.equal(res.status, 502);
+  const html = await res.text();
+  assert.match(html, /Cyclos ne répond pas/);
+  assert.ok(!html.includes("MonComptePro") && !html.includes("u-marie"));
+  assert.equal(res.headers.get("set-cookie"), null);
+  assert.equal(sessionLogins(app).length, 1, "no listening token");
+  await until(() => app.cyclos.state.deleted.length === 1, "token closed");
   assert.equal(app.server.inspectSessions().length, 0);
+  app.cyclos.state.forced.delete("GET /self/accounts");
+  assert.equal((await b.login("marie")).status, 303);
+});
+
+// Intention: a 403 on the reading of the accounts refuses with the usual page, does not count against the member (six tries are
+// not stopped by the brake of five), and the log says so with the number only.
+appTest("multi : 403 de Cyclos sur /self/accounts, refus uniforme, pas compté par le frein", multi({ ids: [], emails: [] }), async (app) => {
+  seed(app);
+  const b = browsers(app);
+  app.cyclos.force("GET /self/accounts", 403);
+  for (let i = 0; i < 6; i += 1) {
+    const res = await b.login("marie");
+    assert.equal(res.status, 403, `try ${i + 1}`);
+    assert.match(await res.text(), /Ce compte n'est pas autorisé à ouvrir la caisse/);
+  }
+  assert.ok(app.logs.some((l) => l.endsWith("compte refusé (lecture des comptes interdite par Cyclos), numéro interne Cyclos : u-marie")));
+  app.cyclos.state.forced.delete("GET /self/accounts");
+  assert.equal((await b.login("marie")).status, 303);
 });
 
 // Intention: a refused account is not an invitation to try again in a loop: nothing retries by itself, and repeated attempts of the

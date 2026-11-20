@@ -76,5 +76,5 @@ export const rowsOf = (html) => [...html.matchAll(/<li class="ligne">([\s\S]*?)<
 export const numbersOf = (html) => [...html.matchAll(/<span class="numero">(.*?)<\/span>/g)].map((m) => m[1]);
 export const amountsOf = (html) => [...html.matchAll(/<span class="montant">(.*?)<\/span>/g)].map((m) => m[1]);
 export const cents = (text) => Math.round(Number(text.replaceAll(NNBSP, "").replace(",", ".")) * 100);
-export const historyCalls = (app) => app.cyclos.calls("GET", "/self/accounts/membre/history");
+export const historyCalls = (app) => app.cyclos.calls("GET", "/self/accounts/MonComptePro/history");
 

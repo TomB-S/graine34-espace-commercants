@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { DateTime } from "luxon";
 import { appTest } from "./support/harness.js";
 import { startFakeCyclos, USER, entry } from "./support/fake-cyclos.js";
-import { createCyclosPush, PREFERRED_ACCOUNT_TYPES } from "../src/cyclos-push.js";
+import { createCyclosPush, PREFERRED_ACCOUNT_TYPES, PRO_ACCOUNT_TYPE, PushForbiddenError, PushUnavailableError } from "../src/cyclos-push.js";
 import { readCaisseConfig } from "../src/caisse-config.js";
 import { createTicketStore } from "../src/ticket-store.js";
 import { createPaymentProcessor } from "../src/payment-processor.js";
@@ -43,6 +43,31 @@ async function withPush(accountsBody, fn) {
 
 test("compte recevant : la liste d'ordre de préférence est MonComptePro puis monCompte", () => {
   assert.deepEqual(PREFERRED_ACCOUNT_TYPES, ["MonComptePro", "monCompte"]);
+});
+
+// Intention: hasProAccount (door of the multi-merchant mode) compares type.internalName exactly with PRO_ACCOUNT_TYPE, which is the
+// first of the preference list (one single string); errors of Cyclos are thrown, never turned into "no account".
+test("compte pro : hasProAccount, comparaison exacte sur le type interne, erreurs relancées", async () => {
+  assert.equal(PRO_ACCOUNT_TYPE, "MonComptePro");
+  assert.equal(PREFERRED_ACCOUNT_TYPES[0], PRO_ACCOUNT_TYPE);
+  const cases = [
+    [list("monCompte", "compteurBonus"), false],
+    [list("MonComptePro", "MonCompteProBillets"), true],
+    [list("MonCompteProBillets"), false],
+    [list("moncomptepro"), false],
+    [[{ type: { internalName: "x", name: "MonComptePro" } }], false],
+    [[], false],
+    [{ not: "a list" }, false],
+  ];
+  for (const [body, expected] of cases) {
+    await withPush(body, async ({ push, token }) => assert.equal(await push.hasProAccount(token), expected, JSON.stringify(body)));
+  }
+  await withPush(list("MonComptePro"), async ({ push, cyclos, token }) => {
+    cyclos.force("GET /self/accounts", 403);
+    await assert.rejects(() => push.hasProAccount(token), PushForbiddenError);
+    cyclos.force("GET /self/accounts", 500);
+    await assert.rejects(() => push.hasProAccount(token), PushUnavailableError);
+  });
 });
 
 // Intention: [compteurBonus, monCompte] -> monCompte, even though compteurBonus comes first.
