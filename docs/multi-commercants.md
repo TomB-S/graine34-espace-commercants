@@ -8,7 +8,7 @@ Les valeurs données en exemple sont inventées.
 
 - Désactivé par défaut. Sans `CAISSE_MULTI_MERCHANT=true`, rien ne change : un seul compte d'écoute, comme avant.
 - Le commerçant se connecte sur la page d'accueil avec son identifiant et son mot de passe Cyclos. Le serveur ne garde **jamais** le mot de passe : il sert à deux demandes à Cyclos (un jeton pour la page, un jeton pour l'écoute), puis il est oublié. Il n'est ni écrit dans un fichier, ni dans le journal, ni renvoyé dans une page.
-- Seuls les comptes de la **liste blanche** peuvent ouvrir la caisse. Les simples clients sont refusés.
+- Peut ouvrir la caisse tout membre qui possède un compte dont le type interne est exactement **`MonComptePro`** (les commerçants). Les particuliers, qui n'ont que `monCompte` et `compteurBonus`, sont refusés. La liste `CAISSE_ALLOWED_USERS` est **facultative** : si elle est remplie, elle restreint (il faut y figurer ET avoir `MonComptePro`), elle n'élargit jamais.
 - Chaque commerçant a sa propre écoute : il ne voit jamais les paiements, le bilan d'hier ou l'état d'un autre.
 - L'**exécutable** (version à lancer sur un poste) reste mono-commerçant. Ce mode n'y existe pas : le réglage est ignoré et le démarrage l'indique (« Mode multi-commerçants ignoré : l'exécutable reste mono-commerçant »).
 - Le canal Cyclos reste `main`. Le démarrage affiche toujours « Canal Cyclos : main ».
@@ -19,7 +19,7 @@ Les valeurs données en exemple sont inventées.
 |---|---|---|
 | `CAISSE_ENABLED` | Active la page caisse (comme avant) | `false` |
 | `CAISSE_MULTI_MERCHANT` | Active le mode multi-commerçants | `false` |
-| `CAISSE_ALLOWED_USERS` | Liste blanche (voir plus bas) | vide, donc **personne** |
+| `CAISSE_ALLOWED_USERS` | Liste facultative qui restreint (voir plus bas) | vide, donc tout membre avec `MonComptePro` |
 | `CAISSE_TRUSTED_PROXY_HOPS` | Nombre de relais de confiance devant le serveur (voir plus bas) | `0` |
 | `CAISSE_MAX_LISTENERS` | Nombre maximal de commerçants écoutés en même temps (1 à 200) | `30` dans ce mode |
 
@@ -38,14 +38,26 @@ CYCLOS_CHANNEL=main
 
 Aucun mot de passe n'a sa place dans ce fichier.
 
-## La liste blanche : qui peut ouvrir la caisse
+## La règle d'accès : MonComptePro, et la liste si elle existe
+
+Après une connexion Cyclos réussie, le serveur lit les comptes du membre (`GET /self/accounts`, canal `main`) et cherche un compte dont le **type interne** (`type.internalName`) est exactement `MonComptePro`. La comparaison porte sur ce type interne, jamais sur le nom affiché : le compte « Mon Compte Pro Billets » est d'un autre type et ne compte pas. Le groupe Cyclos n'est pas utilisé (un compte membre n'a pas le droit de le lire).
+
+| `CAISSE_ALLOWED_USERS` | Membre avec `MonComptePro` | Membre sans `MonComptePro` |
+|---|---|---|
+| vide | accepté | refusé |
+| remplie, membre dans la liste | accepté | refusé |
+| remplie, membre hors liste | refusé | refusé |
+
+Fermé par défaut : sans `MonComptePro`, ou si Cyclos refuse (403) la lecture des comptes, le membre reçoit le refus habituel. Si Cyclos est en panne ou injoignable pendant cette lecture, il reçoit « Cyclos ne répond pas, réessayez dans un moment » (502), qui ne dit rien de lui. Dans tous les cas la session Cyclos ouverte pour le contrôle est fermée. Un 403 ou une panne ne comptent pas comme un échec du membre dans le frein de connexion. La règle est la même pour `/caisse`, `/espace` et le bouton « Notifications de caisse » de l'espace. Elle ne change rien sans `CAISSE_MULTI_MERCHANT=true` et dans les exécutables mono-commerçant.
+
+### La liste facultative
 
 `CAISSE_ALLOWED_USERS` est une liste séparée par des virgules. Pour chaque commerçant, au choix :
 
 - son **numéro interne Cyclos** (voie principale) : par exemple `1234567890123456789`. Ces numéros ont 19 chiffres. Ils sont toujours traités comme du **texte**, jamais comme un nombre, donc deux numéros qui ne diffèrent que par les derniers chiffres ne sont jamais confondus ;
 - ou son **adresse e-mail** : par exemple `marie@exemple.test`. La comparaison ignore les majuscules et les espaces autour. Cette voie dépend de ce que Cyclos renvoie pour le profil : si l'adresse n'est pas fournie, seul le numéro interne compte.
 
-Un commerçant est autorisé si son numéro **ou** son e-mail est dans la liste. Les deux sortes peuvent être mélangées. Une liste vide, ou une identité illisible, refuse tout le monde.
+Un commerçant est autorisé si son numéro **ou** son e-mail est dans la liste. Les deux sortes peuvent être mélangées. Une liste vide ne restreint personne (c'est alors `MonComptePro` seul qui décide). Une identité illisible est toujours refusée.
 
 > **À COMPLÉTER : où trouver le numéro interne dans l'administration de Cyclos**
 >
@@ -65,13 +77,15 @@ Sans redémarrage, l'ancienne liste reste en vigueur. Un commerçant déjà conn
 
 ### Un compte refusé
 
-Quand un compte ne figure pas dans la liste, il voit « Ce compte n'est pas autorisé à ouvrir la caisse » (erreur 403) et le journal du serveur écrit :
+Quand un compte est refusé (absent de la liste, ou sans compte `MonComptePro`), il voit « Ce compte n'est pas autorisé à ouvrir la caisse » (erreur 403) et le journal du serveur écrit :
 
 ```
 Caisse : compte refusé (absent de CAISSE_ALLOWED_USERS), numéro interne Cyclos : 1234567890123456789
+Caisse : compte refusé (pas de compte MonComptePro), numéro interne Cyclos : 1234567890123456789
+Caisse : compte refusé (lecture des comptes interdite par Cyclos), numéro interne Cyclos : 1234567890123456789
 ```
 
-Pour autoriser ce commerçant : copier le numéro dans `CAISSE_ALLOWED_USERS`, puis redémarrer. Le journal ne donne que ce numéro (jamais l'e-mail, ni l'identifiant tapé, ni le mot de passe). Aucune écoute n'est ouverte pour un compte refusé, et il n'y a pas de nouvel essai automatique.
+Pour autoriser un commerçant refusé par la liste : copier le numéro dans `CAISSE_ALLOWED_USERS`, puis redémarrer (ou vider la liste). Un refus « pas de compte MonComptePro » ne se règle pas par la liste : le membre doit avoir ce type de compte dans Cyclos. Le journal ne donne que ce numéro (jamais l'e-mail, ni l'identifiant tapé, ni le mot de passe). Aucune écoute n'est ouverte pour un compte refusé, et il n'y a pas de nouvel essai automatique.
 
 ### L'adresse lue et `CAISSE_TRUSTED_PROXY_HOPS`
 
@@ -120,7 +134,7 @@ Une page d'entrée qui regroupe les outils du commerçant. Elle n'existe que dan
 Ce que voit le commerçant :
 
 1. `GET /espace` sans session : un formulaire (identifiant Cyclos, mot de passe).
-2. Il se connecte (`POST /espace/connexion`). Le serveur vérifie le compte auprès de Cyclos (canal `CYCLOS_CHANNEL`, `main`), lit son numéro interne et son e-mail, et contrôle `CAISSE_ALLOWED_USERS`. Le mot de passe sert à **un seul** appel à Cyclos (le jeton de session) puis il est oublié : jamais gardé, jamais écrit dans le journal.
+2. Il se connecte (`POST /espace/connexion`). Le serveur vérifie le compte auprès de Cyclos (canal `CYCLOS_CHANNEL`, `main`), lit son numéro interne et son e-mail, contrôle `CAISSE_ALLOWED_USERS` si elle est remplie, puis la présence d'un compte `MonComptePro`. Le mot de passe sert à **un seul** appel à Cyclos (le jeton de session) puis il est oublié : jamais gardé, jamais écrit dans le journal.
 3. Si le compte est autorisé : la page avec deux entrées, « Notifications de caisse » (un bouton, voir plus bas) et « Relevé de transactions » (un lien vers `/espace/releve`, même session, aucune seconde connexion).
 4. Le bouton « Notifications de caisse » envoie `POST /espace/caisse` : le commerçant arrive sur `/caisse` sans retaper son mot de passe.
 5. `POST /espace/deconnexion` ferme la session de l'espace (et le jeton chez Cyclos si plus rien ne l'utilise, voir plus bas).
@@ -129,7 +143,7 @@ Points à connaître :
 
 - **Même message dans tous les refus** : mauvais mot de passe, compte inconnu, compte valide mais absent de la liste, liste vide. La page répond 401 avec « Identifiants incorrects ou accès non autorisé. ». Le visiteur ne peut donc pas savoir qui est sur la liste. Le journal du serveur, lui, garde la ligne « compte refusé ... numéro interne Cyclos : ... » décrite plus haut, pour l'administrateur.
 - **L'adresse racine `/` mène à l'espace** : dans ce mode, ouvrir `/` (GET ou HEAD) redirige vers `/espace` (redirection temporaire 307, que le navigateur ne mémorise pas), y compris pour un commerçant déjà connecté à `/caisse`. Le formulaire de connexion de `/caisse` reste accessible sur `/connexion` ; les liens « Retour », la déconnexion de la caisse et le lien « Se reconnecter » y mènent. Sans ce mode, et dans l'exécutable, `/` reste le formulaire de connexion, comme avant.
-- **Du bouton à la caisse sans mot de passe** : `POST /espace/caisse` exige l'origine du site et le jeton CSRF de la session de l'espace (sans JavaScript : la politique de sécurité de la page l'interdit). Le serveur interroge de nouveau Cyclos avec le jeton de l'espace : si Cyclos le refuse, la session de l'espace se termine et le commerçant se reconnecte ; si le compte n'est plus dans `CAISSE_ALLOWED_USERS`, réponse 403. Sinon il crée la session de `/caisse` (cookie `session`, jeton CSRF propre) avec ce même jeton Cyclos, pour la page comme pour l'écoute, et redirige vers `/caisse`. Le mot de passe n'est jamais conservé : il a servi à un seul appel au moment de la connexion à l'espace. Si ce navigateur a déjà une session de caisse du même commerçant, elle est gardée telle quelle. La connexion à l'espace seule n'ouvre aucune écoute ; elle démarre à la première visite de `/caisse`.
+- **Du bouton à la caisse sans mot de passe** : `POST /espace/caisse` exige l'origine du site et le jeton CSRF de la session de l'espace (sans JavaScript : la politique de sécurité de la page l'interdit). Le serveur interroge de nouveau Cyclos avec le jeton de l'espace : si Cyclos le refuse, la session de l'espace se termine et le commerçant se reconnecte ; si le compte n'a plus de compte `MonComptePro` (ou n'est plus dans `CAISSE_ALLOWED_USERS`, quand elle est remplie), réponse 403. Sinon il crée la session de `/caisse` (cookie `session`, jeton CSRF propre) avec ce même jeton Cyclos, pour la page comme pour l'écoute, et redirige vers `/caisse`. Le mot de passe n'est jamais conservé : il a servi à un seul appel au moment de la connexion à l'espace. Si ce navigateur a déjà une session de caisse du même commerçant, elle est gardée telle quelle. La connexion à l'espace seule n'ouvre aucune écoute ; elle démarre à la première visite de `/caisse`.
 - **Le jeton Cyclos est partagé, il est fermé par la dernière session qui le détient.** Les cookies et les sessions locales restent séparés (`espace_session` limité à `/espace`, `session` pour la caisse), seul le jeton Cyclos est commun. Au moment où une session locale se termine (déconnexion, expiration, jeton refusé), le serveur regarde si une autre session locale détient encore ce jeton : si oui, il ne le ferme pas chez Cyclos ; sinon il le ferme. Conséquences :
   - déconnexion de la caisse : l'écoute s'arrête, la session de caisse se termine, **l'espace reste connecté** et le jeton reste ouvert pour lui ;
   - déconnexion de l'espace : la caisse **reste ouverte** (elle a sa propre session et sa propre durée), le jeton reste ouvert pour elle et se ferme avec elle ;

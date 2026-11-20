@@ -265,8 +265,8 @@ test("caisse multi : valeur invalide du drapeau refusée", () => {
   }
 });
 
-// Intention: the defaults of the multi-merchant mode: 30 listeners, no trusted relay, nobody allowed.
-test("caisse multi : valeurs par défaut (30 écouteurs, 0 relais, liste vide donc personne)", () => {
+// Intention: the defaults of the multi-merchant mode: 30 listeners, no trusted relay, an empty list (which does not restrict: the MonComptePro account decides).
+test("caisse multi : valeurs par défaut (30 écouteurs, 0 relais, liste vide, donc pas de restriction par la liste)", () => {
   const config = readCaisseConfig({ ...ENABLED, CAISSE_MULTI_MERCHANT: "true" });
   assert.equal(config.multiMerchant, true);
   assert.equal(config.maxListeners, 30);

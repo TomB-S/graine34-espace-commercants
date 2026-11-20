@@ -12,6 +12,7 @@ import { clientAddressOf } from "./client-address.js";
 import { createCyclosPush, PushAuthError, PushForbiddenError, PushUnavailableError } from "./cyclos-push.js";
 import { describeError } from "./cyclos-listener.js";
 import { createListenerManager } from "./listener-manager.js";
+import { refusedNoProAccountLine } from "./allowed-users.js";
 import { createLoginGuard } from "./login-guard.js";
 import { renderCaissePage, renderCaisseRefused } from "./caisse-page.js";
 import { renderEspaceLogin, renderEspaceHome, REFUSED_TEXT } from "./espace-page.js";
@@ -588,6 +589,29 @@ function loginAddress(req) {
   return reading.address;
 }
 
+// The single decision of the multi-merchant mode, used by the three doors (login of /caisse, login of /espace, button towards the
+// cash register). With a token of an open Cyclos session: 1. who he is; 2. when CAISSE_ALLOWED_USERS has entries he must be on it
+// (the list only restricts); 3. he must own an account of type MonComptePro. Returns { ok: true, merchantKey } or
+// { ok: false, countsAsFailure }: `countsAsFailure` is false when Cyclos forbids the reading of the accounts (not the member's doing).
+// An unreachable Cyclos is NOT caught here: PushUnavailableError (and PushAuthError) go to the caller, which answers "Cyclos ne répond pas".
+async function decideMerchantAccess(token) {
+  const { push, manager } = CAISSE_RUNTIME;
+  const identity = await push.getIdentity(token);
+  const decision = await manager.authorize(identity, { open: !manager.listRestricts });
+  if (!decision.ok) return { ok: false, countsAsFailure: true }; // refusal by the list (already logged) or unreadable identity
+  try {
+    if (!(await push.hasProAccount(token))) {
+      console.error(refusedNoProAccountLine(identity.id));
+      return { ok: false, countsAsFailure: true };
+    }
+  } catch (error) {
+    if (!(error instanceof PushForbiddenError)) throw error;
+    console.error(refusedNoProAccountLine(identity.id, "lecture des comptes interdite par Cyclos"));
+    return { ok: false, countsAsFailure: false };
+  }
+  return { ok: true, merchantKey: decision.merchantKey };
+}
+
 // POST /connexion in the multi-merchant mode. The merchant types HIS Cyclos login and password. The password is used for exactly
 // two calls to Cyclos (the page token, then the listening token) and then goes out of scope: it is never stored, logged or answered.
 //  1. the brakes (per identifier, per address, circuit breaker on Cyclos);
@@ -606,17 +630,17 @@ async function handleMultiLogin(req, res, address) {
     return;
   }
 
-  const { push, manager } = CAISSE_RUNTIME;
+  const { manager } = CAISSE_RUNTIME;
   let pageToken = null;
   let listenerToken = null;
   let merchantKey = null;
   try {
     pageToken = await createCyclosSession(login, password);
-    const identity = await push.getIdentity(pageToken);
-    const decision = await manager.authorize(identity);
+    const decision = await decideMerchantAccess(pageToken);
     if (!decision.ok) {
-      // Not on the whitelist (403), or the identity could not be read: no listening token is opened. The attempt counts like a refusal.
-      LOGIN_GUARD.recordRefusal(who);
+      // Not on the list, no MonComptePro account, or the identity could not be read: no listening token is opened. The attempt counts
+      // like a refusal, except when Cyclos forbade the reading of the accounts.
+      if (decision.countsAsFailure) LOGIN_GUARD.recordRefusal(who);
       await closeCyclosSession(pageToken);
       pageToken = null;
       send(res, 403, "text/html", renderCaisseNotAllowed());
@@ -678,16 +702,16 @@ async function handleEspaceLogin(req, res) {
     return;
   }
 
-  const { push, manager } = CAISSE_RUNTIME;
   let token = null;
   let merchantId = null;
   try {
     token = await createCyclosSession(login, password);
-    const decision = await manager.authorize(await push.getIdentity(token));
+    const decision = await decideMerchantAccess(token);
     if (decision.ok) merchantId = decision.merchantKey;
     if (!decision.ok) {
-      // Not on the list (or an empty list, or an identity that cannot be read): counted like a wrong password, token closed.
-      LOGIN_GUARD.recordRefusal(who);
+      // Not on the list, no MonComptePro account, or an identity that cannot be read: counted like a wrong password, token closed
+      // (not counted when Cyclos forbade the reading of the accounts).
+      if (decision.countsAsFailure) LOGIN_GUARD.recordRefusal(who);
       await closeCyclosSession(token);
       refused();
       return;
@@ -755,12 +779,11 @@ async function handleEspaceCaisse(req, res) {
     return;
   }
 
-  const { push, manager } = CAISSE_RUNTIME;
+  const { manager } = CAISSE_RUNTIME;
   const token = found.session.sessionToken;
   let merchantKey;
   try {
-    const identity = await push.getIdentity(token);
-    const decision = await manager.authorize(identity);
+    const decision = await decideMerchantAccess(token);
     if (!decision.ok || decision.merchantKey !== found.session.merchantId) {
       send(res, 403, "text/html", renderCaisseNotAllowed());
       return;
@@ -1053,7 +1076,8 @@ async function caisseVisit(req, res, fail, { wait = false } = {}) {
   // The login starts the listening: the first account that logged in is the registered merchant.
   if (LISTEN_ON_LOGIN && session.credentials) manager.bindIdentity(session.cyclosUserId);
 
-  const decision = await manager.authorize(session.cyclosUserId);
+  // Multi mode: the account was checked at the login (list and MonComptePro); an empty list does not restrict.
+  const decision = await manager.authorize(session.cyclosUserId, { open: !manager.listRestricts });
   if (!decision.ok) {
     fail(decision.status === 403 ? "denied" : "unavailable", session);
     return null;

@@ -32,7 +32,7 @@ appTest("relevé : une seule connexion (celle de l'espace), le jeton Cyclos de l
   assert.equal(res.status, 200);
   assert.equal(app.cyclos.calls("POST", "/auth/session").length, 1, "aucune seconde connexion à Cyclos");
   const token = [...app.cyclos.state.tokens][0];
-  for (const call of [...historyCalls(app), ...app.cyclos.calls("GET", "/self/accounts/membre")]) {
+  for (const call of [...historyCalls(app), ...app.cyclos.calls("GET", "/self/accounts/MonComptePro")]) {
     assert.equal(call.headers["session-token"], token);
     assert.equal(call.headers.channel, "main");
   }
@@ -64,7 +64,7 @@ appTest("relevé : filtres, préréglages, jeton CSRF de la session, lien de ret
   const hier = await (await b.request("/espace/releve?preset=hier")).text();
   assert.match(hier, /name="start" value="[\d-]+T00:00"/);
   assert.match(hier, /name="end" value="[\d-]+T23:59"/);
-  assert.equal(app.cyclos.calls("GET", "/self/accounts").length, 0, "afficher les filtres n'appelle pas Cyclos");
+  assert.equal(app.cyclos.calls("GET", "/self/accounts").length, 1, "afficher les filtres n'appelle pas Cyclos (seul reste l'appel de la connexion)");
 });
 
 // ------------------------------------------------------------------------------ the ticket
@@ -80,7 +80,7 @@ appTest("relevé : ticket cohérent avec les totaux sur plusieurs pages (450 lig
   const html = await res.text();
 
   assert.deepEqual(historyCalls(app).map((p) => [p.query.get("page"), p.query.get("pageSize")]), [["0", "200"], ["1", "200"], ["2", "200"]]);
-  for (const call of [...historyCalls(app), ...app.cyclos.calls("GET", "/self/accounts/membre")]) {
+  for (const call of [...historyCalls(app), ...app.cyclos.calls("GET", "/self/accounts/MonComptePro")]) {
     assert.deepEqual(call.query.getAll("datePeriod"), ["2026-01-09T23:00:00.000Z", "2026-01-10T22:59:59.999Z"]);
   }
   const numbers = numbersOf(html);
@@ -227,7 +227,7 @@ appTest("relevé : dates invalides -> 400 sur la page des filtres, valeurs saisi
     assert.match(html, /<h1>Choisir la plage horaire<\/h1>/);
     assert.ok(!html.includes('"><b>'), "saisie échappée");
   }
-  assert.equal(app.cyclos.calls("GET", "/self/accounts").length, 0);
+  assert.equal(app.cyclos.calls("GET", "/self/accounts").length, 1);
   const typed = await (await b.ticket({ csrf, start: "n'importe quoi", end: "2026-01-10T10:00" })).text();
   assert.ok(typed.includes('value="n\'importe quoi"'));
 });
@@ -238,7 +238,7 @@ appTest("relevé : fin dans le futur acceptée (ramenée à maintenant)", option
   const paris = (days) => DateTime.now().setZone("Europe/Paris").plus({ days }).toFormat("yyyy-MM-dd'T'HH:mm");
   const res = await b.ticket({ csrf, start: paris(-1), end: paris(1) });
   assert.equal(res.status, 200);
-  const [totals] = app.cyclos.calls("GET", "/self/accounts/membre");
+  const [totals] = app.cyclos.calls("GET", "/self/accounts/MonComptePro");
   const [, until] = totals.query.getAll("datePeriod");
   assert.ok(Date.parse(until) <= Date.now() && Date.now() - Date.parse(until) < 60_000, until);
 });
@@ -266,7 +266,7 @@ appTest("relevé : sans session, origine étrangère, jeton CSRF absent ou faux 
     assert.match(html, /Jeton de sécurité absent ou invalide/);
     assert.match(html, /<a href="\/espace\/releve">Retour aux filtres<\/a>/);
   }
-  assert.equal(app.cyclos.calls("GET", "/self/accounts").length, 0);
+  assert.equal(app.cyclos.calls("GET", "/self/accounts").length, 1);
   assert.equal(app.cyclos.calls("GET", "/users/self").filter((c) => c.query.get("fields") === "display").length, 0);
   // The CSRF token of /espace/caisse and of the session of /caisse are other sessions' business: only the area's own is accepted.
   assert.equal((await b.ticket({ csrf, ...RANGE })).status, 200);
@@ -293,7 +293,7 @@ appTest("relevé : corps de plus de 10 ko -> 413", options(), async (app) => {
   const { b, csrf } = await connected(app);
   const res = await b.ticket({ csrf, start: "x".repeat(11_000), end: RANGE.end });
   assert.equal(res.status, 413);
-  assert.equal(app.cyclos.calls("GET", "/self/accounts").length, 0);
+  assert.equal(app.cyclos.calls("GET", "/self/accounts").length, 1);
 });
 
 // ------------------------------------------------------------------------------ Cyclos errors
@@ -311,7 +311,7 @@ appTest("relevé : 403 de Cyclos -> page d'accès refusé, la session reste ouve
   assert.equal(res.status, 403);
   assert.match(await res.text(), /Accès aux comptes refusé/);
   app.cyclos.state.accountsBody = undefined;
-  app.cyclos.force("GET /self/accounts/membre/history", 403);
+  app.cyclos.force("GET /self/accounts/MonComptePro/history", 403);
   res = await b.ticket({ csrf, ...RANGE });
   assert.equal(res.status, 403);
   const html = await res.text();
@@ -322,11 +322,11 @@ appTest("relevé : 403 de Cyclos -> page d'accès refusé, la session reste ouve
 
 appTest("relevé : Cyclos en panne ou coupé -> 502 avec page de retour, journalisé sans donnée sensible", options(), async (app) => {
   const { b, csrf } = await connected(app, history(2));
-  app.cyclos.force("GET /self/accounts/membre", 500);
+  app.cyclos.force("GET /self/accounts/MonComptePro", 500);
   let res = await b.ticket({ csrf, ...RANGE });
   assert.equal(res.status, 502);
   assert.match(await res.text(), /Cyclos ne répond pas/);
-  app.cyclos.force("GET /self/accounts/membre", "drop");
+  app.cyclos.force("GET /self/accounts/MonComptePro", "drop");
   res = await b.ticket({ csrf, ...RANGE });
   assert.equal(res.status, 502);
   const log = app.logs.join("\n");
@@ -352,7 +352,7 @@ appTest("relevé : jeton refusé par Cyclos (401) -> session de l'espace fermée
 // released when the first ends (here by the time limit), and then the session reads again. Another session is not held back.
 appTest("relevé : une lecture à la fois par session (429), garde libérée à la fin, délai maximal de lecture", options({ releveTimeoutMs: 600 }), async (app) => {
   const { b, csrf } = await connected(app, history(3));
-  app.cyclos.force("GET /self/accounts/membre/history", "hang");
+  app.cyclos.force("GET /self/accounts/MonComptePro/history", "hang");
   const first = b.ticket({ csrf, ...RANGE });
   await until(() => historyCalls(app).length === 1, "la première lecture est en cours");
   const second = await b.ticket({ csrf, ...RANGE });
@@ -364,7 +364,7 @@ appTest("relevé : une lecture à la fois par session (429), garde libérée à 
   const slow = await first;
   assert.equal(slow.status, 502, "délai dépassé : 502");
   assert.match(app.logs.join("\n"), /Cyclos injoignable ou en erreur : délai dépassé/);
-  app.cyclos.state.forced.delete("GET /self/accounts/membre/history");
+  app.cyclos.state.forced.delete("GET /self/accounts/MonComptePro/history");
   const again = await b.ticket({ csrf, ...RANGE });
   assert.equal(again.status, 200, "la garde est libérée");
   assert.equal(rowsOf(await again.text()).length, 3);

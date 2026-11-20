@@ -112,6 +112,16 @@ export function fixturesOn(base) {
   };
 }
 
+// Account types (type.internalName) by profile, as checked on the real instance: a private member has monCompte + compteurBonus, a
+// merchant has MonComptePro (and, for "commercant-billets", another account "Mon Compte Pro Billets" whose type is NOT MonComptePro),
+// and "billets-seul" has only that other account.
+export const ACCOUNT_PROFILES = {
+  commercant: ["MonComptePro"],
+  "commercant-billets": ["MonComptePro", "MonCompteProBillets"],
+  particulier: ["monCompte", "compteurBonus"],
+  "billets-seul": ["MonCompteProBillets"],
+};
+
 // Starts the fake Cyclos and returns what is needed to drive it: its address (`url`), its state (`state`)
 // and a few functions (`force`, `expireTokens`, `calls`, `close`). `async`: the function waits (`await`) for the
 // server to be ready before handing back; see test/statique.test.js for an explanation of async/await.
@@ -274,6 +284,9 @@ export async function startFakeCyclos() {
     }
     if (key === "GET /self/accounts") {
       if (state.accountsBody !== undefined) return json(res, 200, state.accountsBody);
+      // A user added with addUser (the multi-merchant tests) has the accounts of his profile; the default user has one "membre" account.
+      const profile = state.tokenUsers.get(token)?.own?.profile;
+      if (profile) return json(res, 200, ACCOUNT_PROFILES[profile].map((internalName) => ({ type: { internalName }, currency: state.currency })));
       return json(res, 200, [{ type: { internalName: "membre" }, currency: state.currency }]);
     }
     // Totals of the period. "membre" is the type of the fictitious account. With `state.indicators = false` we imitate the real
@@ -345,11 +358,12 @@ export async function startFakeCyclos() {
     calls: (method, path) => state.requests.filter((r) => r.method === method && r.path === path),
     // A second user able to log in (tests of the registration check).
     // With `entries` (and optionally `transfers`, `transactions`), the user has data of his own, apart from the shared ones.
-    addUser: (login, password, { id, display = "Autre Utilisateur de Test", email, entries, transfers, transactions }) =>
+    addUser: (login, password, { id, display = "Autre Utilisateur de Test", email, entries, transfers, transactions, profile = "commercant" }) =>
       state.users.set(login, {
         password,
         id,
         display,
+        profile,
         ...(email ? { email } : {}),
         ...(entries ? { entries, transfers: transfers ?? new Map(), transactions: transactions ?? new Map() } : {}),
       }),

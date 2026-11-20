@@ -260,9 +260,23 @@ test("multi : refus par défaut, aucune écoute, ligne de journal avec le numér
     assert.equal(cyclos.state.requests.length, 0);
   }));
 
-test("multi : liste vide, personne n'est autorisé", () =>
+// Intention: the manager alone still refuses with an empty list (the list module is unchanged); the rule "an empty list does not
+// restrict" is applied by the server, which passes { open: true } after reading listRestricts. Even open, an unreadable identity
+// is refused.
+test("multi : liste vide, le gestionnaire refuse seul ; ouvert, il accepte un numéro lisible seulement", () =>
   withMulti({ allowed: "" }, async ({ manager }) => {
+    assert.equal(manager.listRestricts, false);
     for (const id of [MARIE, PAUL, ZOE]) assert.deepEqual(await manager.authorize({ id }), { ok: false, status: 403 });
+    for (const id of [MARIE, PAUL, ZOE]) assert.deepEqual(await manager.authorize({ id }, { open: true }), { ok: true, merchantKey: id });
+    for (const bad of [null, {}, { id: "a b" }, { email: "marie@exemple.test" }]) {
+      assert.deepEqual(await manager.authorize(bad, { open: true }), { ok: false, status: 403 }, JSON.stringify(bad));
+    }
+  }));
+
+test("multi : liste remplie, listRestricts vrai et la liste reste appliquée même avec open absent", () =>
+  withMulti({ allowed: "u-marie" }, async ({ manager }) => {
+    assert.equal(manager.listRestricts, true);
+    assert.deepEqual(await manager.authorize({ id: ZOE }), { ok: false, status: 403 });
   }));
 
 // Intention: a key that is not a plain Cyclos number cannot open a listener (nothing with a path or a query in it).

@@ -158,12 +158,12 @@ test("jeton : jeton expiré pendant l'écoute, reconnexion nécessaire, pas de b
 test("jeton : 401 sur un appel de lecture de l'historique, reconnexion nécessaire, un seul essai", () =>
   withTokens({}, async ({ cyclos, manager, open, tokens, refusals }) => {
     tokens.push(await open());
-    cyclos.force("GET /self/accounts/membre/history", 401);
+    cyclos.force("GET /self/accounts/MonComptePro/history", 401);
     manager.touch(KEY);
     await reauth(manager);
     await quiet(400);
     assert.deepEqual(refusals, [tokens[0]]);
-    assert.equal(cyclos.calls("GET", "/self/accounts/membre/history").length, 1, "one try, no retry loop");
+    assert.equal(cyclos.calls("GET", "/self/accounts/MonComptePro/history").length, 1, "one try, no retry loop");
     assert.equal(logins(cyclos), 1);
   }));
 
