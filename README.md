@@ -339,8 +339,8 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
 
 | Adresse | Rôle |
 | --- | --- |
-| `GET /espace/releve` | Les filtres : début et fin, avec trois raccourcis `?preset=aujourdhui`, `hier`, `6h` |
-| `POST /espace/releve/ticket` | Le ticket à l'écran, relu chez Cyclos pour les deux dates saisies |
+| `GET /espace/releve` | Les filtres : début et fin, trois raccourcis `?preset=aujourdhui`, `hier`, `6h`, le raccourci « Mois dernier » et le bloc « Relevé mensuel » |
+| `POST /espace/releve/ticket` | Le ticket à l'écran, relu chez Cyclos pour les deux dates saisies, ou pour le mois choisi (champs `mois` et `annee`) |
 | `POST /espace/releve/ticket.pdf` | Le même ticket en PDF (téléchargement), relu chez Cyclos |
 
 - Chaque POST exige l'origine du site, une session d'espace valide et son jeton CSRF. Seules les deux dates viennent du navigateur.
@@ -351,6 +351,23 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
 - Un 401 de Cyclos pendant la lecture ferme la session de l'espace (retour à `/espace`), comme pour la caisse. Un 403 sur la liste des
   comptes (ou une liste vide) affiche « Accès aux comptes refusé », un autre 403 « Accès refusé » : la session reste ouverte. Une panne
   ou un réseau coupé donne 502 avec une page de retour (jamais un PDF à moitié envoyé).
+- **Relevé mensuel (mode « Mois complet »).** Pour un comptable : sur la page des filtres, le bloc « Relevé mensuel » a une liste du
+  mois (en français) et une liste de l'année (l'année courante et les deux précédentes), préremplies avec le mois précédent, et le
+  bouton « Voir le mois ». Le raccourci « Mois dernier » (un bouton, pas un lien : une lecture ne se déclenche que par un POST avec
+  jeton CSRF) donne directement ce mois. Le mois va du 1er à 00:00 au dernier jour à 23:59, heure de Paris (même convention que
+  « Hier » ; Cyclos reçoit la dernière milliseconde de cette minute). Un mois qui n'a pas commencé est refusé avec un message ; le mois
+  en cours est accepté, sa fin est ramenée à maintenant et le ticket l'écrit (« mois en cours »). Mois et année sont vérifiés
+  strictement (nombre de 1 à 12, année de la liste) : toute autre valeur donne une erreur 400. Le ticket et le PDF s'intitulent
+  « Relevé du mois de novembre 2026 » (« d'octobre », « d'avril », « d'août ») avec la période exacte ; le PDF se nomme
+  `releve-AAAA-MM.pdf` (par exemple `releve-2026-11.pdf`). Les plages libres gardent leur nom `ticket-…pdf`.
+- **Limite de durée.** Elle est comptée en jours de calendrier (31 au plus, avec Luxon en `Europe/Paris`), pas en heures écoulées : un
+  mois entier passe toujours, y compris octobre 2026 (745 h, le 25 octobre l'heure recule) et mars 2027 (743 h). La plage libre garde
+  sa limite de 31 jours.
+- **Plafond de lignes du mois.** Le mode mois lit jusqu'à `HISTORY_MAX_ROWS_MONTH` lignes (10000 par défaut, contre
+  `HISTORY_MAX_ROWS` = 2000 pour la plage libre, qui ne change pas). La règle au plafond est la même que pour la plage libre : la
+  liste est coupée aux transactions les plus récentes avec un avertissement, les totaux de Cyclos sont repris s'il y en a, sinon
+  « Non disponible » : jamais un total inventé. Le temps de lecture d'un mois est de 60 secondes plus 2 secondes par page que le
+  plafond permet de lire (160 s pour 10000 lignes à 200 par page), les appels se suivant sur le même jeton Cyclos.
 - Les pages du relevé n'ont **aucun script** : leur politique de sécurité n'a ni `script-src` ni `connect-src` (celle de l'outil
   d'origine), alors que le reste du site garde celle qui laisse tourner le script de `/caisse`. Pas de bouton de déconnexion : un lien
   « Retour à l'espace » (la déconnexion se fait depuis l'espace).
@@ -664,7 +681,9 @@ identifiant (ceux des tests sont fictifs).
 - Relevé : `test/releve-calcul.test.js` (plages de dates, changement d'heure, montants exacts, totaux, ticket : fonctions pures, portés
   de l'outil d'origine avec les mêmes attentes), `test/cyclos-statement.test.js` (lecture Cyclos : pagination, crédits et débits,
   plafond, « Non disponible », erreurs), `test/releve.test.js` (pages, session et jeton de l'espace, origine, CSRF, une lecture à la fois,
-  politique de sécurité sans script, impression, 404 hors mode multi), `test/releve-pdf.test.js` (PDF, texte du PDF, mêmes contrôles).
+  politique de sécurité sans script, impression, 404 hors mode multi), `test/releve-pdf.test.js` (PDF, texte du PDF, mêmes contrôles),
+  `test/releve-mois.test.js` (mode mois : bornes de février à décembre, changements d'heure, valeurs refusées, mois en cours et futur,
+  plafond propre au mois, PDF de 1500 lignes).
 - Un test lancé seul : `node --test test/caisse.test.js`.
 
 ## Sécurité en bref
