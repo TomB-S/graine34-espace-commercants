@@ -219,6 +219,13 @@ form[action="/espace/deconnexion"] {
   margin: 0 0 0.5rem;
 }
 
+/* Print button of the ticket: created by print-ticket.js, so it exists only when the script runs. Same look as the other buttons
+   (the green of button), above the PDF button; hidden on paper by the print rules (button, and .imprimer after the month ticket rules). */
+.imprimer {
+  display: block;
+  margin: 0 0 0.5rem;
+}
+
 /* Shortcuts of the filters page */
 .raccourcis {
   display: flex;
