@@ -30,6 +30,14 @@ export function readHistoryLimits(env = process.env) {
   return { pageSize: whole("HISTORY_PAGE_SIZE", DEFAULT_PAGE_SIZE), maxRows: whole("HISTORY_MAX_ROWS", DEFAULT_MAX_ROWS) };
 }
 
+// Whole-month mode only: its own cap, much higher, because a month of a busy till is long. Same rule as above for the value.
+export const DEFAULT_MONTH_MAX_ROWS = 10000;
+
+export function readMonthMaxRows(env = process.env) {
+  const value = Number(env.HISTORY_MAX_ROWS_MONTH);
+  return Number.isInteger(value) && value > 0 ? value : DEFAULT_MONTH_MAX_ROWS;
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Date ranges
 

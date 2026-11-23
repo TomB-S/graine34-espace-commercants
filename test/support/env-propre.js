@@ -44,6 +44,7 @@ export const VARIABLES_DU_PROGRAMME = [
   // Statement of the area (releve-calcul.js, read by startServer)
   "HISTORY_PAGE_SIZE",
   "HISTORY_MAX_ROWS",
+  "HISTORY_MAX_ROWS_MONTH",
   // Single executable (launcher.js)
   "CAISSE_OPEN_NETWORK",
 ];

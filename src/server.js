@@ -19,7 +19,7 @@ import { renderEspaceLogin, renderEspaceHome, REFUSED_TEXT } from "./espace-page
 import { renderCaisseData } from "./caisse-data.js";
 import { inExecutable, readAsset } from "./assets.js";
 import { escapeHtml, errorMessage, formatAmount } from "./format.js";
-import { readHistoryLimits } from "./releve-calcul.js";
+import { readHistoryLimits, readMonthMaxRows } from "./releve-calcul.js";
 import { createReleveRoutes, DEFAULT_READ_TIMEOUT_MS, RELEVE_PATH } from "./releve-routes.js";
 
 
@@ -98,6 +98,8 @@ const CSP_WITH_SCRIPT = "default-src 'none'; script-src 'self'; style-src 'self'
 const CSP_NO_SCRIPT = "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 // Statement (/espace/releve): lines read per page and in all, and the time allowed for one reading. Set by startServer().
 let HISTORY = readHistoryLimits({});
+// Cap of lines for the whole-month mode only (HISTORY_MAX_ROWS_MONTH).
+let HISTORY_MONTH_MAX_ROWS = readMonthMaxRows({});
 let RELEVE_TIMEOUT_MS = DEFAULT_READ_TIMEOUT_MS;
 
 // Local session store: our session id (the cookie value) ->
@@ -1021,6 +1023,7 @@ const RELEVE = createReleveRoutes({
   },
   push: () => CAISSE_RUNTIME.push,
   limits: () => HISTORY,
+  monthMaxRows: () => HISTORY_MONTH_MAX_ROWS,
   readTimeoutMs: () => RELEVE_TIMEOUT_MS,
   // The PDF module (and pdfkit with it) is loaded at the first PDF only. The build of the single executable leaves it out (the area
   // does not exist there): see tools/build-sea.js.
@@ -1393,6 +1396,7 @@ export function startServer(options = {}) {
   }
   ALLOWED_HOSTS = null;
   HISTORY = options.history ?? readHistoryLimits(process.env);
+  HISTORY_MONTH_MAX_ROWS = options.historyMonthMaxRows ?? readMonthMaxRows(process.env);
   RELEVE_TIMEOUT_MS = options.releveTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
   BASE = baseUrl(options.cyclosBaseUrl ?? process.env.CYCLOS_BASE_URL);
   COOKIE_SECURE = options.cookieSecure ?? process.env.COOKIE_SECURE === "true";

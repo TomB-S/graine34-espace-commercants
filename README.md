@@ -369,6 +369,7 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
 | --- | --- | --- |
 | `HISTORY_PAGE_SIZE` | Lignes demandées à Cyclos par page (entier positif ; sinon la valeur par défaut) | 200 |
 | `HISTORY_MAX_ROWS` | Plafond de lignes lues pour un ticket (entier positif ; sinon la valeur par défaut). Au-delà, la liste est coupée aux plus récentes avec un avertissement | 2000 |
+| `HISTORY_MAX_ROWS_MONTH` | Même plafond, pour le mode « Relevé mensuel » seulement (la plage libre garde `HISTORY_MAX_ROWS`). Entier positif ; sinon la valeur par défaut | 10000 |
 
 **Compte lu quand il y en a plusieurs.** Le relevé et la caisse lisent le même compte, choisi dans la liste de Cyclos
 (`GET /self/accounts`) par une règle unique : le compte de type `MonComptePro`, sinon celui de type `monCompte`, sinon le premier de

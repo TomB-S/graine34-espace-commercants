@@ -1,12 +1,12 @@
 // The routes of the statement (/espace/releve), multi-merchant mode only. server.js gives what it owns (the sessions of the area,
 // the checks, the answers); everything the statement needs is here, so that server.js only forwards the paths:
 //   GET  /espace/releve         the filters (shortcuts ?preset=aujourdhui|hier|6h)
-//   POST /espace/releve/ticket  the ticket, read again from Cyclos for the two dates typed
+//   POST /espace/releve/ticket  the ticket, read again from Cyclos for the two dates typed, or for the month (fields mois and annee)
 //   POST /espace/releve/ticket.pdf  the same ticket as a PDF download (same checks, the data is read again)
 // Each POST: origin check, session of the area (its Cyclos token), CSRF token of that session, then ONE reading at a time per
 // session. Nothing but the two dates is taken from the browser. A Cyclos 401 ends the session of the area, as for the cash register.
 import { PushAuthError, PushForbiddenError, PushUnavailableError } from "./cyclos-push.js";
-import { rangeValues, presetRange, parseRange, ticketModel } from "./releve-calcul.js";
+import { rangeValues, presetRange, parseRange, monthRange, ticketModel } from "./releve-calcul.js";
 import {
   renderReleveFilters,
   renderReleveTicket,
@@ -20,6 +20,8 @@ import {
 export const RELEVE_PATH = "/espace/releve";
 // The whole reading of a statement (up to about 12 calls to Cyclos, one after the other) must end within this time.
 export const DEFAULT_READ_TIMEOUT_MS = 60_000;
+// A whole month can need dozens of pages (HISTORY_MAX_ROWS_MONTH lines): its reading gets this much more time per page it may read.
+export const MONTH_PAGE_ALLOWANCE_MS = 2_000;
 
 // deps: {
 //   helpers { escapeHtml, htmlPage, errorMessage }, send, redirect, readBody, isSameOrigin, isValidCsrf,
@@ -27,6 +29,7 @@ export const DEFAULT_READ_TIMEOUT_MS = 60_000;
 //   endSession(found, res)  -> closes the session of the area (local record + Cyclos token) and sends the redirect to /espace
 //   push()                  -> the Cyclos client (getStatement)
 //   limits()                -> { pageSize, maxRows }
+//   monthMaxRows()          -> the cap of lines of the whole-month mode
 //   readTimeoutMs()         -> milliseconds
 //   pdf(model, statement)   -> { bytes, filename }: the PDF of a ticket (loaded on demand, see server.js)
 // }
@@ -57,10 +60,15 @@ export function createReleveRoutes(deps) {
       forbidden(res, "Jeton de sécurité absent ou invalide. Retournez aux filtres et recommencez.", true);
       return null;
     }
+    // Whole-month mode: the form sends a month and a year (and no dates). Otherwise the two dates typed.
+    const monthly = form.has("mois") || form.has("annee");
     const values = { start: form.get("start") ?? "", end: form.get("end") ?? "" };
-    const range = parseRange(values.start, values.end);
+    const range = monthly ? monthRange(form.get("annee") ?? "", form.get("mois") ?? "") : parseRange(values.start, values.end);
     if (range.error) {
-      send(res, 400, "text/html", renderReleveFilters({ csrfToken, values, error: range.error }, helpers));
+      const filters = monthly
+        ? { csrfToken, values: rangeValues(presetRange()), error: range.error }
+        : { csrfToken, values, error: range.error };
+      send(res, 400, "text/html", renderReleveFilters(filters, helpers));
       return null;
     }
     if (busy.has(found.id)) {
@@ -70,14 +78,19 @@ export function createReleveRoutes(deps) {
 
     busy.add(found.id);
     try {
-      const limits = deps.limits();
+      // The month mode has its own cap of lines, and more time to read the pages that go with it. All the calls of one reading follow
+      // each other on the same Cyclos token, so it stays in use from the first to the last page; the area's session was renewed when
+      // this request arrived (its idle delay is counted in minutes, a reading in seconds).
+      const base = deps.limits();
+      const limits = monthly ? { ...base, maxRows: deps.monthMaxRows() } : base;
+      const timeoutMs = monthly ? deps.readTimeoutMs() + Math.ceil(limits.maxRows / limits.pageSize) * MONTH_PAGE_ALLOWANCE_MS : deps.readTimeoutMs();
       const statement = await deps.push().getStatement(
         found.session.sessionToken,
         { from: range.from.toUTC().toISO(), until: range.until.toUTC().toISO(), ...limits },
-        AbortSignal.timeout(deps.readTimeoutMs()),
+        AbortSignal.timeout(timeoutMs),
       );
       return {
-        statement: { ...statement, from: range.from, to: range.to, maxRows: limits.maxRows },
+        statement: { ...statement, from: range.from, to: range.to, maxRows: limits.maxRows, month: monthly ? range : null },
         found,
         release: () => busy.delete(found.id),
       };
