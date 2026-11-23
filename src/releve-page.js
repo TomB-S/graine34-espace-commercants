@@ -95,8 +95,13 @@ export function renderReleveTicket({ model: m, csrfToken, pdf = false }, { htmlP
   const download = pdf
     ? `<form method="post" action="${FILTERS_HREF}/ticket.pdf" class="telechargement">
       <input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}">
-      <input type="hidden" name="start" value="${escapeHtml(m.start)}">
-      <input type="hidden" name="end" value="${escapeHtml(m.end)}">
+      ${
+        m.month
+          ? `<input type="hidden" name="mois" value="${escapeHtml(m.month.month)}">
+      <input type="hidden" name="annee" value="${escapeHtml(m.month.year)}">`
+          : `<input type="hidden" name="start" value="${escapeHtml(m.start)}">
+      <input type="hidden" name="end" value="${escapeHtml(m.end)}">`
+      }
       <button type="submit">Télécharger le PDF</button>
     </form>
     `

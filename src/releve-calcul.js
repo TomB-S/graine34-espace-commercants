@@ -178,7 +178,10 @@ export function monthRange(yearText, monthText, now = DateTime.now().setZone(ZON
     return { error: `La plage ne peut pas dépasser ${MAX_RANGE_DAYS} jours.` };
   }
 
-  const name = `${MONTH_NAMES[month - 1]} ${year}`;
+  const monthName = MONTH_NAMES[month - 1];
+  const name = `${monthName} ${year}`;
+  // French elision: "mois de mars", but "mois d'avril", "d'août", "d'octobre".
+  const of = /^[aeiouhéèêàâîôûœ]/i.test(monthName) ? "d'" : "de ";
   return {
     from,
     to,
@@ -187,7 +190,7 @@ export function monthRange(yearText, monthText, now = DateTime.now().setZone(ZON
     current,
     year,
     month,
-    title: `Relevé du mois de ${name}`,
+    title: `Relevé du mois ${of}${name}`,
     label: current ? `${name} (mois en cours, jusqu'au ${to.toFormat("dd/MM/yyyy 'à' HH:mm")})` : name,
   };
 }
@@ -264,8 +267,9 @@ function counterparty(entry) {
 }
 
 // The content of the ticket as plain strings (not escaped). `maxRows`: the limit the list was read with (for the warning text).
+// `month`: the result of monthRange() when the ticket is a whole-month statement (it gives the title and the period note).
 export function ticketModel(
-  { from, to, totals, entries, truncated, merchantName, currency, maxRows = DEFAULT_MAX_ROWS },
+  { from, to, totals, entries, truncated, merchantName, currency, maxRows = DEFAULT_MAX_ROWS, month = null },
   now = DateTime.now().setZone(ZONE),
 ) {
   const digits = currency?.decimalDigits ?? 2;
@@ -285,9 +289,9 @@ export function ticketModel(
   const ordered = [...entries].reverse().sort((a, b) => a.date.localeCompare(b.date));
 
   return {
-    title: "Ticket de fin de service",
+    title: month ? month.title : "Ticket de fin de service",
     merchantName,
-    period: `Du ${from.toFormat("dd/MM/yyyy HH:mm")} au ${to.toFormat("dd/MM/yyyy HH:mm")}`,
+    period: `Du ${from.toFormat("dd/MM/yyyy HH:mm")} au ${to.toFormat("dd/MM/yyyy HH:mm")}${month?.current ? " (mois en cours)" : ""}`,
     generated: `Ticket généré le ${now.toFormat("dd/MM/yyyy 'à' HH:mm")}`,
     unit: `Montants en ${currency?.name ?? ""}`,
     summary: [
@@ -321,8 +325,9 @@ export function ticketModel(
         ? ""
         : "Attention : les totaux du résumé n'ont pas pu être déterminés (« Non disponible »). Le détail des transactions reste exact.",
     emptyText: "Aucune transaction sur cette plage",
-    // Range in the filter form's format, for the form that asks for the PDF.
+    // Range in the filter form's format, for the form that asks for the PDF. A month is asked for again as a month ({ year, month }).
     start: from.toFormat(INPUT_FORMAT),
     end: to.toFormat(INPUT_FORMAT),
+    month: month ? { year: month.year, month: month.month } : null,
   };
 }
