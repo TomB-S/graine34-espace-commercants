@@ -24,11 +24,11 @@ const capitalized = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 // `values`: the start/end strings of the free range (computed by the server, or, after a validation error, exactly what the user
 // typed). `day`: the values of the day block ({ jour, de, a, lendemain }: today from 00:00 to 23:59 with the box unchecked by default, or what the user typed).
 // `error`: plain text, or null; `errorFor` ("day", "month" or "range") says which block it belongs to, and the message is placed in
-// that block; for "range" the folded menu is opened by the server (attribute open). `openRange`: also open it (the shortcuts fill
-// its fields, so they are worth seeing). `month` and `years`: what the monthly block shows as selected (the previous month by
+// that block; for "range" (and only then) the folded menu is opened by the server (attribute open). Any other `errorFor` puts the
+// message at the top of the page (an unknown shortcut). `month` and `years`: what the monthly block shows as selected (the previous month by
 // default) and the years it offers; all constants of the server, never taken from the browser as they are.
 export function renderReleveFilters(
-  { csrfToken, values, day = dayDefaults(), error = null, errorFor = null, openRange = false, month = previousMonth(), years = allowedYears() },
+  { csrfToken, values, day = dayDefaults(), error = null, errorFor = null, month = previousMonth(), years = allowedYears() },
   { htmlPage, errorMessage, escapeHtml },
 ) {
   const csrf = `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}">`;
@@ -45,11 +45,15 @@ export function renderReleveFilters(
     "Choisir la période",
     `<h1>Choisir la période</h1>
   ${top}
-  <p class="raccourcis">Raccourcis :
-    <a href="${FILTERS_HREF}?preset=aujourdhui">Aujourd'hui</a>
-    <a href="${FILTERS_HREF}?preset=hier">Hier</a>
-    <a href="${FILTERS_HREF}?preset=6h">6 dernières heures</a>
-  </p>
+  <div class="raccourcis">
+    <form method="post" action="${FILTERS_HREF}/ticket" aria-label="Raccourcis">
+      ${csrf}
+      <span class="titre-raccourcis">Raccourcis :</span>
+      <button type="submit" name="raccourci" value="aujourdhui">Aujourd'hui</button>
+      <button type="submit" name="raccourci" value="hier">Hier</button>
+      <button type="submit" name="raccourci" value="6h">6 dernières heures</button>
+    </form>
+  </div>
   <form method="post" action="${FILTERS_HREF}/ticket" class="bloc-periode releve-jour" aria-labelledby="titre-jour">
     ${csrf}
     <h2 id="titre-jour">Un jour, à certaines heures</h2>
@@ -81,7 +85,7 @@ export function renderReleveFilters(
       </select></p>
     <p><button type="submit">Voir le mois</button></p>
   </form>
-  <details class="bloc-periode autre-periode"${errorFor === "range" || openRange ? " open" : ""}>
+  <details class="bloc-periode autre-periode"${errorFor === "range" ? " open" : ""}>
     <summary>Autre période (plusieurs jours)</summary>
     ${at("range")}
     <form method="post" action="${FILTERS_HREF}/ticket">

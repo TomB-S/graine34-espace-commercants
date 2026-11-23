@@ -33,7 +33,7 @@ appTest("filtres : titre et ordre des blocs", options(), async (app) => {
   ].map((text) => at(html, text));
   assert.ok(order.every((i) => i >= 0), order.join());
   assert.deepEqual([...order].sort((x, y) => x - y), order, "the blocks are in this order");
-  for (const text of ["Aujourd'hui", "Hier", "6 dernières heures"]) assert.ok(html.includes(`>${text}</a>`), text);
+  for (const text of ["Aujourd'hui", "Hier", "6 dernières heures"]) assert.ok(html.includes(`>${text}</button>`), text); // updated: buttons, not links
   assert.ok(!html.includes("Relevé mensuel"));
 });
 
@@ -89,11 +89,12 @@ appTest("filtres : menu « Autre période » replié par défaut, ancien formula
   assert.match(menu, /<label for="end">Fin<\/label>\s*<input type="datetime-local" id="end" name="end" value="\d{4}-\d\d-\d\dT\d\d:\d\d" required>/);
   assert.match(menu, /<form method="post" action="\/espace\/releve\/ticket">/);
   assert.match(menu, /name="csrf" value="[0-9a-f]{64}"/);
-  // The shortcuts fill these fields: the server then shows the menu open so that they have a visible effect (still no script).
-  const hier = await getHtml(b, "/espace/releve?preset=hier");
-  assert.match(hier, /<details class="bloc-periode autre-periode" open>/);
-  assert.match(hier, /name="start" value="[\d-]+T00:00"/);
-  assert.ok(!/<details[^>]*\bopen\b/.test(await getHtml(b, "/espace/releve?preset=nimportequoi")), "an unknown shortcut changes nothing");
+  // updated: the shortcuts no longer fill these fields nor open the menu; an old ?preset= link shows the same folded page.
+  for (const preset of ["hier", "aujourdhui", "6h", "nimportequoi"]) {
+    const old = await getHtml(b, `/espace/releve?preset=${preset}`);
+    assert.ok(!/<details[^>]*\bopen\b/.test(old), preset);
+    assert.match(old, /name="start" value="[\d-]+T00:00"/, "the usual default of the free range, whatever the link");
+  }
 });
 
 // Intention: no script and no inline style on the page; every field has a label tied to it.

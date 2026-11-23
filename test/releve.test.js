@@ -45,7 +45,7 @@ appTest("relevé : une seule connexion (celle de l'espace), le jeton Cyclos de l
 
 // ------------------------------------------------------------------------------ filters
 
-// Intention: the shortcuts prefill the form with well-formed dates, the hidden CSRF token is the session's one, and the page offers a way back to the area
+// Intention: the free range is prefilled with well-formed dates, the shortcuts are POST buttons, the hidden CSRF token is the session's one, and the page offers a way back to the area
 // (and no logout button: the area has its own).
 appTest("relevé : filtres, préréglages, jeton CSRF de la session, lien de retour à l'espace, pas de bouton de déconnexion", options(), async (app) => {
   const { b, csrf } = await connected(app);
@@ -61,11 +61,14 @@ appTest("relevé : filtres, préréglages, jeton CSRF de la session, lien de ret
     assert.equal(html.match(/name="csrf" value="([0-9a-f]+)"/)[1], csrf);
     assert.match(html, /<a href="\/espace">Retour à l'espace<\/a>/);
     assert.ok(!html.includes("Se déconnecter") && !html.includes("deconnexion"));
-    assert.match(html, /href="\/espace\/releve\?preset=hier"/);
+    // updated: the shortcuts are buttons of a POST form now, not links, and an old ?preset= link prefills nothing
+    assert.match(html, /<button type="submit" name="raccourci" value="hier">Hier<\/button>/);
+    assert.ok(!html.includes("preset="));
   }
-  const hier = await (await b.request("/espace/releve?preset=hier")).text();
-  assert.match(hier, /name="start" value="[\d-]+T00:00"/);
-  assert.match(hier, /name="end" value="[\d-]+T23:59"/);
+  // updated: ?preset=hier no longer fills the dates: the free range has the same values as without the query
+  const fields = (html) => [html.match(/name="start" value="([^"]*)"/)[1], html.match(/name="end" value="([^"]*)"/)[1]];
+  const plain = fields(await (await b.request("/espace/releve")).text());
+  assert.deepEqual(fields(await (await b.request("/espace/releve?preset=hier")).text()).map((v) => v.slice(0, 10)), plain.map((v) => v.slice(0, 10)));
   assert.equal(app.cyclos.calls("GET", "/self/accounts").length, 1, "afficher les filtres n'appelle pas Cyclos (seul reste l'appel de la connexion)");
 });
 

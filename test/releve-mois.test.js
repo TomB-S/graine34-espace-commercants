@@ -338,8 +338,8 @@ appTest("mois : page des filtres (listes, libellés, préremplissage, raccourci,
   assert.deepEqual(yearOptions.filter((o) => o[2]).map((o) => o[1]), [String(m.year)]);
   assert.match(html, /<button type="submit">Voir le mois<\/button>/);
   assert.ok(!html.includes("Mois dernier"), "no \"Mois dernier\" shortcut any more");
-  assert.equal([...html.matchAll(/name="csrf" value="([0-9a-f]+)"/g)].filter((x) => x[1] === csrf).length, 3, "three forms (day, month, free range), the session's token each time"); // updated: 2 before the day block was added
-  assert.match(html, /<a href="\/espace\/releve\?preset=6h">/, "the other shortcuts are still there");
+  assert.equal([...html.matchAll(/name="csrf" value="([0-9a-f]+)"/g)].filter((x) => x[1] === csrf).length, 4, "four forms (shortcuts, day, month, free range), the session's token each time"); // updated: 2 before the day block, 3 before the shortcut buttons
+  assert.match(html, /<button type="submit" name="raccourci" value="6h">/, "the other shortcuts are still there"); // updated: buttons, not links
 });
 
 // Intention: the PDF of a month is named releve-AAAA-MM.pdf, titled with the month in full, readable over many pages (column titles

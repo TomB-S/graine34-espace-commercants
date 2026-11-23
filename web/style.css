@@ -228,15 +228,19 @@ form[action="/espace/deconnexion"] {
   margin: 0 0 0.5rem;
 }
 
-/* Shortcuts of the filters page */
+/* Shortcuts of the filters page: buttons of a POST form, drawn as green outlined pills. */
 .raccourcis {
+  margin: 1rem 0;
+}
+
+.raccourcis form {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
 }
 
-.raccourcis a {
+.raccourcis button {
   display: inline-flex;
   align-items: center;
   min-height: var(--tactile);
@@ -244,11 +248,13 @@ form[action="/espace/deconnexion"] {
   border: 1px solid var(--vert-principal);
   border-radius: 999px;
   background: var(--blanc);
-  text-decoration: none;
+  color: var(--vert-principal);
+  font: inherit;
   font-weight: 600;
+  cursor: pointer;
 }
 
-.raccourcis a:hover {
+.raccourcis button:hover {
   background: var(--vert-principal-survol);
   color: var(--blanc);
 }

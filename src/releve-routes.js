@@ -1,8 +1,8 @@
 // The routes of the statement (/espace/releve), multi-merchant mode only. server.js gives what it owns (the sessions of the area,
 // the checks, the answers); everything the statement needs is here, so that server.js only forwards the paths:
-//   GET  /espace/releve         the filters (shortcuts ?preset=aujourdhui|hier|6h)
+//   GET  /espace/releve         the filters (a query string is ignored: the shortcuts are buttons of a POST form, not links)
 //   POST /espace/releve/ticket  the ticket, read again from Cyclos for the two dates typed, for a day between two hours (fields jour, de, a and, when checked, lendemain)
-//                               or for a whole month (fields mois and annee)
+//                               or for a whole month (fields mois and annee), or for a shortcut (field raccourci: aujourdhui, hier or 6h)
 //   POST /espace/releve/ticket.pdf  the same ticket as a PDF download (same checks, the data is read again)
 // Each POST: origin check, session of the area (its Cyclos token), CSRF token of that session, then ONE reading at a time per
 // session. Nothing but the two dates is taken from the browser. A Cyclos 401 ends the session of the area, as for the cash register.
@@ -47,6 +47,16 @@ function submittedMonth(form) {
   };
 }
 
+const SHORTCUTS = ["aujourdhui", "hier", "6h"];
+
+// The range of a shortcut: the two bounds presetRange computes, validated by parseRange like the two dates the old page filled in
+// (same bounds, the end of "today" brought back to now). Anything but the three known names is refused.
+function shortcutRange(name) {
+  if (!SHORTCUTS.includes(name)) return { error: "Raccourci inconnu : choisissez Aujourd'hui, Hier ou 6 dernières heures." };
+  const { start, end } = rangeValues(presetRange(name));
+  return parseRange(start, end);
+}
+
 export function createReleveRoutes(deps) {
   const { helpers, send, redirect, readBody, isSameOrigin, isValidCsrf, findSession, endSession } = deps;
   // Sessions of the area with a reading in progress: a second request of the same session is refused, not queued.
@@ -78,6 +88,8 @@ export function createReleveRoutes(deps) {
     // (jour, de, a), otherwise the two full dates typed. If a request carried fields of several, the month wins, then the day.
     const monthly = form.has("mois") || form.has("annee");
     const daily = !monthly && (form.has("jour") || form.has("de") || form.has("a"));
+    // A shortcut button of the filters page (last in the order of priority). Only the three known names are accepted.
+    const shortcut = !monthly && !daily && form.has("raccourci");
     const values = { start: form.get("start") ?? "", end: form.get("end") ?? "" };
     // The "next day" box: a checkbox sends its value ("1") only when checked; anything else counts as unchecked.
     const dayValues = { jour: form.get("jour") ?? "", de: form.get("de") ?? "", a: form.get("a") ?? "", lendemain: form.get("lendemain") === "1" };
@@ -85,7 +97,9 @@ export function createReleveRoutes(deps) {
       ? monthRange(form.get("annee") ?? "", form.get("mois") ?? "")
       : daily
         ? dayRange(dayValues.jour, dayValues.de, dayValues.a, dayValues.lendemain)
-        : parseRange(values.start, values.end);
+        : shortcut
+          ? shortcutRange(form.get("raccourci"))
+          : parseRange(values.start, values.end);
     if (range.error) {
       // The page is shown again with what was typed in the block that was used (the other blocks have their usual values), and the
       // message is placed by that block (`errorFor`).
@@ -94,6 +108,8 @@ export function createReleveRoutes(deps) {
         Object.assign(filters, { errorFor: "month", month: submittedMonth(form) });
       } else if (daily) {
         Object.assign(filters, { errorFor: "day", day: dayValues });
+      } else if (shortcut) {
+        Object.assign(filters, { errorFor: "shortcut" });
       } else {
         Object.assign(filters, { values });
       }
@@ -156,10 +172,8 @@ export function createReleveRoutes(deps) {
             redirect(res, "/espace");
             return true;
           }
-          const preset = new URL(req.url, "http://x").searchParams.get("preset");
-          // The shortcuts fill the two dates of the folded menu: it is shown open so that they have a visible effect.
-          const openRange = ["aujourdhui", "hier", "6h"].includes(preset);
-          send(res, 200, "text/html", renderReleveFilters({ csrfToken: found.session.csrfToken, values: rangeValues(presetRange(preset)), openRange }, helpers));
+          // Same page whatever the query string (old ?preset= links included): the default values, the folded menu closed.
+          send(res, 200, "text/html", renderReleveFilters({ csrfToken: found.session.csrfToken, values: rangeValues(presetRange()) }, helpers));
           return true;
         }
         case `POST ${RELEVE_PATH}/ticket`: {
