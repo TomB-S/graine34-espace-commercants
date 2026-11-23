@@ -164,7 +164,10 @@ label {
 
 input[type="text"],
 input[type="password"],
-input[type="datetime-local"] {
+input[type="datetime-local"],
+input[type="date"],
+input[type="time"],
+select {
   display: block;
   width: 100%;
   min-height: var(--tactile);
@@ -271,15 +274,26 @@ form[action="/espace/deconnexion"] {
   margin: 0 0 0.5rem;
 }
 
-/* Shortcuts of the filters page */
+/* Print button of the ticket: created by print-ticket.js, so it exists only when the script runs. Same look as the other buttons
+   (the green of button), above the PDF button; hidden on paper by the print rules (button, and .imprimer after the month ticket rules). */
+.imprimer {
+  display: block;
+  margin: 0 0 0.5rem;
+}
+
+/* Shortcuts of the filters page: buttons of a POST form, drawn as green outlined pills. */
 .raccourcis {
+  margin: 1rem 0;
+}
+
+.raccourcis form {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
 }
 
-.raccourcis a {
+.raccourcis button {
   display: inline-flex;
   align-items: center;
   min-height: var(--tactile);
@@ -287,13 +301,104 @@ form[action="/espace/deconnexion"] {
   border: 1px solid var(--vert-principal);
   border-radius: 999px;
   background: var(--blanc);
-  text-decoration: none;
+  color: var(--vert-principal);
+  font: inherit;
   font-weight: 600;
+  cursor: pointer;
 }
 
-.raccourcis a:hover {
+.raccourcis button:hover {
   background: var(--vert-principal-survol);
   color: var(--blanc);
+}
+
+/* The three ways to choose the period on the filters page: each one is a block set apart from the one above it. */
+.bloc-periode {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--texte-secondaire);
+}
+
+/* "From" and "to" hours side by side (they wrap under each other on a very narrow screen). */
+.heures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1rem;
+}
+
+.heures p {
+  flex: 1 1 8rem;
+  max-width: 11rem;
+}
+
+/* The "next day" checkbox, with its label beside it (the label is the touch target too). */
+.case {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.case input[type="checkbox"] {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin: 0;
+  accent-color: var(--vert-principal);
+}
+
+.case label {
+  display: inline;
+  margin: 0;
+  font-weight: 400;
+}
+
+/* Folded menu (details/summary): it must look clickable. A green title with a chevron drawn in CSS in front of it (borders of an
+   empty ::before, no image, no icon font; empty content, so nothing for a screen reader to read): pointing right when folded, down
+   when open (the details[open] rule below). The whole line is the touch target and the keyboard focus is the one of the buttons
+   (the :focus-visible rule above). The browser's own marker is removed, also the one of Safari. */
+.autre-periode {
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.autre-periode summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--tactile);
+  color: var(--vert-principal);
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.autre-periode summary::-webkit-details-marker {
+  display: none;
+}
+
+.autre-periode summary::before {
+  content: "";
+  flex: none;
+  box-sizing: border-box;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin: 0 0.75rem 0 0.25rem;
+  border-right: 3px solid currentColor;
+  border-bottom: 3px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+details[open].autre-periode > summary::before {
+  transform: rotate(45deg);
+}
+
+.autre-periode summary:hover {
+  color: var(--vert-principal-survol);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.autre-periode[open] summary {
+  margin-bottom: 0.5rem;
 }
 
 /*
@@ -445,6 +550,11 @@ form[action="/espace/deconnexion"] {
   color: var(--texte-secondaire);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85rem;
+}
+
+/* Column titles of the month ticket: only for the A4 printing (see the page-mois rules). */
+.entete-colonnes {
+  display: none;
 }
 
 .vide {
@@ -787,6 +897,8 @@ form[action="/espace/deconnexion"] {
   input[type="text"],
   input[type="password"],
   input[type="datetime-local"],
+  input[type="date"],
+  input[type="time"],
   .champ-secret {
     max-width: 22rem; /* the container of the eye button is exactly as wide as the field: the button stays inside it */
   }
@@ -933,6 +1045,83 @@ form[action="/espace/deconnexion"] {
   .avertissement {
     border: 1px solid var(--noir);
     border-left-width: 4px;
+  }
+}
+
+/* ---------- Printing: month ticket on A4 ----------
+   The server puts page-mois on <html> for the whole-month ticket only; the ticket of a period keeps the 80 mm rules above.
+   Where named pages are not supported, the page stays the one of the 80 mm ticket and the content simply follows its width. */
+
+@page mois {
+  size: A4;
+  margin: 15mm;
+}
+
+@media print {
+  /* The Print button never goes on paper (the button rule of the ticket already hides every button; this one names it). */
+  .imprimer {
+    display: none !important;
+  }
+
+  html.page-mois {
+    page: mois;
+  }
+
+  html.page-mois,
+  html.page-mois body,
+  html.page-mois .page {
+    width: auto;
+    max-width: none;
+  }
+
+  html.page-mois body {
+    font-size: 9.5pt;
+  }
+
+  /* The detail becomes a table: the header group is repeated on each printed page, a row is never cut between two pages. */
+  html.page-mois .detail {
+    display: table;
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  html.page-mois .entete-colonnes {
+    display: table-header-group;
+    font-weight: 700;
+  }
+
+  html.page-mois .ligne {
+    display: table-row;
+  }
+
+  html.page-mois .entete-colonnes > *,
+  html.page-mois .ligne > * {
+    display: table-cell;
+    padding: 1.2mm 1.5mm;
+    border-bottom: 1px dotted var(--noir);
+    vertical-align: top;
+  }
+
+  html.page-mois .entete-colonnes > * {
+    border-bottom: 1px solid var(--noir);
+  }
+
+  html.page-mois .ligne > .date,
+  html.page-mois .ligne > .montant {
+    white-space: nowrap;
+  }
+
+  html.page-mois .ligne > .montant,
+  html.page-mois .entete-colonnes > :last-child {
+    text-align: right;
+  }
+
+  html.page-mois .ligne > .numero {
+    overflow-wrap: anywhere;
+  }
+
+  html.page-mois .resume {
+    max-width: 90mm;
   }
 }
 

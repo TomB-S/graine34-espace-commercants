@@ -246,6 +246,8 @@ appTest("module : /password-toggle.js servi comme les autres modules ; hors list
 
 const SCRIPT_TAG = '<script type="module" src="/password-toggle.js"></script>';
 const CSP_SANS_SCRIPT = "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+// The ticket of the statement (200 answer only) adds script-src 'self' for its print button, and nothing else (policy of main).
+const CSP_TICKET = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 const scriptsOf = (html) => html.match(/<script[^>]*>[\s\S]*?<\/script>/gi) ?? [];
 
 // Intention: each login page (the cash register's, the area's, the area's after a refused login) loads the module by src, once, at the
@@ -308,7 +310,8 @@ appTest("pages de connexion : aucune autre page ne charge le module, les politiq
     const html = await res.text();
     assert.ok(!html.includes("password-toggle"), name);
     assert.ok(!html.includes('type="password"'), name);
-    const expected = name.startsWith("/espace/releve") || name === "ticket" ? CSP_SANS_SCRIPT : EXPECTED_CSP;
+    // updated: the ticket now carries the policy of its print button (script-src 'self' only); the filters keep the one without script.
+    const expected = name === "ticket" ? CSP_TICKET : name.startsWith("/espace/releve") ? CSP_SANS_SCRIPT : EXPECTED_CSP;
     assert.equal(res.headers.get("content-security-policy"), expected, name);
   }
   assert.deepEqual(scriptsOf(await (await b.request("/caisse")).text()), ['<script type="module" src="/caisse.js"></script>']);
@@ -391,7 +394,8 @@ test("style : l'oeil est dans le champ (conteneur de la largeur du champ, bouton
   assert.match(rule(".champ-secret input"), /padding-right:\s*var\(--tactile\)/);
   assert.match(css, /\.champ-secret input::-ms-reveal,\s*\.champ-secret input::-ms-clear \{\s*display:\s*none;/);
   // The cap of wide screens: the container is in the same rule as the three kinds of field, with the same 22 rem.
-  const cap = css.indexOf('input[type="datetime-local"],\n  .champ-secret {');
+  // updated: main added the date and time fields to the same rule, so the container comes after them.
+  const cap = css.indexOf('input[type="time"],\n  .champ-secret {');
   assert.ok(cap > 0, "the container has the same max-width as the fields");
   assert.match(css.slice(cap, cap + 120), /max-width:\s*22rem/);
   const media = css.slice(css.lastIndexOf("@media", cap), cap);

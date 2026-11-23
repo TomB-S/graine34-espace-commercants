@@ -234,9 +234,10 @@ function addPageNumbers(doc) {
   }
 }
 
-// Download name built only from the validated dates (digits, "-", "_"):
-// ticket-2026-11-05_0357_2026-11-05_2359.pdf
-export function pdfFilename({ from, to }) {
+// Download name built only from validated numbers (digits, "-", "_"). A free range:
+// ticket-2026-11-05_0357_2026-11-05_2359.pdf ; a whole month: releve-2026-11.pdf
+export function pdfFilename({ from, to, month = null }) {
+  if (month) return `releve-${String(month.year).padStart(4, "0")}-${String(month.month).padStart(2, "0")}.pdf`;
   const stamp = (date) => date.setLocale("en").toFormat("yyyy-MM-dd_HHmm");
   return `ticket-${stamp(from)}_${stamp(to)}.pdf`;
 }
