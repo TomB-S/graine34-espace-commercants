@@ -67,7 +67,7 @@ export function renderReleveFilters(
       <p><label for="a">À</label>
         <input type="time" id="a" name="a" value="${escapeHtml(day.a)}" autocomplete="off" required></p>
     </div>
-    <p class="aide-jour">Si l'heure de fin est avant l'heure de début, le relevé s'arrête le lendemain (exemple : de 18:00 à 02:00).</p>
+    <p class="aide-jour">Votre soirée finit après minuit ? Indiquez par exemple de 18:00 à 02:00 : le relevé s'arrêtera à 02:00 le lendemain.</p>
     <p><button type="submit">Voir le relevé</button></p>
   </form>
   <form method="post" action="${FILTERS_HREF}/ticket" class="bloc-periode releve-mensuel" aria-labelledby="titre-mensuel">

@@ -51,7 +51,7 @@ appTest("filtres : bloc « Une journée ou une soirée » (champs natifs, libell
   assert.match(block, /<label for="de">De<\/label>\s*<input type="time" id="de" name="de" value="00:00" autocomplete="off" required>/); // updated: autocomplete off, no help text any more
   assert.match(block, /<label for="a">À<\/label>\s*<input type="time" id="a" name="a" value="23:59" autocomplete="off" required>/); // updated: autocomplete off, no help text any more
   assert.match(block, /<h2 id="titre-jour">Une journée ou une soirée<\/h2>\s*<p>Choisissez le jour, puis l'heure de début et l'heure de fin\.<\/p>/);
-  assert.match(block, /<p class="aide-jour">Si l'heure de fin est avant l'heure de début, le relevé s'arrête le lendemain \(exemple : de 18:00 à 02:00\)\.<\/p>/);
+  assert.match(block, /<p class="aide-jour">Votre soirée finit après minuit \? Indiquez par exemple de 18:00 à 02:00 : le relevé s'arrêtera à 02:00 le lendemain\.<\/p>/);
   assert.ok(block.indexOf('name="a"') < block.indexOf("aide-jour"), "the sentence is under the two hour fields");
   assert.ok(!block.includes('type="checkbox"') && !block.includes("lendemain\"") && !block.includes("Le service se termine"), "no box any more");
   assert.match(block, /<button type="submit">Voir le relevé<\/button>/);
@@ -227,7 +227,7 @@ appTest("filtres : ancienne phrase d'aide absente, nouvelle phrase présente, ca
   const refused = await (await b.ticket({ csrf, jour: "2026-02-30", de: "18:00", a: "02:00" })).text();
   for (const html of [await getHtml(b), refused]) {
     assert.ok(!html.includes("Si « À »") && !html.includes("jusqu'au lendemain"));
-    assert.ok(html.includes("Si l'heure de fin est avant l'heure de début, le relevé s'arrête le lendemain (exemple : de 18:00 à 02:00)."));
+    assert.ok(html.includes("Votre soirée finit après minuit ? Indiquez par exemple de 18:00 à 02:00 : le relevé s'arrêtera à 02:00 le lendemain."));
     assert.ok(html.includes("Choisissez le jour, puis l'heure de début et l'heure de fin."));
     assert.ok(!html.includes('type="checkbox"'));
   }

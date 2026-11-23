@@ -356,8 +356,7 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
 - **Trois façons de choisir la période**, de haut en bas de la page des filtres, sans aucun JavaScript :
   1. **Une journée ou une soirée** (avec la phrase d'aide « Choisissez le jour, puis l'heure de début et l'heure de fin. ») : un jour
      (sélecteur de date), une heure « De » et une heure « À » (sélecteurs d'heure). Il n'y a plus de case à cocher : le serveur déduit
-     le jour de fin des deux heures, et une phrase fixe sous les champs l'explique (« Si l'heure de fin est avant l'heure de début, le
-     relevé s'arrête le lendemain (exemple : de 18:00 à 02:00). »). Le serveur préremplit en heure de Paris (aujourd'hui, 00:00, 23:59),
+     le jour de fin des deux heures, et une phrase fixe sous les champs l'explique (« Votre soirée finit après minuit ? Indiquez par exemple de 18:00 à 02:00 : le relevé s'arrêtera à 02:00 le lendemain. »). Le serveur préremplit en heure de Paris (aujourd'hui, 00:00, 23:59),
      à chaque arrivée sur la page, même par un ancien lien `?preset=…` ; les champs demandent au navigateur de ne pas rappeler d'anciennes
      valeurs (`autocomplete="off"`). **« À » après « De »** : même jour ; **« À » avant « De »** : la fin tombe le lendemain (du 22/11
      à 18:00 jusqu'au 23/11 à 02:00) ; **« À » égal à « De »** : 24 heures complètes, jusqu'au lendemain à la même heure. Le lendemain
