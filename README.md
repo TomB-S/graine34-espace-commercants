@@ -339,7 +339,7 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
 
 | Adresse | Rôle |
 | --- | --- |
-| `GET /espace/releve` | Les filtres : début et fin, trois raccourcis `?preset=aujourdhui`, `hier`, `6h`, le raccourci « Mois dernier » et le bloc « Relevé mensuel » |
+| `GET /espace/releve` | Les filtres : début et fin, trois raccourcis `?preset=aujourdhui`, `hier`, `6h` et le bloc « Relevé mensuel » |
 | `POST /espace/releve/ticket` | Le ticket à l'écran, relu chez Cyclos pour les deux dates saisies, ou pour le mois choisi (champs `mois` et `annee`) |
 | `POST /espace/releve/ticket.pdf` | Le même ticket en PDF (téléchargement), relu chez Cyclos |
 
@@ -353,8 +353,7 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
   ou un réseau coupé donne 502 avec une page de retour (jamais un PDF à moitié envoyé).
 - **Relevé mensuel (mode « Mois complet »).** Pour un comptable : sur la page des filtres, le bloc « Relevé mensuel » a une liste du
   mois (en français) et une liste de l'année (l'année courante et les deux précédentes), préremplies avec le mois précédent, et le
-  bouton « Voir le mois ». Le raccourci « Mois dernier » (un bouton, pas un lien : une lecture ne se déclenche que par un POST avec
-  jeton CSRF) donne directement ce mois. Le mois va du 1er à 00:00 au dernier jour à 23:59, heure de Paris (même convention que
+  bouton « Voir le mois » (un POST avec jeton CSRF : une lecture ne se déclenche jamais par un simple lien). Le mois va du 1er à 00:00 au dernier jour à 23:59, heure de Paris (même convention que
   « Hier » ; Cyclos reçoit la dernière milliseconde de cette minute). Un mois qui n'a pas commencé est refusé avec un message ; le mois
   en cours est accepté, sa fin est ramenée à maintenant et le ticket l'écrit (« mois en cours »). Mois et année sont vérifiés
   strictement (nombre de 1 à 12, année de la liste) : toute autre valeur donne une erreur 400. Le ticket et le PDF s'intitulent

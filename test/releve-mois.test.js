@@ -318,7 +318,7 @@ appTest("mois : plafond par défaut de 10000 lignes (2300 lignes lues en entier)
 });
 
 // Intention: the filters page offers the month block: labelled lists, French month names, three years, the previous month preselected,
-// a "Voir le mois" button, a "Mois dernier" shortcut; every form carries the security token; still no script.
+// a "Voir le mois" button (and no "Mois dernier" shortcut); every form carries the security token; still no script.
 appTest("mois : page des filtres (listes, libellés, préremplissage, raccourci, sans script)", options(), async (app) => {
   const m = previous();
   const today = now();
@@ -337,22 +337,9 @@ appTest("mois : page des filtres (listes, libellés, préremplissage, raccourci,
   assert.deepEqual(yearOptions.map((o) => o[1]), [today.year - 2, today.year - 1, today.year].map(String));
   assert.deepEqual(yearOptions.filter((o) => o[2]).map((o) => o[1]), [String(m.year)]);
   assert.match(html, /<button type="submit">Voir le mois<\/button>/);
-  assert.match(html, /<button type="submit">Mois dernier<\/button>/);
-  assert.match(html, new RegExp(`name="mois" value="${m.month}">\\s*<input type="hidden" name="annee" value="${m.year}">\\s*<button type="submit">Mois dernier`));
-  assert.equal([...html.matchAll(/name="csrf" value="([0-9a-f]+)"/g)].filter((x) => x[1] === csrf).length, 3, "three forms, the session's token each time");
+  assert.ok(!html.includes("Mois dernier"), "no \"Mois dernier\" shortcut any more");
+  assert.equal([...html.matchAll(/name="csrf" value="([0-9a-f]+)"/g)].filter((x) => x[1] === csrf).length, 2, "two forms, the session's token each time");
   assert.match(html, /<a href="\/espace\/releve\?preset=6h">/, "the other shortcuts are still there");
-});
-
-// Intention: the "Mois dernier" button gives the same ticket as picking that month in the lists.
-appTest("mois : « Mois dernier » = le mois précédent choisi dans les listes", options(), async (app) => {
-  const m = previous();
-  const { b } = await connected(app, [at(m.from.plus({ days: 3 }), 1), at(m.from.plus({ days: 4 }), 2)]);
-  const html = await (await b.request("/espace/releve")).text();
-  const shortcut = html.split("<form").find((part) => part.includes("Mois dernier"));
-  const form = Object.fromEntries([...shortcut.matchAll(/name="(\w+)" value="([^"]*)"/g)].map((x) => [x[1], x[2]]));
-  const res = await b.ticket(form);
-  assert.equal(res.status, 200);
-  assert.equal(rowsOf(await res.text()).length, 2);
 });
 
 // Intention: the PDF of a month is named releve-AAAA-MM.pdf, titled with the month in full, readable over many pages (column titles

@@ -23,7 +23,6 @@ export function renderReleveFilters(
   { htmlPage, errorMessage, escapeHtml },
 ) {
   const csrf = `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}">`;
-  const previous = previousMonth();
   const monthOptions = MONTH_NAMES.map(
     (name, i) => `<option value="${i + 1}"${i + 1 === month.month ? " selected" : ""}>${capitalized(name)}</option>`,
   ).join("\n        ");
@@ -34,18 +33,11 @@ export function renderReleveFilters(
     "Choisir la plage horaire",
     `<h1>Choisir la plage horaire</h1>
   ${error ? errorMessage(escapeHtml(error)) : ""}
-  <div class="raccourcis">
-    <span>Raccourcis :</span>
+  <p class="raccourcis">Raccourcis :
     <a href="${FILTERS_HREF}?preset=aujourdhui">Aujourd'hui</a>
     <a href="${FILTERS_HREF}?preset=hier">Hier</a>
     <a href="${FILTERS_HREF}?preset=6h">6 dernières heures</a>
-    <form method="post" action="${FILTERS_HREF}/ticket">
-      ${csrf}
-      <input type="hidden" name="mois" value="${previous.month}">
-      <input type="hidden" name="annee" value="${previous.year}">
-      <button type="submit">Mois dernier</button>
-    </form>
-  </div>
+  </p>
   <form method="post" action="${FILTERS_HREF}/ticket">
     ${csrf}
     <p><label for="start">Début</label>

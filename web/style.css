@@ -244,28 +244,6 @@ form[action="/espace/deconnexion"] {
   color: var(--blanc);
 }
 
-/* "Mois dernier" is a form button (a POST), drawn like the shortcut links beside it. */
-.raccourcis form {
-  margin: 0;
-}
-
-.raccourcis button {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--tactile);
-  padding: 0 1rem;
-  border: 1px solid var(--vert-principal);
-  border-radius: 999px;
-  background: var(--blanc);
-  color: inherit;
-  font-weight: 600;
-}
-
-.raccourcis button:hover {
-  background: var(--vert-principal-survol);
-  color: var(--blanc);
-}
-
 /* Monthly block of the filters page, set apart from the free range above it. */
 .releve-mensuel {
   margin-top: 1.5rem;
