@@ -340,8 +340,8 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
 
 | Adresse | Rôle |
 | --- | --- |
-| `GET /espace/releve` | Les filtres « Choisir la période » : trois raccourcis `?preset=aujourdhui`, `hier`, `6h`, puis un jour à certaines heures, un mois complet et, dans un menu replié, une autre période de plusieurs jours |
-| `POST /espace/releve/ticket` | Le ticket à l'écran, relu chez Cyclos pour un jour et deux heures (champs `jour`, `de`, `a` et, si la case est cochée, `lendemain`), pour le mois choisi (champs `mois` et `annee`) ou pour les deux dates saisies (`start`, `end`) |
+| `GET /espace/releve` | Les filtres « Choisir la période » : trois boutons-raccourcis (Aujourd'hui, Hier, 6 dernières heures), puis un jour à certaines heures, un mois complet et, dans un menu replié, une autre période de plusieurs jours |
+| `POST /espace/releve/ticket` | Le ticket à l'écran, relu chez Cyclos pour un jour et deux heures (champs `jour`, `de`, `a` et, si la case est cochée, `lendemain`), pour le mois choisi (champs `mois` et `annee`) pour un raccourci (champ `raccourci` : `aujourdhui`, `hier` ou `6h`) ou pour les deux dates saisies (`start`, `end`) |
 | `POST /espace/releve/ticket.pdf` | Le même ticket en PDF (téléchargement), relu chez Cyclos |
 
 - Chaque POST exige l'origine du site, une session d'espace valide et son jeton CSRF. Seule la période (le jour et les heures, le mois, ou les deux dates) vient du navigateur.
@@ -355,7 +355,7 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
 - **Trois façons de choisir la période**, de haut en bas de la page des filtres, sans aucun JavaScript :
   1. **Un jour, à certaines heures** : un jour (sélecteur de date), une heure « De » et une heure « À » (sélecteurs d'heure) et une case
      à cocher « Le service se termine le lendemain (après minuit) ». Le serveur préremplit en heure de Paris (aujourd'hui, 00:00, 23:59,
-     case décochée), à chaque arrivée sur la page, raccourcis compris ; les champs demandent au navigateur de ne pas rappeler d'anciennes
+     case décochée), à chaque arrivée sur la page, même par un ancien lien `?preset=…` ; les champs demandent au navigateur de ne pas rappeler d'anciennes
      valeurs (`autocomplete="off"`). **Case décochée, « À » doit être strictement après « De »** (sinon erreur : « Si le service finit
      après minuit, cochez la case ») ; **case cochée, la fin est le lendemain** à l'heure « À » (du 22/11 à 18:00 jusqu'au 23/11 à
      02:00). Rien n'est plus deviné à partir des heures. Dans les deux cas le relevé dure **24 heures au plus** (18:00 à 18:00 le
@@ -368,11 +368,17 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
      (`ticket-2026-11-22_1800_2026-11-23_0200.pdf`).
   2. **Un mois complet** : voir ci-dessous.
   3. **Autre période (plusieurs jours)** : un menu replié (éléments natifs `details` et `summary`) qui contient les deux dates avec
-     heure (Début, Fin), limitées à 31 jours calendaires. Le serveur l'ouvre après un raccourci (qui remplit ces deux champs) et après
-     une erreur de cette plage.
+     heure (Début, Fin), limitées à 31 jours calendaires. Le serveur l'ouvre seulement après une erreur de cette plage.
+
+  **Les trois raccourcis** (Aujourd'hui, Hier, 6 dernières heures) sont des boutons d'un formulaire POST avec jeton CSRF : un clic affiche
+  directement le ticket, avec les mêmes bornes qu'avant (aujourd'hui de 00:00 à maintenant, hier de 00:00 à 23:59, les 6 dernières
+  heures jusqu'à maintenant) et les dates exactes dans la période. Un nom inconnu donne une erreur 400 sans appel à Cyclos. Le bouton
+  PDF d'un raccourci renvoie les **bornes exactes du ticket affiché** (les deux dates), pas le nom du raccourci : un téléchargement
+  fait plus tard couvre la même période que l'écran, au lieu de relire « maintenant ». Les anciens liens `?preset=…` ne préremplissent
+  plus rien : ils affichent la page avec ses valeurs par défaut.
 
   Si une erreur (400) vient d'un bloc, la page revient avec les valeurs saisies et le message placé dans ce bloc. Le serveur reconnaît le
-  mode aux champs reçus : `mois` et `annee`, sinon `jour`, `de` et `a`, sinon `start` et `end`. Les anciens raccourcis, le mode mois et
+  mode aux champs reçus : `mois` et `annee`, sinon `jour`, `de` et `a`, sinon `raccourci`, sinon `start` et `end`. Le mode mois et
   la plage libre fonctionnent comme avant, et les politiques de sécurité ne changent pas.
 - **Un mois complet (ancien « Relevé mensuel »).** Pour un comptable : sur la page des filtres, le bloc « Un mois complet » a une liste du
   mois (en français) et une liste de l'année (l'année courante et les deux précédentes), préremplies avec le mois précédent, et le
