@@ -341,8 +341,8 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
 
 | Adresse | Rôle |
 | --- | --- |
-| `GET /espace/releve` | Les filtres « Choisir la période » : trois boutons-raccourcis (Aujourd'hui, Hier, 6 dernières heures), puis un jour à certaines heures, un mois complet et, dans un menu replié, une autre période de plusieurs jours |
-| `POST /espace/releve/ticket` | Le ticket à l'écran, relu chez Cyclos pour un jour et deux heures (champs `jour`, `de`, `a` et, si la case est cochée, `lendemain`), pour le mois choisi (champs `mois` et `annee`) pour un raccourci (champ `raccourci` : `aujourdhui`, `hier` ou `6h`) ou pour les deux dates saisies (`start`, `end`) |
+| `GET /espace/releve` | Les filtres « Choisir la période » : trois boutons-raccourcis (Aujourd'hui, Hier, 6 dernières heures), puis une journée ou une soirée, un mois complet et, dans un menu replié, une autre période de plusieurs jours |
+| `POST /espace/releve/ticket` | Le ticket à l'écran, relu chez Cyclos pour un jour et deux heures (champs `jour`, `de`, `a` ; l'ancien champ `lendemain`, s'il est encore envoyé, est ignoré), pour le mois choisi (champs `mois` et `annee`) pour un raccourci (champ `raccourci` : `aujourdhui`, `hier` ou `6h`) ou pour les deux dates saisies (`start`, `end`) |
 | `POST /espace/releve/ticket.pdf` | Le même ticket en PDF (téléchargement), relu chez Cyclos |
 
 - Chaque POST exige l'origine du site, une session d'espace valide et son jeton CSRF. Seule la période (le jour et les heures, le mois, ou les deux dates) vient du navigateur.
@@ -354,18 +354,20 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
   comptes (ou une liste vide) affiche « Accès aux comptes refusé », un autre 403 « Accès refusé » : la session reste ouverte. Une panne
   ou un réseau coupé donne 502 avec une page de retour (jamais un PDF à moitié envoyé).
 - **Trois façons de choisir la période**, de haut en bas de la page des filtres, sans aucun JavaScript :
-  1. **Un jour, à certaines heures** : un jour (sélecteur de date), une heure « De » et une heure « À » (sélecteurs d'heure) et une case
-     à cocher « Le service se termine le lendemain (après minuit) ». Le serveur préremplit en heure de Paris (aujourd'hui, 00:00, 23:59,
-     case décochée), à chaque arrivée sur la page, même par un ancien lien `?preset=…` ; les champs demandent au navigateur de ne pas rappeler d'anciennes
-     valeurs (`autocomplete="off"`). **Case décochée, « À » doit être strictement après « De »** (sinon erreur : « Si le service finit
-     après minuit, cochez la case ») ; **case cochée, la fin est le lendemain** à l'heure « À » (du 22/11 à 18:00 jusqu'au 23/11 à
-     02:00). Rien n'est plus deviné à partir des heures. Dans les deux cas le relevé dure **24 heures au plus** (18:00 à 18:00 le
-     lendemain passe, 05:00 à 23:59 le lendemain est refusé : « utilisez Autre période »), compté sur l'horloge murale de Paris comme la
-     limite de 31 jours : un jour de 25 h (25 octobre 2026) ou de 23 h (29 mars 2026) n'est jamais refusé à tort. La dernière minute
-     indiquée est incluse, comme pour les autres plages (23:59 va jusqu'à 23:59:59). Le calcul passe par Luxon en `Europe/Paris` puis par
-     les mêmes règles que la plage libre (début futur refusé, fin future ramenée à maintenant, heure inexistante au passage à l'heure
-     d'été refusée) : aucun décalage en dur. Le ticket écrit toujours les dates et heures exactes (« Du 22/11/2026 18:00 au 23/11/2026
-     02:00 ») ; le bouton PDF redemande le jour, les deux heures et la case, et le fichier se nomme comme celui d'une plage libre
+  1. **Une journée ou une soirée** (avec la phrase d'aide « Choisissez le jour, puis l'heure de début et l'heure de fin. ») : un jour
+     (sélecteur de date), une heure « De » et une heure « À » (sélecteurs d'heure). Il n'y a plus de case à cocher : le serveur déduit
+     le jour de fin des deux heures, et une phrase fixe sous les champs l'explique (« Votre soirée finit après minuit ? Indiquez par exemple de 18:00 à 02:00 : le relevé s'arrêtera à 02:00 le lendemain. »). Le serveur préremplit en heure de Paris (aujourd'hui, 00:00, 23:59),
+     à chaque arrivée sur la page, même par un ancien lien `?preset=…` ; les champs demandent au navigateur de ne pas rappeler d'anciennes
+     valeurs (`autocomplete="off"`). **« À » après « De »** : même jour ; **« À » avant « De »** : la fin tombe le lendemain (du 22/11
+     à 18:00 jusqu'au 23/11 à 02:00) ; **« À » égal à « De »** : 24 heures complètes, jusqu'au lendemain à la même heure. Le lendemain
+     est un jour de calendrier ajouté avec Luxon en `Europe/Paris` (`plus({ days: 1 })`), jamais 24 heures fixes : du 24 octobre 2026
+     à 22:00 au 25 octobre à 04:00 couvre 7 heures réelles, et un jour de 25 h (25 octobre 2026) ou de 23 h (29 mars 2026) n'est jamais
+     refusé à tort. Ce relevé ne dépasse donc jamais un jour de calendrier (la limite de 31 jours de la plage libre est inchangée).
+     Un ancien formulaire ou un favori qui envoie encore le champ `lendemain` n'a pas d'erreur : le champ est ignoré. La dernière minute
+     indiquée est incluse, comme pour les autres plages (23:59 va jusqu'à 23:59:59). Le calcul passe ensuite par les mêmes règles que la
+     plage libre (début futur refusé, fin future ramenée à maintenant, heure inexistante au passage à l'heure d'été refusée) : aucun
+     décalage en dur. Le ticket écrit toujours les dates et heures exactes (« Du 22/11/2026 18:00 au 23/11/2026 02:00 ») ; le bouton
+     PDF redemande le jour et les deux heures, et le fichier se nomme comme celui d'une plage libre
      (`ticket-2026-11-22_1800_2026-11-23_0200.pdf`).
   2. **Un mois complet** : voir ci-dessous.
   3. **Autre période (plusieurs jours)** : un menu replié (éléments natifs `details` et `summary`) qui contient les deux dates avec

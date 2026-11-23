@@ -122,7 +122,7 @@ export function parseRange(startText, endText, now = DateTime.now().setZone(ZONE
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// One day, between two hours ("Un jour, à certaines heures" mode)
+// One day, between two hours ("Une journée ou une soirée" mode)
 
 const DAY_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_SHAPE = /^\d{2}:\d{2}$/;
@@ -130,21 +130,22 @@ const TIME_VALUE = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const DAY_FORMAT = "yyyy-MM-dd";
 const TIME_FORMAT = "HH:mm";
 
-// Default values of the day block, in ZONE wall-clock time: today, the whole day, the "next day" box unchecked.
+// Default values of the day block, in ZONE wall-clock time: today, the whole day.
 export function dayDefaults(now = DateTime.now().setZone(ZONE)) {
-  return { jour: now.toFormat(DAY_FORMAT), de: "00:00", a: "23:59", lendemain: false };
+  return { jour: now.toFormat(DAY_FORMAT), de: "00:00", a: "23:59" };
 }
 
-// Range of one day between two hours, Paris time. `dayText` is YYYY-MM-DD, `fromText` and `toText` are HH:mm (strict shapes, like the
-// <input type="date"> and <input type="time"> values). `nextDay` is the explicit box "the service ends the next day (after midnight)":
-// unchecked (default), the end hour must be strictly after the start hour on the same day; checked, the end is the next day at the end
-// hour (one calendar day added on the wall clock of ZONE, so clock-change days come out right). In both cases the range lasts 24 hours
-// at most, counted on the wall clock like MAX_RANGE_DAYS: the end may not be after the start plus one calendar day, so 18:00 to 18:00
-// the next day is accepted, and a whole day of 23 or 25 real hours (29 March, 25 October) is never refused for being "too long".
-// The two instants are then handed to parseRange, which keeps every other rule (start in the future refused, future end brought back
-// to now, hours that do not exist, whole last minute included): nothing is repeated here.
-// Returns { error } or what parseRange returns, plus `day: { jour, de, a, lendemain }` (the submitted values, to ask for the same range again).
-export function dayRange(dayText, fromText, toText, nextDay = false, now = DateTime.now().setZone(ZONE)) {
+// Range of one day or evening between two hours, Paris time. `dayText` is YYYY-MM-DD, `fromText` and `toText` are HH:mm (strict shapes,
+// like the <input type="date"> and <input type="time"> values). The end day is deduced from the two hours, there is no box:
+//   end after start  -> same day;
+//   end before start -> the next day (18:00 to 02:00 ends at 02:00 the day after);
+//   end equal start  -> a full 24 hours, up to the same hour the next day.
+// The next day is one calendar day added on the wall clock of ZONE (never a fixed 24 hours), so clock-change days come out right.
+// The range therefore never lasts more than one calendar day. The two instants are then handed to parseRange, which keeps every other
+// rule (start in the future refused, future end brought back to now, hours that do not exist, whole last minute included): nothing is
+// repeated here.
+// Returns { error } or what parseRange returns, plus `day: { jour, de, a }` (the submitted values, to ask for the same range again).
+export function dayRange(dayText, fromText, toText, now = DateTime.now().setZone(ZONE)) {
   if (!DAY_SHAPE.test(dayText ?? "")) {
     return { error: "Jour invalide : le format attendu est AAAA-MM-JJ (par exemple 2026-11-05)." };
   }
@@ -161,20 +162,12 @@ export function dayRange(dayText, fromText, toText, nextDay = false, now = DateT
   if (from.error) return from;
   const to = time(toText, "fin");
   if (to.error) return to;
-  const next = nextDay === true;
-  if (!next && to.value <= from.value) {
-    return { error: "L'heure de fin doit être après l'heure de début. Si le service finit après minuit, cochez la case." };
-  }
 
-  const startText = `${dayText}T${from.value}`;
-  const endText = `${(next ? day.plus({ days: 1 }) : day).toFormat(DAY_FORMAT)}T${to.value}`;
-  const range = parseRange(startText, endText, now);
+  // HH:mm strings of the same shape compare like the times they stand for.
+  const endDay = to.value > from.value ? day : day.plus({ days: 1 });
+  const range = parseRange(`${dayText}T${from.value}`, `${endDay.toFormat(DAY_FORMAT)}T${to.value}`, now);
   if (range.error) return range;
-  // The length asked for, before any future end is brought back to now.
-  if (DateTime.fromFormat(endText, INPUT_FORMAT, { zone: ZONE }) > range.from.plus({ days: 1 })) {
-    return { error: "Un relevé de service dure 24 heures au plus. Pour une période plus longue, utilisez « Autre période »." };
-  }
-  return { ...range, day: { jour: dayText, de: from.value, a: to.value, lendemain: next } };
+  return { ...range, day: { jour: dayText, de: from.value, a: to.value } };
 }
 
 // ---------------------------------------------------------------------------------------------------------------

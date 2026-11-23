@@ -26,7 +26,7 @@ appTest("filtres : titre et ordre des blocs", options(), async (app) => {
   const order = [
     '<h1>Choisir la période</h1>',
     'class="raccourcis"',
-    '<h2 id="titre-jour">Un jour, à certaines heures</h2>',
+    '<h2 id="titre-jour">Une journée ou une soirée</h2>',
     '<h2 id="titre-mensuel">Un mois complet</h2>',
     "<summary>Autre période (plusieurs jours)</summary>",
     "Retour à l'espace",
@@ -39,7 +39,7 @@ appTest("filtres : titre et ordre des blocs", options(), async (app) => {
 
 // Intention: the day block: a native date field and two native time fields, each with its label, the help text tied to the hours, the
 // button; the server sets today (Paris time), 00:00 and 23:59.
-appTest("filtres : bloc « Un jour, à certaines heures » (champs natifs, libellés, aide, valeurs par défaut en heure de Paris)", options(), async (app) => {
+appTest("filtres : bloc « Une journée ou une soirée » (champs natifs, libellés, aide, valeurs par défaut en heure de Paris)", options(), async (app) => {
   const { b } = await connected(app);
   const before = parisToday();
   const html = await getHtml(b);
@@ -50,10 +50,10 @@ appTest("filtres : bloc « Un jour, à certaines heures » (champs natifs, libel
   assert.ok([before, after].includes(today[1]), `today in Paris: ${today[1]}`);
   assert.match(block, /<label for="de">De<\/label>\s*<input type="time" id="de" name="de" value="00:00" autocomplete="off" required>/); // updated: autocomplete off, no help text any more
   assert.match(block, /<label for="a">À<\/label>\s*<input type="time" id="a" name="a" value="23:59" autocomplete="off" required>/); // updated: autocomplete off, no help text any more
-  // updated: the rule "end before start = next day" and its help text are gone, replaced by an explicit box (unchecked by default).
-  assert.ok(!block.includes("aide") && !block.includes("Si « À »") && !block.includes("jusqu'au lendemain"));
-  assert.match(block, /<input type="checkbox" id="lendemain" name="lendemain" value="1" autocomplete="off">\s*<label for="lendemain">Le service se termine le lendemain \(après minuit\)<\/label>/);
-  assert.ok(!/<input type="checkbox"[^>]*checked/.test(block));
+  assert.match(block, /<h2 id="titre-jour">Une journée ou une soirée<\/h2>\s*<p>Choisissez le jour, puis l'heure de début et l'heure de fin\.<\/p>/);
+  assert.match(block, /<p class="aide-jour">Votre soirée finit après minuit \? Indiquez par exemple de 18:00 à 02:00 : le relevé s'arrêtera à 02:00 le lendemain\.<\/p>/);
+  assert.ok(block.indexOf('name="a"') < block.indexOf("aide-jour"), "the sentence is under the two hour fields");
+  assert.ok(!block.includes('type="checkbox"') && !block.includes("lendemain\"") && !block.includes("Le service se termine"), "no box any more");
   assert.match(block, /<button type="submit">Voir le relevé<\/button>/);
   assert.match(block, /name="csrf" value="[0-9a-f]{64}"/);
   assert.match(html, /<form method="post" action="\/espace\/releve\/ticket" class="bloc-periode releve-jour" aria-labelledby="titre-jour">/);
@@ -105,7 +105,7 @@ appTest("filtres : sans script, sans style en ligne, chaque champ a son libellé
   assert.ok(!/\sstyle=/i.test(html));
   assert.ok(!/\son[a-z]+=/i.test(html), "no inline event handler");
   const fields = [...html.matchAll(/<(?:input|select)\b(?![^>]*type="hidden")[^>]*\bid="([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(fields, ["jour", "de", "a", "lendemain", "mois", "annee", "start", "end"]); // updated: the next-day box is a field with a label
+  assert.deepEqual(fields, ["jour", "de", "a", "mois", "annee", "start", "end"]);
   for (const id of fields) assert.match(html, new RegExp(`<label for="${id}">`), id);
 });
 
@@ -113,14 +113,14 @@ appTest("filtres : sans script, sans style en ligne, chaque champ a son libellé
 // folded, the other blocks keep their usual values.
 appTest("filtres : erreur du bloc jour -> valeurs conservées, message près du bloc, menu replié", options(), async (app) => {
   const { b, csrf } = await connected(app);
-  const res = await b.ticket({ csrf, jour: "2026-01-10", de: "18:00", a: "18:00" });
+  const res = await b.ticket({ csrf, jour: "2026-02-30", de: "18:00", a: "18:00" });
   assert.equal(res.status, 400);
   assert.equal(res.headers.get("content-security-policy"), CSP_SANS_SCRIPT);
   const html = await res.text();
   const day = html.split('class="bloc-periode releve-jour"')[1].split("</form>")[0];
-  assert.match(day, /Erreur :<\/strong> L'heure de fin doit être après l'heure de début\. Si le service finit après minuit, cochez la case\./); // updated: the message of the box
+  assert.match(day, /Erreur :<\/strong> Le jour choisi n'existe pas dans le calendrier\./);
   assert.equal([...html.matchAll(/class="erreur"/g)].length, 1, "one message only");
-  assert.match(day, /name="jour" value="2026-01-10"/);
+  assert.match(day, /name="jour" value="2026-02-30"/);
   assert.match(day, /name="de" value="18:00"/);
   assert.match(day, /name="a" value="18:00"/);
   assert.ok(!/<details[^>]*\bopen\b/.test(html), "the menu stays folded");
@@ -185,12 +185,12 @@ appTest("filtres : anciens modes inchangés, politiques de sécurité inchangée
   assert.equal(pdf.headers.get("content-security-policy"), CSP_SANS_SCRIPT);
 });
 
-// Intention: the defaults of the day block (today in Paris, 00:00, 23:59, box unchecked) are the same on every arrival, also through a
+// Intention: the defaults of the day block (today in Paris, 00:00, 23:59, no box) are the same on every arrival, also through a
 // shortcut or an old ?preset= link, and nothing typed during an earlier visit is put back by the server; the browser is told not to
-// bring old values back either (autocomplete off on these four fields).
+// bring old values back either (autocomplete off on these three fields).
 appTest("filtres : valeurs par défaut du bloc jour à chaque arrivée (raccourcis, anciens liens), autocomplete désactivé", options(), async (app) => {
   const { b, csrf } = await connected(app);
-  await b.ticket({ csrf, jour: "2026-01-10", de: "18:00", a: "02:00", lendemain: "1" }); // a visit that typed other values
+  await b.ticket({ csrf, jour: "2026-01-10", de: "18:00", a: "02:00" }); // a visit that typed other values
   for (const path of ["/espace/releve", "/espace/releve?preset=aujourdhui", "/espace/releve?preset=hier", "/espace/releve?preset=6h", "/espace/releve?preset=nimportequoi", "/espace/releve?jour=2026-01-10&de=18:00&lendemain=1"]) {
     const before = parisToday();
     const html = await getHtml(b, path);
@@ -200,42 +200,39 @@ appTest("filtres : valeurs par défaut du bloc jour à chaque arrivée (raccourc
     assert.ok([before, after].includes(jour), `${path}: ${jour}`);
     assert.match(day, /name="de" value="00:00"/, path);
     assert.match(day, /name="a" value="23:59"/, path);
-    assert.ok(!/<input type="checkbox"[^>]*checked/.test(day), `${path}: box unchecked`);
-    for (const name of ["jour", "de", "a", "lendemain"]) {
+    assert.ok(!day.includes("checkbox"), `${path}: no box`);
+    for (const name of ["jour", "de", "a"]) {
       assert.match(day, new RegExp(`<input [^>]*name="${name}"[^>]*autocomplete="off"`), `${path}: ${name}`);
     }
   }
 });
 
-// Intention: after an error, the box keeps its state (checked stays checked, unchecked stays unchecked) with the other typed values,
-// and the message is by the day block.
-appTest("filtres : l'état de la case est conservé après une erreur", options(), async (app) => {
+// Intention: after an error, the typed hours are kept in the day block, whichever order they are in, and the message is by that block.
+appTest("filtres : heures conservées après une erreur du bloc jour", options(), async (app) => {
   const { b, csrf } = await connected(app);
-  const checked = await b.ticket({ csrf, jour: "2026-01-10", de: "05:00", a: "23:59", lendemain: "1" });
-  assert.equal(checked.status, 400);
-  const html = await checked.text();
-  const day = html.split('class="bloc-periode releve-jour"')[1].split("</form>")[0];
-  assert.match(day, /24 heures au plus/);
-  assert.match(day, /<input type="checkbox" id="lendemain" name="lendemain" value="1" autocomplete="off" checked>/);
-  assert.match(day, /name="de" value="05:00"/);
-  assert.match(day, /name="a" value="23:59"/);
-  const unchecked = await (await b.ticket({ csrf, jour: "2026-01-10", de: "18:00", a: "02:00" })).text();
-  const dayAgain = unchecked.split('class="bloc-periode releve-jour"')[1].split("</form>")[0];
-  assert.match(dayAgain, /cochez la case/);
-  assert.ok(!/<input type="checkbox"[^>]*checked/.test(dayAgain));
-  assert.equal(historyCalls(app).length, 0);
+  const res = await b.ticket({ csrf, jour: "2026-01-10", de: "18:00", a: "25:00", lendemain: "1" });
+  assert.equal(res.status, 400);
+  const day = (await res.text()).split('class="bloc-periode releve-jour"')[1].split("</form>")[0];
+  assert.match(day, /n'existe pas/);
+  assert.match(day, /name="de" value="18:00"/);
+  assert.match(day, /name="a" value="25:00"/);
+  assert.ok(!day.includes("checkbox"));
 });
 
-// Intention: the old help sentence is gone from the page, from every answer and from the source of the page.
-appTest("filtres : la phrase d'aide « Si « À » est avant « De »… » a disparu", options(), async (app) => {
+// Intention: the old help sentence of the page "Si « À » est avant « De »…" stays gone; the new fixed sentence is in the page and in
+// the answers that show the filters again, and no box is left in the source of the page.
+appTest("filtres : ancienne phrase d'aide absente, nouvelle phrase présente, case absente du source", options(), async (app) => {
   const { readFile } = await import("node:fs/promises");
   const { b, csrf } = await connected(app);
-  const pages = [await getHtml(b), await (await b.ticket({ csrf, jour: "2026-01-10", de: "18:00", a: "02:00" })).text()];
-  for (const html of pages) {
-    assert.ok(!html.includes("Si « À »") && !html.includes("jusqu'au lendemain") && !html.includes("aide-heures"));
+  const refused = await (await b.ticket({ csrf, jour: "2026-02-30", de: "18:00", a: "02:00" })).text();
+  for (const html of [await getHtml(b), refused]) {
+    assert.ok(!html.includes("Si « À »") && !html.includes("jusqu'au lendemain"));
+    assert.ok(html.includes("Votre soirée finit après minuit ? Indiquez par exemple de 18:00 à 02:00 : le relevé s'arrêtera à 02:00 le lendemain."));
+    assert.ok(html.includes("Choisissez le jour, puis l'heure de début et l'heure de fin."));
+    assert.ok(!html.includes('type="checkbox"'));
   }
   const source = await readFile(new URL("../src/releve-page.js", import.meta.url), "utf8");
-  assert.ok(!source.includes("Si « À »") && !source.includes("aide-heures"));
+  assert.ok(!source.includes("Si « À »") && !source.includes("checkbox") && !source.includes("name=\"lendemain\""));
 });
 
 // Intention: the several-days menu looks clickable without any script: a native summary with the exact title, folded by default,

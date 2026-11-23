@@ -1,7 +1,7 @@
 // The routes of the statement (/espace/releve), multi-merchant mode only. server.js gives what it owns (the sessions of the area,
 // the checks, the answers); everything the statement needs is here, so that server.js only forwards the paths:
 //   GET  /espace/releve         the filters (a query string is ignored: the shortcuts are buttons of a POST form, not links)
-//   POST /espace/releve/ticket  the ticket, read again from Cyclos for the two dates typed, for a day between two hours (fields jour, de, a and, when checked, lendemain)
+//   POST /espace/releve/ticket  the ticket, read again from Cyclos for the two dates typed, for a day between two hours (fields jour, de, a)
 //                               or for a whole month (fields mois and annee), or for a shortcut (field raccourci: aujourdhui, hier or 6h)
 //   POST /espace/releve/ticket.pdf  the same ticket as a PDF download (same checks, the data is read again)
 // Each POST: origin check, session of the area (its Cyclos token), CSRF token of that session, then ONE reading at a time per
@@ -91,12 +91,12 @@ export function createReleveRoutes(deps) {
     // A shortcut button of the filters page (last in the order of priority). Only the three known names are accepted.
     const shortcut = !monthly && !daily && form.has("raccourci");
     const values = { start: form.get("start") ?? "", end: form.get("end") ?? "" };
-    // The "next day" box: a checkbox sends its value ("1") only when checked; anything else counts as unchecked.
-    const dayValues = { jour: form.get("jour") ?? "", de: form.get("de") ?? "", a: form.get("a") ?? "", lendemain: form.get("lendemain") === "1" };
+    // An old form or bookmark may still send the retired "lendemain" field: it is never read.
+    const dayValues = { jour: form.get("jour") ?? "", de: form.get("de") ?? "", a: form.get("a") ?? "" };
     const range = monthly
       ? monthRange(form.get("annee") ?? "", form.get("mois") ?? "")
       : daily
-        ? dayRange(dayValues.jour, dayValues.de, dayValues.a, dayValues.lendemain)
+        ? dayRange(dayValues.jour, dayValues.de, dayValues.a)
         : shortcut
           ? shortcutRange(form.get("raccourci"))
           : parseRange(values.start, values.end);
