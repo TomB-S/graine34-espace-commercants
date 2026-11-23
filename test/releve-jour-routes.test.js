@@ -46,7 +46,7 @@ appTest("jour : passage de minuit, la fin est le lendemain", options(), async (a
     atUtc(2, "2026-01-10T22:30:00Z"), // 23:30 Paris: in
     atUtc(1, "2026-01-10T20:59:00Z"), // 21:59 Paris: out
   ]);
-  const html = await (await b.ticket({ csrf, jour: "2026-01-10", de: "22:00", a: "02:00" })).text();
+  const html = await (await b.ticket({ csrf, jour: "2026-01-10", de: "22:00", a: "02:00", lendemain: "1" })).text();
   assert.deepEqual(numbersOf(html).sort(), ["T00002", "T00003"]);
   assert.match(html, /<p class="periode">Du 10\/01\/2026 22:00 au 11\/01\/2026 02:00<\/p>/);
   assert.deepEqual(historyCalls(app)[0].query.getAll("datePeriod"), ["2026-01-10T21:00:00.000Z", "2026-01-11T01:00:59.999Z"]);
@@ -72,7 +72,9 @@ appTest("jour : aujourd'hui, fin ramenée à maintenant", options(), async (app)
 appTest("jour : valeurs refusées (400), rien n'est lu chez Cyclos", options(), async (app) => {
   const { b, csrf } = await connected(app, [atUtc(1, "2026-01-10T12:00:00Z")]);
   const bad = [
-    [{ ...DAY, a: "11:00" }, /L'heure de fin doit être différente de l'heure de début\./],
+    [{ ...DAY, a: "11:00" }, /L'heure de fin doit être après l'heure de début\. Si le service finit après minuit, cochez la case\./], // updated: the message of the box
+    [{ ...DAY, a: "09:00" }, /cochez la case/], // the old rule (end before start = next day) is gone
+    [{ ...DAY, de: "05:00", a: "23:59", lendemain: "1" }, /24 heures au plus/],
     [{ ...DAY, jour: "2026-02-30" }, /n'existe pas dans le calendrier/],
     [{ ...DAY, jour: "10/01/2026" }, /Jour invalide/],
     [{ ...DAY, de: "25:00" }, /n'existe pas/],
@@ -110,7 +112,7 @@ appTest("jour : les autres modes restent reconnus comme avant", options(), async
 // same period as the page, and refuses the same values as the page.
 appTest("jour : PDF qui redemande jour et heures, nom cohérent, mêmes refus", options(), async (app) => {
   const { b, csrf } = await connected(app, [atUtc(1, "2026-01-10T22:30:00Z")]);
-  const res = await pdf(b, { csrf, jour: "2026-01-10", de: "22:00", a: "02:00" });
+  const res = await pdf(b, { csrf, jour: "2026-01-10", de: "22:00", a: "02:00", lendemain: "1" });
   assert.equal(res.status, 200);
   assert.equal(res.headers.get("content-type"), "application/pdf");
   assert.equal(res.headers.get("content-disposition"), 'attachment; filename="ticket-2026-01-10_2200_2026-01-11_0200.pdf"');

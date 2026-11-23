@@ -1,7 +1,7 @@
 // The routes of the statement (/espace/releve), multi-merchant mode only. server.js gives what it owns (the sessions of the area,
 // the checks, the answers); everything the statement needs is here, so that server.js only forwards the paths:
 //   GET  /espace/releve         the filters (shortcuts ?preset=aujourdhui|hier|6h)
-//   POST /espace/releve/ticket  the ticket, read again from Cyclos for the two dates typed, for a day between two hours (fields jour, de, a)
+//   POST /espace/releve/ticket  the ticket, read again from Cyclos for the two dates typed, for a day between two hours (fields jour, de, a and, when checked, lendemain)
 //                               or for a whole month (fields mois and annee)
 //   POST /espace/releve/ticket.pdf  the same ticket as a PDF download (same checks, the data is read again)
 // Each POST: origin check, session of the area (its Cyclos token), CSRF token of that session, then ONE reading at a time per
@@ -79,11 +79,12 @@ export function createReleveRoutes(deps) {
     const monthly = form.has("mois") || form.has("annee");
     const daily = !monthly && (form.has("jour") || form.has("de") || form.has("a"));
     const values = { start: form.get("start") ?? "", end: form.get("end") ?? "" };
-    const dayValues = { jour: form.get("jour") ?? "", de: form.get("de") ?? "", a: form.get("a") ?? "" };
+    // The "next day" box: a checkbox sends its value ("1") only when checked; anything else counts as unchecked.
+    const dayValues = { jour: form.get("jour") ?? "", de: form.get("de") ?? "", a: form.get("a") ?? "", lendemain: form.get("lendemain") === "1" };
     const range = monthly
       ? monthRange(form.get("annee") ?? "", form.get("mois") ?? "")
       : daily
-        ? dayRange(dayValues.jour, dayValues.de, dayValues.a)
+        ? dayRange(dayValues.jour, dayValues.de, dayValues.a, dayValues.lendemain)
         : parseRange(values.start, values.end);
     if (range.error) {
       // The page is shown again with what was typed in the block that was used (the other blocks have their usual values), and the

@@ -114,7 +114,7 @@ appTest("filtres : erreur du bloc jour -> valeurs conservées, message près du 
   assert.equal(res.headers.get("content-security-policy"), CSP_SANS_SCRIPT);
   const html = await res.text();
   const day = html.split('class="bloc-periode releve-jour"')[1].split("</form>")[0];
-  assert.match(day, /Erreur :<\/strong> L'heure de fin doit être différente de l'heure de début\./);
+  assert.match(day, /Erreur :<\/strong> L'heure de fin doit être après l'heure de début\. Si le service finit après minuit, cochez la case\./); // updated: the message of the box
   assert.equal([...html.matchAll(/class="erreur"/g)].length, 1, "one message only");
   assert.match(day, /name="jour" value="2026-01-10"/);
   assert.match(day, /name="de" value="18:00"/);
