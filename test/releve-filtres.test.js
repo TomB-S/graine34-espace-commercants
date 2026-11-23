@@ -26,7 +26,7 @@ appTest("filtres : titre et ordre des blocs", options(), async (app) => {
   const order = [
     '<h1>Choisir la période</h1>',
     'class="raccourcis"',
-    '<h2 id="titre-jour">Un jour, à certaines heures</h2>',
+    '<h2 id="titre-jour">Une journée ou une soirée</h2>',
     '<h2 id="titre-mensuel">Un mois complet</h2>',
     "<summary>Autre période (plusieurs jours)</summary>",
     "Retour à l'espace",
@@ -39,7 +39,7 @@ appTest("filtres : titre et ordre des blocs", options(), async (app) => {
 
 // Intention: the day block: a native date field and two native time fields, each with its label, the help text tied to the hours, the
 // button; the server sets today (Paris time), 00:00 and 23:59.
-appTest("filtres : bloc « Un jour, à certaines heures » (champs natifs, libellés, aide, valeurs par défaut en heure de Paris)", options(), async (app) => {
+appTest("filtres : bloc « Une journée ou une soirée » (champs natifs, libellés, aide, valeurs par défaut en heure de Paris)", options(), async (app) => {
   const { b } = await connected(app);
   const before = parisToday();
   const html = await getHtml(b);

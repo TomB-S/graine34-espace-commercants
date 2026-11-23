@@ -7,7 +7,7 @@
 
 import { MONTH_NAMES, allowedYears, previousMonth, dayDefaults } from "./releve-calcul.js";
 
-export const TOOL_NAME = "Relevés de service";
+export const TOOL_NAME = "Relevés de caisse";
 const FILTERS_HREF = "/espace/releve";
 const AREA_HREF = "/espace";
 
@@ -19,7 +19,7 @@ const backToArea = `<p><a href="${AREA_HREF}">Retour à l'espace</a></p>`;
 
 const capitalized = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 
-// The filter page: the period is chosen in three ways, from the top down: one day between two hours, a whole month, and (in a
+// The filter page: the period is chosen in three ways, from the top down: one day or evening between two hours, a whole month, and (in a
 // folded menu, native details/summary, no script) any range of several days with two full dates.
 // `values`: the start/end strings of the free range (computed by the server, or, after a validation error, exactly what the user
 // typed). `day`: the values of the day block ({ jour, de, a, lendemain }: today from 00:00 to 23:59 with the box unchecked by default, or what the user typed).
@@ -56,7 +56,8 @@ export function renderReleveFilters(
   </div>
   <form method="post" action="${FILTERS_HREF}/ticket" class="bloc-periode releve-jour" aria-labelledby="titre-jour">
     ${csrf}
-    <h2 id="titre-jour">Un jour, à certaines heures</h2>
+    <h2 id="titre-jour">Une journée ou une soirée</h2>
+    <p>Choisissez le jour, puis l'heure de début et l'heure de fin.</p>
     ${at("day")}
     <p><label for="jour">Jour</label>
       <input type="date" id="jour" name="jour" value="${escapeHtml(day.jour)}" autocomplete="off" required></p>

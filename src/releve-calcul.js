@@ -122,7 +122,7 @@ export function parseRange(startText, endText, now = DateTime.now().setZone(ZONE
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// One day, between two hours ("Un jour, à certaines heures" mode)
+// One day, between two hours ("Une journée ou une soirée" mode)
 
 const DAY_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_SHAPE = /^\d{2}:\d{2}$/;
