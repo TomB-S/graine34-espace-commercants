@@ -23,13 +23,14 @@ appTest("filtres : titre et ordre des blocs", options(), async (app) => {
   assert.match(html, /<title>Choisir la période<\/title>/);
   assert.match(html, /<h1>Choisir la période<\/h1>/);
   assert.ok(!html.includes("Choisir la plage horaire"));
+  // updated: the "Retour à l'espace" button is now the first thing of the page (under the header), and no longer the last.
   const order = [
+    "Retour à l'espace",
     '<h1>Choisir la période</h1>',
     'class="raccourcis"',
     '<h2 id="titre-jour">Un jour, à certaines heures</h2>',
     '<h2 id="titre-mensuel">Un mois complet</h2>',
     "<summary>Autre période (plusieurs jours)</summary>",
-    "Retour à l'espace",
   ].map((text) => at(html, text));
   assert.ok(order.every((i) => i >= 0), order.join());
   assert.deepEqual([...order].sort((x, y) => x - y), order, "the blocks are in this order");
