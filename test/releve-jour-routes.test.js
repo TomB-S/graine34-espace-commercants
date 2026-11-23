@@ -136,3 +136,42 @@ appTest("jour : jeton CSRF, origine et session toujours exigés", options(), asy
   assert.equal(historyCalls(app).length, 0);
   assert.equal(rowsOf(await (await b.ticket({ csrf, ...DAY })).text()).length, 0);
 });
+
+// Intention: the box travels from the page to the ticket and to the PDF: the PDF form of an overnight ticket asks for the box again
+// (and the one of a same-day ticket does not carry it); the PDF built from it is the same as the page's; without the box the same
+// hours are refused.
+appTest("jour : la case « lendemain » est transmise au ticket et au PDF", options(), async (app) => {
+  const { b, csrf } = await connected(app, [atUtc(1, "2026-01-10T22:30:00Z")]);
+  const night = { jour: "2026-01-10", de: "22:00", a: "02:00" };
+  const html = await (await b.ticket({ csrf, ...night, lendemain: "1" })).text();
+  const form = html.split('class="telechargement"')[1].split("</form>")[0];
+  assert.match(form, /name="jour" value="2026-01-10"/);
+  assert.match(form, /name="de" value="22:00"/);
+  assert.match(form, /name="a" value="02:00"/);
+  assert.match(form, /name="lendemain" value="1"/);
+  assert.match(html, /<p class="periode">Du 10\/01\/2026 22:00 au 11\/01\/2026 02:00<\/p>/);
+  const same = await (await b.ticket({ csrf, ...DAY })).text();
+  assert.ok(!same.split('class="telechargement"')[1].split("</form>")[0].includes("lendemain"));
+  // The hidden fields of the page, sent back as they are, give the PDF; the same fields without the box are refused.
+  const fields = Object.fromEntries([...form.matchAll(/name="(\w+)" value="([^"]*)"/g)].map((m) => [m[1], m[2]]));
+  assert.equal((await pdf(b, fields)).status, 200);
+  const { lendemain, ...without } = fields;
+  assert.equal((await pdf(b, without)).status, 400);
+  assert.equal((await b.ticket({ csrf, ...night })).status, 400);
+  // Only "1" ticks the box.
+  assert.equal((await b.ticket({ csrf, ...night, lendemain: "oui" })).status, 400);
+});
+
+// Intention: 18:00 to 18:00 the next day (24 hours) is accepted end to end and 05:00 to 23:59 the next day is refused with the
+// message about "Autre période"; Cyclos is read only for the first.
+appTest("jour : 24 heures acceptées, davantage refusé (400, Cyclos non appelé)", options(), async (app) => {
+  const { b, csrf } = await connected(app, []);
+  const ok = await b.ticket({ csrf, jour: "2026-01-10", de: "18:00", a: "18:00", lendemain: "1" });
+  assert.equal(ok.status, 200);
+  assert.match(await ok.text(), /Du 10\/01\/2026 18:00 au 11\/01\/2026 18:00/);
+  const reads = historyCalls(app).length;
+  const refused = await b.ticket({ csrf, jour: "2026-01-10", de: "05:00", a: "23:59", lendemain: "1" });
+  assert.equal(refused.status, 400);
+  assert.match(await refused.text(), /Un relevé de service dure 24 heures au plus\. Pour une période plus longue, utilisez « Autre période »\./);
+  assert.equal(historyCalls(app).length, reads);
+});

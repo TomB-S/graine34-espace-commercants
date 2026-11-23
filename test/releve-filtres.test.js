@@ -183,3 +183,56 @@ appTest("filtres : anciens modes inchangés, politiques de sécurité inchangée
   const pdf = await b.request("/espace/releve/ticket.pdf", { method: "POST", form: { csrf, ...DAY }, headers: { Origin: b.base } });
   assert.equal(pdf.headers.get("content-security-policy"), CSP_SANS_SCRIPT);
 });
+
+// Intention: the defaults of the day block (today in Paris, 00:00, 23:59, box unchecked) are the same on every arrival, also through a
+// shortcut or an old ?preset= link, and nothing typed during an earlier visit is put back by the server; the browser is told not to
+// bring old values back either (autocomplete off on these four fields).
+appTest("filtres : valeurs par défaut du bloc jour à chaque arrivée (raccourcis, anciens liens), autocomplete désactivé", options(), async (app) => {
+  const { b, csrf } = await connected(app);
+  await b.ticket({ csrf, jour: "2026-01-10", de: "18:00", a: "02:00", lendemain: "1" }); // a visit that typed other values
+  for (const path of ["/espace/releve", "/espace/releve?preset=aujourdhui", "/espace/releve?preset=hier", "/espace/releve?preset=6h", "/espace/releve?preset=nimportequoi", "/espace/releve?jour=2026-01-10&de=18:00&lendemain=1"]) {
+    const before = parisToday();
+    const html = await getHtml(b, path);
+    const after = parisToday();
+    const day = html.split('class="bloc-periode releve-jour"')[1].split("</form>")[0];
+    const jour = day.match(/name="jour" value="([\d-]+)"/)[1];
+    assert.ok([before, after].includes(jour), `${path}: ${jour}`);
+    assert.match(day, /name="de" value="00:00"/, path);
+    assert.match(day, /name="a" value="23:59"/, path);
+    assert.ok(!/<input type="checkbox"[^>]*checked/.test(day), `${path}: box unchecked`);
+    for (const name of ["jour", "de", "a", "lendemain"]) {
+      assert.match(day, new RegExp(`<input [^>]*name="${name}"[^>]*autocomplete="off"`), `${path}: ${name}`);
+    }
+  }
+});
+
+// Intention: after an error, the box keeps its state (checked stays checked, unchecked stays unchecked) with the other typed values,
+// and the message is by the day block.
+appTest("filtres : l'état de la case est conservé après une erreur", options(), async (app) => {
+  const { b, csrf } = await connected(app);
+  const checked = await b.ticket({ csrf, jour: "2026-01-10", de: "05:00", a: "23:59", lendemain: "1" });
+  assert.equal(checked.status, 400);
+  const html = await checked.text();
+  const day = html.split('class="bloc-periode releve-jour"')[1].split("</form>")[0];
+  assert.match(day, /24 heures au plus/);
+  assert.match(day, /<input type="checkbox" id="lendemain" name="lendemain" value="1" autocomplete="off" checked>/);
+  assert.match(day, /name="de" value="05:00"/);
+  assert.match(day, /name="a" value="23:59"/);
+  const unchecked = await (await b.ticket({ csrf, jour: "2026-01-10", de: "18:00", a: "02:00" })).text();
+  const dayAgain = unchecked.split('class="bloc-periode releve-jour"')[1].split("</form>")[0];
+  assert.match(dayAgain, /cochez la case/);
+  assert.ok(!/<input type="checkbox"[^>]*checked/.test(dayAgain));
+  assert.equal(historyCalls(app).length, 0);
+});
+
+// Intention: the old help sentence is gone from the page, from every answer and from the source of the page.
+appTest("filtres : la phrase d'aide « Si « À » est avant « De »… » a disparu", options(), async (app) => {
+  const { readFile } = await import("node:fs/promises");
+  const { b, csrf } = await connected(app);
+  const pages = [await getHtml(b), await (await b.ticket({ csrf, jour: "2026-01-10", de: "18:00", a: "02:00" })).text()];
+  for (const html of pages) {
+    assert.ok(!html.includes("Si « À »") && !html.includes("jusqu'au lendemain") && !html.includes("aide-heures"));
+  }
+  const source = await readFile(new URL("../src/releve-page.js", import.meta.url), "utf8");
+  assert.ok(!source.includes("Si « À »") && !source.includes("aide-heures"));
+});
