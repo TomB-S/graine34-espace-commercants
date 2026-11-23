@@ -237,3 +237,33 @@ appTest("filtres : la phrase d'aide « Si « À » est avant « De »… » a di
   const source = await readFile(new URL("../src/releve-page.js", import.meta.url), "utf8");
   assert.ok(!source.includes("Si « À »") && !source.includes("aide-heures"));
 });
+
+// Intention: the several-days menu looks clickable without any script: a native summary with the exact title, folded by default,
+// open (chevron down) after an error of its own range, nothing inline added, and the style sheet draws the chevron (right when
+// folded, down for details[open]), hides the browser's own markers and shows a keyboard focus.
+appTest("filtres : le menu « Autre période » est un summary natif avec chevron en CSS, sans style ni script en ligne", options(), async (app) => {
+  const { b, csrf } = await connected(app);
+  const folded = await getHtml(b);
+  assert.match(folded, /<summary>Autre période \(plusieurs jours\)<\/summary>/, "native summary, exact title");
+  assert.equal([...folded.matchAll(/<summary/g)].length, 1);
+  assert.ok(!/<details[^>]*\bopen\b/.test(folded), "folded by default");
+  const open = await (await b.ticket({ csrf, start: "2026-01-10T18:00", end: "2026-01-10T09:00" })).text();
+  assert.match(open, /<details class="bloc-periode autre-periode" open>\s*<summary>Autre période \(plusieurs jours\)<\/summary>/, "open after an error of its range");
+  for (const html of [folded, open]) {
+    assert.ok(!/<script/i.test(html) && !/\sstyle=/i.test(html) && !/\son[a-z]+=/i.test(html), "nothing inline");
+    assert.ok(!/<summary[^>]*\s(?:class|style|aria-hidden)=/.test(html), "the chevron is not in the HTML (decorative, drawn by the style sheet)");
+  }
+  const css = await (await b.request("/style.css")).text();
+  const rule = (selector) => css.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
+  assert.match(rule(".autre-periode summary"), /cursor:\s*pointer/);
+  assert.match(rule(".autre-periode summary"), /color:\s*var\(--vert-principal\)/);
+  assert.match(rule(".autre-periode summary"), /list-style:\s*none/);
+  assert.match(rule(".autre-periode summary::-webkit-details-marker"), /display:\s*none/);
+  assert.match(rule(".autre-periode summary::before"), /content:\s*""/);
+  assert.match(rule(".autre-periode summary::before"), /border-right:[^;]*;[\s\S]*border-bottom:/);
+  assert.match(rule(".autre-periode summary::before"), /rotate\(-45deg\)/, "pointing right when folded");
+  assert.match(rule("details[open].autre-periode > summary::before"), /rotate\(45deg\)/, "pointing down when open");
+  assert.match(rule(".autre-periode summary:hover"), /underline/);
+  assert.match(css, /:focus-visible\s*\{[^}]*outline:\s*3px solid/, "the shared keyboard focus");
+  assert.ok(!/url\(/.test(rule(".autre-periode summary::before")), "no image");
+});

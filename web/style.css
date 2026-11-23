@@ -299,13 +299,49 @@ form[action="/espace/deconnexion"] {
   font-weight: 400;
 }
 
-/* Folded menu (details/summary): the whole line is the touch target, with a visible keyboard focus (the :focus-visible rule above). */
+/* Folded menu (details/summary): it must look clickable. A green title with a chevron drawn in CSS in front of it (borders of an
+   empty ::before, no image, no icon font; empty content, so nothing for a screen reader to read): pointing right when folded, down
+   when open (the details[open] rule below). The whole line is the touch target and the keyboard focus is the one of the buttons
+   (the :focus-visible rule above). The browser's own marker is removed, also the one of Safari. */
+.autre-periode {
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
 .autre-periode summary {
   display: flex;
   align-items: center;
   min-height: var(--tactile);
+  color: var(--vert-principal);
   font-weight: 600;
   cursor: pointer;
+  list-style: none;
+}
+
+.autre-periode summary::-webkit-details-marker {
+  display: none;
+}
+
+.autre-periode summary::before {
+  content: "";
+  flex: none;
+  box-sizing: border-box;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin: 0 0.75rem 0 0.25rem;
+  border-right: 3px solid currentColor;
+  border-bottom: 3px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+details[open].autre-periode > summary::before {
+  transform: rotate(45deg);
+}
+
+.autre-periode summary:hover {
+  color: var(--vert-principal-survol);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
 .autre-periode[open] summary {

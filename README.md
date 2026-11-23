@@ -369,6 +369,8 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
   2. **Un mois complet** : voir ci-dessous.
   3. **Autre période (plusieurs jours)** : un menu replié (éléments natifs `details` et `summary`) qui contient les deux dates avec
      heure (Début, Fin), limitées à 31 jours calendaires. Le serveur l'ouvre seulement après une erreur de cette plage.
+     Le titre est vert, souligné au survol, précédé d'un chevron dessiné en CSS (vers la droite replié, vers le bas ouvert, ignoré des
+     lecteurs d'écran) ; il reste un `summary` natif, utilisable au clavier (Entrée, Espace).
 
   **Les trois raccourcis** (Aujourd'hui, Hier, 6 dernières heures) sont des boutons d'un formulaire POST avec jeton CSRF : un clic affiche
   directement le ticket, avec les mêmes bornes qu'avant (aujourd'hui de 00:00 à maintenant, hier de 00:00 à 23:59, les 6 dernières
