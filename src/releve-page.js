@@ -5,31 +5,68 @@
 // Same rules as the other pages: no script, no inline style (the CSP of these pages forbids both), every value that is not a
 // constant goes through escapeHtml. The helpers of server.js are given by the caller (importing it from here would be circular).
 
+import { MONTH_NAMES, allowedYears, previousMonth } from "./releve-calcul.js";
+
 export const TOOL_NAME = "Relevés de service";
 const FILTERS_HREF = "/espace/releve";
 const AREA_HREF = "/espace";
 
 const backToArea = `<p><a href="${AREA_HREF}">Retour à l'espace</a></p>`;
 
+const capitalized = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+
 // The filter page. `values`: the start/end strings to put in the fields (computed by the server, or, after a validation error,
-// exactly what the user typed). `error`: plain text, or null.
-export function renderReleveFilters({ csrfToken, values, error = null }, { htmlPage, errorMessage, escapeHtml }) {
+// exactly what the user typed). `error`: plain text, or null. `month` and `years`: what the monthly block shows as selected (the
+// previous month by default) and the years it offers; both are constants of the server, never taken from the browser as they are.
+export function renderReleveFilters(
+  { csrfToken, values, error = null, month = previousMonth(), years = allowedYears() },
+  { htmlPage, errorMessage, escapeHtml },
+) {
+  const csrf = `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}">`;
+  const previous = previousMonth();
+  const monthOptions = MONTH_NAMES.map(
+    (name, i) => `<option value="${i + 1}"${i + 1 === month.month ? " selected" : ""}>${capitalized(name)}</option>`,
+  ).join("\n        ");
+  const yearOptions = years
+    .map((year) => `<option value="${year}"${year === month.year ? " selected" : ""}>${year}</option>`)
+    .join("\n        ");
   return htmlPage(
     "Choisir la plage horaire",
     `<h1>Choisir la plage horaire</h1>
   ${error ? errorMessage(escapeHtml(error)) : ""}
-  <p class="raccourcis">Raccourcis :
+  <div class="raccourcis">
+    <span>Raccourcis :</span>
     <a href="${FILTERS_HREF}?preset=aujourdhui">Aujourd'hui</a>
     <a href="${FILTERS_HREF}?preset=hier">Hier</a>
     <a href="${FILTERS_HREF}?preset=6h">6 dernières heures</a>
-  </p>
+    <form method="post" action="${FILTERS_HREF}/ticket">
+      ${csrf}
+      <input type="hidden" name="mois" value="${previous.month}">
+      <input type="hidden" name="annee" value="${previous.year}">
+      <button type="submit">Mois dernier</button>
+    </form>
+  </div>
   <form method="post" action="${FILTERS_HREF}/ticket">
-    <input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}">
+    ${csrf}
     <p><label for="start">Début</label>
       <input type="datetime-local" id="start" name="start" value="${escapeHtml(values.start)}" required></p>
     <p><label for="end">Fin</label>
       <input type="datetime-local" id="end" name="end" value="${escapeHtml(values.end)}" required></p>
     <p><button type="submit">Voir le relevé</button></p>
+  </form>
+  <form method="post" action="${FILTERS_HREF}/ticket" class="releve-mensuel" aria-labelledby="titre-mensuel">
+    ${csrf}
+    <h2 id="titre-mensuel">Relevé mensuel</h2>
+    <p>Un mois complet, du 1er au dernier jour.</p>
+    <p><label for="mois">Mois</label>
+      <select id="mois" name="mois" required>
+        ${monthOptions}
+      </select></p>
+    <p><label for="annee">Année</label>
+      <select id="annee" name="annee" required>
+        ${yearOptions}
+      </select></p>
+    <p><button type="submit">Voir le mois</button></p>
   </form>
   ${backToArea}`,
     { toolName: TOOL_NAME },
