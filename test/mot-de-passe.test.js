@@ -49,6 +49,7 @@ function field(form, { type = "password" } = {}) {
   input.focus = () => { input.document.activeElement = input; };
   input.setSelectionRange = (a, b) => input.selections.push([a, b]);
   input.access = access;
+  for (const [name, value] of Object.entries({ id: "password", name: "password", autocomplete: "current-password" })) input.setAttribute(name, value);
   return input;
 }
 
@@ -74,13 +75,14 @@ function page({ fields = 1, focused = false } = {}) {
     assert.equal(selector, 'input[type="password"]');
     return [...inputs, alone];
   };
-  document.createElement = (tag) => new Node(tag);
+  const created = [];
+  document.createElement = (tag) => (created.push(tag), new Node(tag));
   document.createElementNS = (ns, tag) => new Node(tag, ns);
   if (focused) document.activeElement = inputs[0];
   const toggles = enablePasswordToggles(document, window);
   const buttons = inputs.map((input) => input.parentNode.children.find((n) => n.tag === "button"));
   const fire = (target, type) => (target.listeners[type] ?? []).forEach((fn) => fn({}));
-  return { document, window, form, inputs, other, alone, toggles, buttons, fire };
+  return { document, window, form, inputs, other, alone, toggles, buttons, fire, created };
 }
 
 // ---------------------------------------------------------------- the module
@@ -195,6 +197,20 @@ test("module : le champ garde le focus et la position du curseur", () => {
   unfocused.buttons[0].fire("click");
   assert.equal(unfocused.document.activeElement, null);
   assert.deepEqual(unfocused.inputs[0].selections, []);
+});
+
+// Intention: the field is only moved into its container, once, at load: it is never recreated or cloned, and its id, name and
+// autocomplete (what the label and the password managers rely on) are the same before, after loading and after clicks.
+test("module : le champ est déplacé dans son conteneur, jamais recréé ; id, name et autocomplete inchangés", () => {
+  const { inputs, buttons, created } = page();
+  assert.deepEqual(created, ["button", "span"], "only a button and a container are created (the svg goes through createElementNS)");
+  buttons[0].fire("click");
+  buttons[0].fire("click");
+  assert.equal(inputs[0].getAttribute("id"), "password");
+  assert.equal(inputs[0].getAttribute("name"), "password");
+  assert.equal(inputs[0].getAttribute("autocomplete"), "current-password");
+  assert.deepEqual([...inputs[0].attributes.keys()].sort(), ["autocomplete", "id", "name"], "no attribute added or removed");
+  assert.equal(inputs[0].parentNode.children[0], inputs[0], "the same node, first in its container");
 });
 
 // Intention: nothing is added to a page without a password field.
@@ -357,4 +373,35 @@ test("style : le bouton oeil est dans la feuille de style (charte verte, 44 px, 
   assert.match(rule(".champ-secret input"), /padding-right:\s*var\(--tactile\)/);
   assert.match(css, /:focus-visible\s*\{[^}]*outline:\s*3px solid/, "the shared focus ring");
   assert.ok(!/url\(/.test(button));
+});
+
+// Intention: the container of the eye is exactly as wide as the field (the eye is placed against it, so it stays inside the field): on wide
+// screens it gets the very cap the fields get, in the same rule; the button is absolute, on the right, over the whole height of the
+// field, with no border, a transparent background, a hand cursor; the field keeps room on its right for it; no second eye.
+test("style : l'oeil est dans le champ (conteneur de la largeur du champ, bouton absolu à droite, marge droite, oeil natif masqué)", async () => {
+  const css = await readFile(new URL("../web/style.css", import.meta.url), "utf8");
+  const rule = (selector) => css.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
+  const container = rule(".champ-secret");
+  assert.match(container, /position:\s*relative/);
+  assert.match(container, /display:\s*block/);
+  const button = rule(".voir-mot-de-passe");
+  for (const declaration of [/position:\s*absolute/, /top:\s*0/, /right:\s*0/, /bottom:\s*0/, /border:\s*0/, /background:\s*transparent/, /cursor:\s*pointer/, /width:\s*var\(--tactile\)/]) {
+    assert.match(button, declaration, String(declaration));
+  }
+  assert.match(rule(".champ-secret input"), /padding-right:\s*var\(--tactile\)/);
+  assert.match(css, /\.champ-secret input::-ms-reveal,\s*\.champ-secret input::-ms-clear \{\s*display:\s*none;/);
+  // The cap of wide screens: the container is in the same rule as the three kinds of field, with the same 22 rem.
+  const cap = css.indexOf('input[type="datetime-local"],\n  .champ-secret {');
+  assert.ok(cap > 0, "the container has the same max-width as the fields");
+  assert.match(css.slice(cap, cap + 120), /max-width:\s*22rem/);
+  const media = css.slice(css.lastIndexOf("@media", cap), cap);
+  assert.match(media, /^@media \(min-width/, "only on wide screens, like the fields");
+});
+
+// Intention: no inline style or script is added by the eye: the pages hold the same markup as before (label, field, one script tag).
+appTest("pages de connexion : toujours aucun style en ligne, label et champ liés par for/id", options(), async (app) => {
+  const html = await (await browser(app).request("/espace")).text();
+  assert.ok(!/\sstyle\s*=|<style/i.test(html));
+  assert.match(html, /<label for="password">Mot de passe :<\/label>\s*<input type="password" id="password" name="password" required autocomplete="current-password">/);
+  assert.deepEqual(scriptsOf(html), [SCRIPT_TAG]);
 });
