@@ -99,6 +99,18 @@ body {
   line-height: 0;
 }
 
+/* In the multi-merchant mode the logo is a link to the merchants' area: no underline, a white focus ring that shows on the green banner. */
+.logo a {
+  display: block;
+  border-radius: 0.375rem;
+  text-decoration: none;
+}
+
+.logo a:focus-visible {
+  outline: 3px solid var(--blanc);
+  outline-offset: 2px;
+}
+
 .logo img {
   display: block;
   max-width: 100%;
@@ -269,7 +281,7 @@ form[action="/espace/deconnexion"] {
   margin-top: 1rem;
 }
 
-/* Main button of the ticket, above the "Changer la plage horaire" link. */
+/* Main button of the ticket (next to the print button on a wide screen). */
 .telechargement {
   margin: 0 0 0.5rem;
 }
@@ -279,6 +291,42 @@ form[action="/espace/deconnexion"] {
 .imprimer {
   display: block;
   margin: 0 0 0.5rem;
+}
+
+/* Back button at the top of the filters page and of the ticket: a link drawn as an outlined pill (like the shortcuts), with an arrow
+   drawn in CSS (empty ::before, nothing for a screen reader). Same keyboard focus as the buttons (the :focus-visible rule above). */
+.retour {
+  margin: 0 0 1rem;
+}
+
+a.lien-retour {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tactile);
+  padding: 0 1rem;
+  border: 1px solid var(--vert-principal);
+  border-radius: 999px;
+  background: var(--blanc);
+  color: var(--vert-principal);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+a.lien-retour::before {
+  content: "";
+  flex: none;
+  box-sizing: border-box;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin: 0 0.6rem 0 0.15rem;
+  border-left: 3px solid currentColor;
+  border-bottom: 3px solid currentColor;
+  transform: rotate(45deg);
+}
+
+a.lien-retour:hover {
+  background: var(--vert-principal-survol);
+  color: var(--blanc);
 }
 
 /* Shortcuts of the filters page: buttons of a POST form, drawn as green outlined pills. */
@@ -548,14 +596,40 @@ details[open].autre-periode > summary::before {
   font-style: italic;
 }
 
+/* Bottom of the ticket: only the Print and PDF buttons, stacked and full width on a phone, side by side from 40rem up. */
 .actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
   margin-top: 1.5rem;
 }
 
-.actions a {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--tactile);
+.actions .imprimer,
+.actions .telechargement {
+  margin: 0;
+}
+
+.actions button {
+  width: 100%;
+}
+
+@media (min-width: 40rem) {
+  .actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .actions button {
+    width: auto;
+  }
+}
+
+/* Top of the ticket card: the two back buttons (same pills as the filters page) on one line, wrapping on a narrow screen. */
+.navigation-ticket {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 0.75rem;
 }
 
 /* ---------- Cash register page (/caisse): payments received, readable from a distance ---------- */
@@ -968,13 +1042,19 @@ details[open].autre-periode > summary::before {
     color: var(--noir);
   }
 
-  /* Nothing clickable on paper */
+  /* Nothing clickable on paper (the logo link, which holds the logo, stays a plain block: the printed header does not change) */
   a,
   button,
   form,
   .actions,
+  .navigation-ticket,
+  .retour,
   .raccourcis {
     display: none !important;
+  }
+
+  a.lien-logo {
+    display: block !important;
   }
 
   .ticket {

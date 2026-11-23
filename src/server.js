@@ -18,7 +18,7 @@ import { renderCaissePage, renderCaisseRefused } from "./caisse-page.js";
 import { renderEspaceLogin, renderEspaceHome, REFUSED_TEXT, PASSWORD_SCRIPT } from "./espace-page.js";
 import { renderCaisseData } from "./caisse-data.js";
 import { inExecutable, readAsset } from "./assets.js";
-import { escapeHtml, errorMessage, formatAmount } from "./format.js";
+import { escapeHtml, errorMessage, formatAmount, logoMarkup } from "./format.js";
 import { readHistoryLimits, readMonthMaxRows } from "./releve-calcul.js";
 import { createReleveRoutes, DEFAULT_READ_TIMEOUT_MS, RELEVE_PATH } from "./releve-routes.js";
 
@@ -308,6 +308,13 @@ function serveStatic(req, res, asset) {
   res.end(asset.body);
 }
 
+// Where the logo of the header leads: the merchants' area in the multi-merchant mode (the pages of the area, of the cash register and of
+// the statement), nowhere in the single-merchant mode and the executable (the logo stays a plain image). A function: the mode is known
+// only once the server has started.
+function areaHref() {
+  return CAISSE.multiMerchant ? "/espace" : null;
+}
+
 // `scripts`: addresses of external scripts, loaded at the end of the body (the statement ticket loads its print button, the login pages
 // the eye button; no page has an inline script). `htmlClass`: class of the <html> element (a constant of the caller: the print layout of
 // a page).
@@ -323,7 +330,7 @@ function htmlPage(title, body, { toolName = "Notification de paiement", scripts 
 </head>
 <body>
   <header class="entete">
-    <span class="logo"><img src="/logo.png" width="104" height="40" alt="La Graine 34, monnaie locale"></span>
+    ${logoMarkup(areaHref())}
     <span class="nom-outil">${escapeHtml(toolName)}</span>
   </header>
   <div class="page">
@@ -1043,7 +1050,7 @@ const RELEVE = createReleveRoutes({
     return { bytes: await renderTicketPdf(model), filename: pdfFilename(statement) };
   },
 });
-const CAISSE_HELPERS = { escapeHtml, formatAmount, htmlPage, errorMessage, logoutForm, stylesheetHref: STYLE_HREF, loginHref };
+const CAISSE_HELPERS = { escapeHtml, formatAmount, htmlPage, errorMessage, logoutForm, stylesheetHref: STYLE_HREF, loginHref, areaHref };
 
 // What /caisse and /caisse/data share: the session, the identity of the visitor, the registration check and the
 // visit (touch) that keeps the listener alive. `fail(kind, session)` answers a refusal in the format of the caller

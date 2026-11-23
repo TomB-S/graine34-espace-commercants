@@ -5,6 +5,7 @@
 // Same rules as the other pages: no inline script, no inline style (the CSP of these pages forbids both), every value that is not a
 // constant goes through escapeHtml. The only script is the one of the ticket (the Print button, loaded by src at the end of the body). The helpers of server.js are given by the caller (importing it from here would be circular).
 
+import { backButton } from "./format.js";
 import { MONTH_NAMES, allowedYears, previousMonth, dayDefaults } from "./releve-calcul.js";
 
 export const TOOL_NAME = "Relevés de caisse";
@@ -43,7 +44,8 @@ export function renderReleveFilters(
   const top = ["day", "month", "range"].includes(errorFor) ? "" : message;
   return htmlPage(
     "Choisir la période",
-    `<h1>Choisir la période</h1>
+    `${backButton(AREA_HREF, "Retour à l'espace")}
+  <h1>Choisir la période</h1>
   ${top}
   <div class="raccourcis">
     <form method="post" action="${FILTERS_HREF}/ticket" aria-label="Raccourcis">
@@ -96,8 +98,7 @@ export function renderReleveFilters(
         <input type="datetime-local" id="end" name="end" value="${escapeHtml(values.end)}" required></p>
       <p><button type="submit">Voir la période</button></p>
     </form>
-  </details>
-  ${backToArea}`,
+  </details>`,
     { toolName: TOOL_NAME },
   );
 }
@@ -143,6 +144,10 @@ export function renderReleveTicket({ model: m, csrfToken, pdf = false }, { htmlP
   return htmlPage(
     m.title,
     `<main class="ticket">
+  <nav class="navigation-ticket" aria-label="Navigation">
+    ${backButton(AREA_HREF, "Retour à l'espace")}
+    ${backButton(FILTERS_HREF, "Changer de période")}
+  </nav>
   <h1>${escapeHtml(m.title)}</h1>
   ${m.merchantName ? `<p class="commercant">${escapeHtml(m.merchantName)}</p>` : ""}
   <p class="periode">${escapeHtml(m.period)}</p>
@@ -165,8 +170,7 @@ export function renderReleveTicket({ model: m, csrfToken, pdf = false }, { htmlP
   }
 
   <div class="actions">
-    ${download}<p><a href="${FILTERS_HREF}">Changer la plage horaire</a></p>
-    ${backToArea}
+    ${download}
   </div>
 </main>`,
     // The month ticket prints on A4 (the page-mois rules of style.css); the ticket of a period keeps the 80 mm ticket.
