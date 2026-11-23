@@ -107,6 +107,73 @@ export function parseRange(startText, endText, now = DateTime.now().setZone(ZONE
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Whole months ("Mois complet" mode)
+
+export const MONTH_NAMES = [
+  "janvier", "février", "mars", "avril", "mai", "juin",
+  "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+];
+// Strict shapes of the submitted values: no sign, no space, no leading zero, nothing else.
+const MONTH_SHAPE = /^(?:[1-9]|1[0-2])$/;
+const YEAR_SHAPE = /^[1-9]\d{3}$/;
+// The year list offered by the form: the current year and the two before it.
+export const MONTH_YEARS_BACK = 2;
+
+export function allowedYears(now = DateTime.now().setZone(ZONE)) {
+  return Array.from({ length: MONTH_YEARS_BACK + 1 }, (_, i) => now.year - MONTH_YEARS_BACK + i);
+}
+
+// The month before the one of `now`, as { year, month } (month 1..12): the default of the monthly form.
+export function previousMonth(now = DateTime.now().setZone(ZONE)) {
+  const before = now.startOf("month").minus({ months: 1 });
+  return { year: before.year, month: before.month };
+}
+
+// Range of one whole month, Paris time, same conventions as the other ranges: it starts on the 1st at 00:00 and ends on the last
+// day at 23:59 (like "Hier"), `until` (sent to Cyclos) being the last millisecond of that minute. Everything goes through Luxon in
+// ZONE, so the day count and the hours of a month with a clock change come out right (no fixed offset anywhere).
+// `yearText` and `monthText` are the submitted strings and are checked strictly: a whole month number 1..12 and one of the years of
+// allowedYears(); anything else is an error (`invalid: true`, the route answers 400). A month that has not started is refused. The
+// current month is accepted, but its end is brought back to now (`clamped` and `current` are true, and the label says so).
+// Returns { error, invalid? } or { from, to, until, clamped, current, year, month, title, label }.
+export function monthRange(yearText, monthText, now = DateTime.now().setZone(ZONE)) {
+  if (!YEAR_SHAPE.test(yearText ?? "") || !allowedYears(now).includes(Number(yearText))) {
+    return { error: "Année invalide : choisissez une année de la liste.", invalid: true };
+  }
+  if (!MONTH_SHAPE.test(monthText ?? "")) {
+    return { error: "Mois invalide : choisissez un mois de la liste.", invalid: true };
+  }
+  const year = Number(yearText);
+  const month = Number(monthText);
+
+  const from = DateTime.fromObject({ year, month, day: 1 }, { zone: ZONE }).startOf("day");
+  if (from > now) {
+    return { error: "Ce mois n'a pas encore commencé : choisissez le mois en cours ou un mois passé." };
+  }
+
+  let to = from.endOf("month").startOf("minute");
+  let until = to.plus({ minutes: 1 }).minus({ milliseconds: 1 });
+  const current = until > now;
+  if (current) {
+    to = now.startOf("minute");
+    until = now;
+  }
+
+  const name = `${MONTH_NAMES[month - 1]} ${year}`;
+  return {
+    from,
+    to,
+    until,
+    clamped: current,
+    current,
+    year,
+    month,
+    title: `Relevé du mois de ${name}`,
+    label: current ? `${name} (mois en cours, jusqu'au ${to.toFormat("dd/MM/yyyy 'à' HH:mm")})` : name,
+  };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // Amounts
 
 // Exact decimal arithmetic for amounts: "10.25" with 2 digits -> 1025n (smallest currency unit). Returns null for anything that is
