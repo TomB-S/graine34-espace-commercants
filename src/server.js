@@ -15,7 +15,7 @@ import { createListenerManager } from "./listener-manager.js";
 import { refusedNoProAccountLine } from "./allowed-users.js";
 import { createLoginGuard } from "./login-guard.js";
 import { renderCaissePage, renderCaisseRefused } from "./caisse-page.js";
-import { renderEspaceLogin, renderEspaceHome, REFUSED_TEXT } from "./espace-page.js";
+import { renderEspaceLogin, renderEspaceHome, REFUSED_TEXT, PASSWORD_SCRIPT } from "./espace-page.js";
 import { renderCaisseData } from "./caisse-data.js";
 import { inExecutable, readAsset } from "./assets.js";
 import { escapeHtml, errorMessage, formatAmount } from "./format.js";
@@ -302,7 +302,8 @@ function serveStatic(req, res, asset) {
   res.end(asset.body);
 }
 
-function htmlPage(title, body, { toolName = "Notification de paiement" } = {}) {
+// `scripts`: addresses of external scripts, loaded at the end of the body (the login pages load the eye button; no page has an inline script).
+function htmlPage(title, body, { toolName = "Notification de paiement", scripts = [] } = {}) {
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -319,7 +320,7 @@ function htmlPage(title, body, { toolName = "Notification de paiement" } = {}) {
   </header>
   <div class="page">
   ${body}
-  </div>
+  </div>${scripts.map((src) => `\n  <script type="module" src="${escapeHtml(src)}"></script>`).join("")}
 </body>
 </html>`;
 }
@@ -330,9 +331,11 @@ function renderLoginForm() {
     `<h1>Connexion</h1>
   <form method="post" action="/connexion">
     <p><label>Identifiant : <input type="text" name="login" required autofocus></label></p>
-    <p><label>Mot de passe : <input type="password" name="password" required></label></p>
+    <p><label for="password">Mot de passe :</label>
+      <input type="password" id="password" name="password" required></p>
     <p><button type="submit">Se connecter</button></p>
   </form>`,
+    { scripts: [PASSWORD_SCRIPT] },
   );
 }
 

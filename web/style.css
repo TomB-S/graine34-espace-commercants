@@ -176,6 +176,51 @@ input[type="datetime-local"] {
   font: inherit; /* 16 px: avoids automatic zoom on iOS */
 }
 
+/* The eye button of the login pages: made by the script, inside the password field (on its right). The field makes room for it. */
+.champ-secret {
+  position: relative;
+  display: block;
+}
+
+.champ-secret input {
+  padding-right: var(--tactile);
+}
+
+.voir-mot-de-passe {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--tactile); /* 44 px: a finger target */
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0 0.375rem 0.375rem 0;
+  background: transparent;
+  color: var(--vert-principal);
+}
+
+.voir-mot-de-passe:hover {
+  background: transparent;
+  color: var(--vert-principal-survol);
+}
+
+/* The focus ring is drawn inside the field: on its right edge there is no room outside. */
+.voir-mot-de-passe:focus-visible {
+  outline-offset: -3px;
+}
+
+.voir-mot-de-passe svg {
+  display: block;
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
 button {
   min-height: var(--tactile);
   padding: 0.5rem 1.25rem;

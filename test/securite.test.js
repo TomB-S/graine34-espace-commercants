@@ -114,10 +114,13 @@ appTest("aucune réponse HTML ne contient style=, <style ni <script", CAISSE_OPT
     const html = body.toString("utf-8");
     assert.ok(!/\sstyle\s*=/i.test(html), `${label} : style=`);
     assert.ok(!/<style/i.test(html), `${label} : <style`);
-    // The only script allowed is the external one of the cash register page; the only meta refresh is its noscript fallback.
+    // The only scripts allowed are the external one of the cash register page and, on the login pages, the one of the eye button; the
+    // only meta refresh is the noscript fallback of the cash register.
+    // updated: the login page ("GET /" and the refused logins) now loads /password-toggle.js.
     const scripts = html.match(/<script[^>]*>[\s\S]*?<\/script>/gi) ?? [];
-    assert.ok(scripts.every((tag) => /^<script type="module" src="\/caisse\.js"><\/script>$/.test(tag)), `${label} : <script`);
-    assert.ok(label === "GET /caisse 200" || scripts.length === 0, `${label} : script hors caisse`);
+    assert.ok(scripts.every((tag) => /^<script type="module" src="\/(caisse|password-toggle)\.js"><\/script>$/.test(tag)), `${label} : <script`);
+    const hasLoginForm = html.includes('type="password"');
+    assert.ok(label === "GET /caisse 200" || (hasLoginForm ? scripts.length === 1 : scripts.length === 0), `${label} : script hors caisse et connexion`); // updated
     const refreshes = html.match(/<meta[^>]+refresh[^>]*>/gi) ?? [];
     assert.ok(refreshes.length === 0 || (label === "GET /caisse 200" && html.includes("<noscript>" + refreshes[0] + "</noscript>")), `${label} : <meta refresh>`);
     assert.ok(!/\son[a-z]+\s*=/i.test(html), `${label} : gestionnaire d'événement`);

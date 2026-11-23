@@ -7,6 +7,9 @@
 
 export const TITLE = "Espace commerçants";
 
+// The only script of the login pages: the eye button next to the password field (made by the script, not by this HTML).
+export const PASSWORD_SCRIPT = "/password-toggle.js";
+
 // One message for a wrong password AND for an account that is not allowed: the page must not tell who is on the list.
 export const REFUSED_TEXT = "Identifiants incorrects ou accès non autorisé.";
 
@@ -19,10 +22,11 @@ export function renderEspaceLogin({ message = null } = {}, { htmlPage, errorMess
   ${message ? errorMessage(escapeHtml(message)) : ""}
   <form method="post" action="/espace/connexion">
     <p><label>Identifiant : <input type="text" name="login" required autofocus autocomplete="username"></label></p>
-    <p><label>Mot de passe : <input type="password" name="password" required autocomplete="current-password"></label></p>
+    <p><label for="password">Mot de passe :</label>
+      <input type="password" id="password" name="password" required autocomplete="current-password"></p>
     <p><button type="submit">Se connecter</button></p>
   </form>`,
-    { toolName: TITLE },
+    { toolName: TITLE, scripts: [PASSWORD_SCRIPT] },
   );
 }
 
