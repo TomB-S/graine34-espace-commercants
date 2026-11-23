@@ -168,7 +168,7 @@ appTest("pdf : sans session, origine étrangère, CSRF faux, dates invalides -> 
     const res = await pdf(b, { csrf, ...dates });
     assert.equal(res.status, 400, JSON.stringify(dates));
     const html = await res.text();
-    assert.match(html, /<h1>Choisir la plage horaire<\/h1>/);
+    assert.match(html, /<h1>Choisir la période<\/h1>/); // updated: the page title was "Choisir la plage horaire" before the filters redesign
     assert.ok(!html.includes('"><b>'));
   }
   assert.equal(app.cyclos.calls("GET", "/self/accounts").length, 1);

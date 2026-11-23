@@ -19,7 +19,7 @@ import { renderEspaceLogin, renderEspaceHome, REFUSED_TEXT } from "./espace-page
 import { renderCaisseData } from "./caisse-data.js";
 import { inExecutable, readAsset } from "./assets.js";
 import { escapeHtml, errorMessage, formatAmount } from "./format.js";
-import { readHistoryLimits } from "./releve-calcul.js";
+import { readHistoryLimits, readMonthMaxRows } from "./releve-calcul.js";
 import { createReleveRoutes, DEFAULT_READ_TIMEOUT_MS, RELEVE_PATH } from "./releve-routes.js";
 
 
@@ -95,9 +95,14 @@ const pageLogin = { inFlight: false, refusals: 0, lockedUntil: 0 };
 // Host header accepted when the login is typed on the page (null = not checked): only this machine's own names.
 let ALLOWED_HOSTS = null;
 const CSP_WITH_SCRIPT = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+// The statement pages have no script, except the ticket (and only its 200 answer): the policy without script plus script-src 'self'
+// for the print button, nothing else (no inline script, no connect-src).
+const CSP_TICKET = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 const CSP_NO_SCRIPT = "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 // Statement (/espace/releve): lines read per page and in all, and the time allowed for one reading. Set by startServer().
 let HISTORY = readHistoryLimits({});
+// Cap of lines for the whole-month mode only (HISTORY_MAX_ROWS_MONTH).
+let HISTORY_MONTH_MAX_ROWS = readMonthMaxRows({});
 let RELEVE_TIMEOUT_MS = DEFAULT_READ_TIMEOUT_MS;
 
 // Local session store: our session id (the cookie value) ->
@@ -264,9 +269,9 @@ function staticAsset(file, contentType, cacheControl = "public, max-age=3600") {
   return { body, contentType, etag, cacheControl };
 }
 
-// Script of the cash register page and the pure modules it imports (each one is also tested by Node). The only
-// scripts the CSP lets run are these, served from our own address.
-const BROWSER_MODULES = ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic", "notification", "notification-logic", "controls-logic", "refresh-logic"];
+// Scripts of the browser: the cash register page and the pure modules it imports (each one is also tested by Node), and the
+// print button of the statement ticket (print-ticket). The only scripts the CSP lets run are these, served from our own address.
+const BROWSER_MODULES = ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic", "notification", "notification-logic", "controls-logic", "refresh-logic", "print-ticket"];
 
 const STATIC_ASSETS = new Map([
   ["GET /style.css", staticAsset("style.css", "text/css; charset=utf-8")],
@@ -302,9 +307,11 @@ function serveStatic(req, res, asset) {
   res.end(asset.body);
 }
 
-function htmlPage(title, body, { toolName = "Notification de paiement" } = {}) {
+// `scripts`: addresses of external scripts, loaded at the end of the body. `htmlClass`: class of the <html> element (a constant of
+// the caller: the print layout of a page).
+function htmlPage(title, body, { toolName = "Notification de paiement", scripts = [], htmlClass = "" } = {}) {
   return `<!DOCTYPE html>
-<html lang="fr">
+<html lang="fr"${htmlClass ? ` class="${htmlClass}"` : ""}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -319,7 +326,7 @@ function htmlPage(title, body, { toolName = "Notification de paiement" } = {}) {
   </header>
   <div class="page">
   ${body}
-  </div>
+  </div>${scripts.map((src) => `\n  <script type="module" src="${escapeHtml(src)}"></script>`).join("")}
 </body>
 </html>`;
 }
@@ -1008,6 +1015,7 @@ const ESPACE_HELPERS = { escapeHtml, htmlPage, errorMessage };
 // The statement of /espace/releve: its routes live in releve-routes.js, they only need these pieces of this file.
 const RELEVE = createReleveRoutes({
   helpers: ESPACE_HELPERS,
+  ticketPolicy: CSP_TICKET,
   send,
   redirect,
   readBody,
@@ -1021,6 +1029,8 @@ const RELEVE = createReleveRoutes({
   },
   push: () => CAISSE_RUNTIME.push,
   limits: () => HISTORY,
+  monthMaxRows: () => HISTORY_MONTH_MAX_ROWS,
+  payerNames: () => ({ hidePayerName: CAISSE.hidePayerName, nameOrder: CAISSE.nameOrder }),
   readTimeoutMs: () => RELEVE_TIMEOUT_MS,
   // The PDF module (and pdfkit with it) is loaded at the first PDF only. The build of the single executable leaves it out (the area
   // does not exist there): see tools/build-sea.js.
@@ -1167,7 +1177,7 @@ const server = http.createServer(async (req, res) => {
   // Security headers, on every response. writeHead() later merges its own
   // headers with these.
   // The cash register page runs scripts from this address; the pages of the statement have none, so they allow none (no script-src,
-  // no connect-src: the policy of the original statement tool).
+  // no connect-src: the policy of the original statement tool), except the ticket itself (see releve-routes.js).
   const statementPage = pathname === RELEVE_PATH || pathname.startsWith(`${RELEVE_PATH}/`);
   res.setHeader("Content-Security-Policy", statementPage ? CSP_NO_SCRIPT : CSP_WITH_SCRIPT);
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -1393,6 +1403,7 @@ export function startServer(options = {}) {
   }
   ALLOWED_HOSTS = null;
   HISTORY = options.history ?? readHistoryLimits(process.env);
+  HISTORY_MONTH_MAX_ROWS = options.historyMonthMaxRows ?? readMonthMaxRows(process.env);
   RELEVE_TIMEOUT_MS = options.releveTimeoutMs ?? DEFAULT_READ_TIMEOUT_MS;
   BASE = baseUrl(options.cyclosBaseUrl ?? process.env.CYCLOS_BASE_URL);
   COOKIE_SECURE = options.cookieSecure ?? process.env.COOKIE_SECURE === "true";

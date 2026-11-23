@@ -37,6 +37,28 @@ export function shortPayerName(name, order = "nom-prenom") {
   return `${firstName} ${initial.toLocaleUpperCase("fr")}.`;
 }
 
+// Counterparty of the statement (/espace/releve): the same rule as the cash register (shortPayerName, never copied), applied only
+// when the text looks like the name of a person, because a statement also shows system accounts and businesses and must not
+// distort them. Looks like a person: exactly one " - " separator ("Dupont - Marie", the format Cyclos writes), or, without
+// separator, exactly two words ("Dupont Marie"); and the first-name side is ONE word (a first name written with a space is not
+// recognised, so the text is left as it is rather than cut at the wrong place; see also the "prenom-nom" case below). Anything else is returned unchanged.
+// `hidePayerName` (CAISSE_HIDE_PAYER_NAME) gives "Client" for any non-empty text; an empty one stays empty.
+export function statementCounterparty(name, { hidePayerName = false, nameOrder = "nom-prenom" } = {}) {
+  const text = String(name ?? "").trim();
+  if (text === "") return "";
+  if (hidePayerName) return TEXTS.clientPayer;
+  const sides = text.split(" - ");
+  const parts = sides.length === 1 ? text.split(/\s+/) : sides.length === 2 ? sides.map((side) => side.trim()) : [];
+  if (parts.length !== 2 || parts.some((part) => part === "")) return text;
+  // The first-name side is one word; with "prenom-nom" the cash register takes the initial of the LAST word of the family name, which
+  // is not the first one of a name like "De La Fontaine", so that order also asks for a one-word family name.
+  const mustBeOneWord = nameOrder === "prenom-nom" ? parts : [parts[1]];
+  if (mustBeOneWord.some((part) => /\s/.test(part))) return text;
+  const short = shortPayerName(parts.join(" "), nameOrder);
+  // The cash register rule gives the words back when they are not letters ("123 456"): the original text is kept, separator included.
+  return short === parts.join(" ") ? text : short;
+}
+
 export const payerText = (display, hidePayerName, nameOrder) => (hidePayerName ? TEXTS.clientPayer : shortPayerName(display.payer, nameOrder) || TEXTS.noPayer);
 
 export const amountText = (display) =>

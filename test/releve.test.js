@@ -19,6 +19,8 @@ import {
 
 // The policy of the original statement tool, written out in full: no script, no connection.
 const CSP_SANS_SCRIPT = "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+// The ticket page (200 answer only) adds script-src 'self' for the Print button, and nothing else.
+const CSP_TICKET = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 const CSP_AVEC_SCRIPT = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 
 // ------------------------------------------------------------------------------ one login, the token of the area
@@ -43,7 +45,7 @@ appTest("relevé : une seule connexion (celle de l'espace), le jeton Cyclos de l
 
 // ------------------------------------------------------------------------------ filters
 
-// Intention: the shortcuts prefill the form with well-formed dates, the hidden CSRF token is the session's one, and the page offers a way back to the area
+// Intention: the free range is prefilled with well-formed dates, the shortcuts are POST buttons, the hidden CSRF token is the session's one, and the page offers a way back to the area
 // (and no logout button: the area has its own).
 appTest("relevé : filtres, préréglages, jeton CSRF de la session, lien de retour à l'espace, pas de bouton de déconnexion", options(), async (app) => {
   const { b, csrf } = await connected(app);
@@ -52,18 +54,21 @@ appTest("relevé : filtres, préréglages, jeton CSRF de la session, lien de ret
     assert.equal(res.status, 200);
     assert.match(res.headers.get("content-type"), /^text\/html; charset=utf-8$/);
     const html = await res.text();
-    assert.match(html, /<h1>Choisir la plage horaire<\/h1>/);
+    assert.match(html, /<h1>Choisir la période<\/h1>/); // updated: the page title was "Choisir la plage horaire" before the filters redesign
     assert.match(html, /<form method="post" action="\/espace\/releve\/ticket">/);
     assert.match(html, /id="start" name="start" value="\d{4}-\d\d-\d\dT\d\d:\d\d"/);
     assert.match(html, /id="end" name="end" value="\d{4}-\d\d-\d\dT\d\d:\d\d"/);
     assert.equal(html.match(/name="csrf" value="([0-9a-f]+)"/)[1], csrf);
     assert.match(html, /<a href="\/espace">Retour à l'espace<\/a>/);
     assert.ok(!html.includes("Se déconnecter") && !html.includes("deconnexion"));
-    assert.match(html, /href="\/espace\/releve\?preset=hier"/);
+    // updated: the shortcuts are buttons of a POST form now, not links, and an old ?preset= link prefills nothing
+    assert.match(html, /<button type="submit" name="raccourci" value="hier">Hier<\/button>/);
+    assert.ok(!html.includes("preset="));
   }
-  const hier = await (await b.request("/espace/releve?preset=hier")).text();
-  assert.match(hier, /name="start" value="[\d-]+T00:00"/);
-  assert.match(hier, /name="end" value="[\d-]+T23:59"/);
+  // updated: ?preset=hier no longer fills the dates: the free range has the same values as without the query
+  const fields = (html) => [html.match(/name="start" value="([^"]*)"/)[1], html.match(/name="end" value="([^"]*)"/)[1]];
+  const plain = fields(await (await b.request("/espace/releve")).text());
+  assert.deepEqual(fields(await (await b.request("/espace/releve?preset=hier")).text()).map((v) => v.slice(0, 10)), plain.map((v) => v.slice(0, 10)));
   assert.equal(app.cyclos.calls("GET", "/self/accounts").length, 1, "afficher les filtres n'appelle pas Cyclos (seul reste l'appel de la connexion)");
 });
 
@@ -200,7 +205,9 @@ appTest("relevé : valeurs de Cyclos échappées (nom, contrepartie, description
   e.relatedAccount = { user: { display: hostile } };
   const { b, csrf } = await connected(app, [e], { display: hostile });
   const html = await (await b.ticket({ csrf, ...RANGE })).text();
-  assert.ok(!/<script|<style|<img src=x|<b>/i.test(html), "balise brute dans la page");
+  // The ticket page now carries one script tag of its own (the Print button, by src): it is the only one allowed, a hostile one is not.
+  assert.deepEqual(html.match(/<script[^>]*>/gi), ['<script type="module" src="/print-ticket.js">']);
+  assert.ok(!/<style|<img src=x|<b>/i.test(html), "balise brute dans la page");
   assert.ok(html.includes("&lt;img src=x onerror=alert(1)&gt;"));
   assert.ok(html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"));
   assert.ok(html.includes("&amp; &quot;q&quot;"));
@@ -224,7 +231,7 @@ appTest("relevé : dates invalides -> 400 sur la page des filtres, valeurs saisi
     assert.match(res.headers.get("content-type"), /^text\/html/);
     const html = await res.text();
     assert.match(html, message);
-    assert.match(html, /<h1>Choisir la plage horaire<\/h1>/);
+    assert.match(html, /<h1>Choisir la période<\/h1>/); // updated: the page title was "Choisir la plage horaire" before the filters redesign
     assert.ok(!html.includes('"><b>'), "saisie échappée");
   }
   assert.equal(app.cyclos.calls("GET", "/self/accounts").length, 1);
@@ -373,12 +380,13 @@ appTest("relevé : une lecture à la fois par session (429), garde libérée à 
 // ------------------------------------------------------------------------------ security headers
 
 // Intention: the pages of the statement allow NO script and no connection (the exact policy of the original tool), whatever the answer
-// (filters, ticket, 400, 403, 303, 404); the other pages keep the policy that lets the cash register script run.
+// (filters, 400, 403, 303, 404), except the ticket itself (200), which adds script-src 'self' for its Print button and nothing else;
+// the other pages keep the policy that lets the cash register script run.
 appTest("relevé : politique de sécurité sans script sur /espace/releve*, identique à l'outil d'origine ; inchangée ailleurs", options(), async (app) => {
   const { b, csrf } = await connected(app, history(2));
+  const ticketAnswer = await b.ticket({ csrf, ...RANGE });
   const answers = [
     await b.request("/espace/releve"),
-    await b.ticket({ csrf, ...RANGE }),
     await b.ticket({ csrf, start: "x", end: "y" }),
     await b.ticket({ csrf: "faux", ...RANGE }),
     await b.request("/espace/releve/ticket"),
@@ -392,12 +400,22 @@ appTest("relevé : politique de sécurité sans script sur /espace/releve*, iden
     assert.equal(res.headers.get("referrer-policy"), "same-origin");
     assert.equal(res.headers.get("cache-control"), "no-store");
   }
+  // The ticket: same headers as the others, with the policy of the ticket page (only script-src 'self' added).
+  assert.equal(ticketAnswer.status, 200);
+  assert.equal(ticketAnswer.headers.get("content-security-policy"), CSP_TICKET);
+  assert.ok(!/unsafe-|connect-src/.test(CSP_TICKET));
+  assert.equal(ticketAnswer.headers.get("cache-control"), "no-store");
   for (const path of ["/espace", "/caisse", "/style.css", "/espace/inconnu", "/espace/releveX"]) {
     assert.equal((await b.request(path)).headers.get("content-security-policy"), CSP_AVEC_SCRIPT, path);
   }
-  const html = await (await b.ticket({ csrf, ...RANGE })).text();
-  assert.ok(!/<script|style=|<style/i.test(html), "ni script ni style dans la page");
-  assert.ok(!html.includes("onclick"));
+  // No inline script and no inline style in the ticket: the only script is the external module, loaded by src at the end of the body.
+  const html = await ticketAnswer.text();
+  const scripts = html.match(/<script[\s\S]*?<\/script>/gi) ?? [];
+  assert.deepEqual(scripts, ['<script type="module" src="/print-ticket.js"></script>']);
+  assert.ok(html.indexOf("<script") > html.indexOf("</div>") && /<\/script>\s*<\/body>/.test(html), "script à la fin du corps");
+  assert.ok(!/style=|<style/i.test(html), "ni style dans la page");
+  assert.ok(!/ on[a-z]+=/i.test(html));
+  assert.ok(!html.includes("Imprimer"), "aucun bouton dans le HTML du serveur");
 });
 
 appTest("relevé : COOKIE_SECURE actif -> HSTS sur les réponses du relevé", options({ cookieSecure: true }), async (app) => {

@@ -220,6 +220,7 @@ web/                 tout ce que le navigateur reçoit
     sound.js             le son : Web Audio, bip généré, aucun fichier audio
     notification-logic.js  quoi notifier et que dire de l'état (regroupement, tag, texte : fonctions pures)
     notification.js      notifications du navigateur : le seul fichier qui touche à l'API Notification
+    print-ticket.js      le bouton « Imprimer » du ticket du relevé (créé par le script, seul script de ces pages)
 test/                tests (node:test), un fichier par sujet : *.test.js
   support/             faux Cyclos, harnais de test, options communes (pas des tests)
 tools/               outils hors serveur
@@ -339,11 +340,11 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
 
 | Adresse | Rôle |
 | --- | --- |
-| `GET /espace/releve` | Les filtres : début et fin, avec trois raccourcis `?preset=aujourdhui`, `hier`, `6h` |
-| `POST /espace/releve/ticket` | Le ticket à l'écran, relu chez Cyclos pour les deux dates saisies |
+| `GET /espace/releve` | Les filtres « Choisir la période » : trois boutons-raccourcis (Aujourd'hui, Hier, 6 dernières heures), puis un jour à certaines heures, un mois complet et, dans un menu replié, une autre période de plusieurs jours |
+| `POST /espace/releve/ticket` | Le ticket à l'écran, relu chez Cyclos pour un jour et deux heures (champs `jour`, `de`, `a` et, si la case est cochée, `lendemain`), pour le mois choisi (champs `mois` et `annee`) pour un raccourci (champ `raccourci` : `aujourdhui`, `hier` ou `6h`) ou pour les deux dates saisies (`start`, `end`) |
 | `POST /espace/releve/ticket.pdf` | Le même ticket en PDF (téléchargement), relu chez Cyclos |
 
-- Chaque POST exige l'origine du site, une session d'espace valide et son jeton CSRF. Seules les deux dates viennent du navigateur.
+- Chaque POST exige l'origine du site, une session d'espace valide et son jeton CSRF. Seule la période (le jour et les heures, le mois, ou les deux dates) vient du navigateur.
   Un GET sur `/espace/releve/ticket` ou `ticket.pdf` renvoie aux filtres ; sans session, tout renvoie à `/espace`.
 - **Une lecture à la fois par session** : la lecture fait jusqu'à une douzaine d'appels Cyclos de suite, et le PDF relit tout. Une
   seconde demande de la même session pendant une lecture reçoit 429 (page, `Retry-After: 5`) sans rien lire. Une lecture entière est
@@ -351,10 +352,67 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
 - Un 401 de Cyclos pendant la lecture ferme la session de l'espace (retour à `/espace`), comme pour la caisse. Un 403 sur la liste des
   comptes (ou une liste vide) affiche « Accès aux comptes refusé », un autre 403 « Accès refusé » : la session reste ouverte. Une panne
   ou un réseau coupé donne 502 avec une page de retour (jamais un PDF à moitié envoyé).
-- Les pages du relevé n'ont **aucun script** : leur politique de sécurité n'a ni `script-src` ni `connect-src` (celle de l'outil
-  d'origine), alors que le reste du site garde celle qui laisse tourner le script de `/caisse`. Pas de bouton de déconnexion : un lien
-  « Retour à l'espace » (la déconnexion se fait depuis l'espace).
-- L'impression à l'écran est le ticket de 80 mm de la feuille de style commune (même bloc `@media print` que l'outil d'origine).
+- **Trois façons de choisir la période**, de haut en bas de la page des filtres, sans aucun JavaScript :
+  1. **Un jour, à certaines heures** : un jour (sélecteur de date), une heure « De » et une heure « À » (sélecteurs d'heure) et une case
+     à cocher « Le service se termine le lendemain (après minuit) ». Le serveur préremplit en heure de Paris (aujourd'hui, 00:00, 23:59,
+     case décochée), à chaque arrivée sur la page, même par un ancien lien `?preset=…` ; les champs demandent au navigateur de ne pas rappeler d'anciennes
+     valeurs (`autocomplete="off"`). **Case décochée, « À » doit être strictement après « De »** (sinon erreur : « Si le service finit
+     après minuit, cochez la case ») ; **case cochée, la fin est le lendemain** à l'heure « À » (du 22/11 à 18:00 jusqu'au 23/11 à
+     02:00). Rien n'est plus deviné à partir des heures. Dans les deux cas le relevé dure **24 heures au plus** (18:00 à 18:00 le
+     lendemain passe, 05:00 à 23:59 le lendemain est refusé : « utilisez Autre période »), compté sur l'horloge murale de Paris comme la
+     limite de 31 jours : un jour de 25 h (25 octobre 2026) ou de 23 h (29 mars 2026) n'est jamais refusé à tort. La dernière minute
+     indiquée est incluse, comme pour les autres plages (23:59 va jusqu'à 23:59:59). Le calcul passe par Luxon en `Europe/Paris` puis par
+     les mêmes règles que la plage libre (début futur refusé, fin future ramenée à maintenant, heure inexistante au passage à l'heure
+     d'été refusée) : aucun décalage en dur. Le ticket écrit toujours les dates et heures exactes (« Du 22/11/2026 18:00 au 23/11/2026
+     02:00 ») ; le bouton PDF redemande le jour, les deux heures et la case, et le fichier se nomme comme celui d'une plage libre
+     (`ticket-2026-11-22_1800_2026-11-23_0200.pdf`).
+  2. **Un mois complet** : voir ci-dessous.
+  3. **Autre période (plusieurs jours)** : un menu replié (éléments natifs `details` et `summary`) qui contient les deux dates avec
+     heure (Début, Fin), limitées à 31 jours calendaires. Le serveur l'ouvre seulement après une erreur de cette plage.
+     Le titre est vert, souligné au survol, précédé d'un chevron dessiné en CSS (vers la droite replié, vers le bas ouvert, ignoré des
+     lecteurs d'écran) ; il reste un `summary` natif, utilisable au clavier (Entrée, Espace).
+
+  **Les trois raccourcis** (Aujourd'hui, Hier, 6 dernières heures) sont des boutons d'un formulaire POST avec jeton CSRF : un clic affiche
+  directement le ticket, avec les mêmes bornes qu'avant (aujourd'hui de 00:00 à maintenant, hier de 00:00 à 23:59, les 6 dernières
+  heures jusqu'à maintenant) et les dates exactes dans la période. Un nom inconnu donne une erreur 400 sans appel à Cyclos. Le bouton
+  PDF d'un raccourci renvoie les **bornes exactes du ticket affiché** (les deux dates), pas le nom du raccourci : un téléchargement
+  fait plus tard couvre la même période que l'écran, au lieu de relire « maintenant ». Les anciens liens `?preset=…` ne préremplissent
+  plus rien : ils affichent la page avec ses valeurs par défaut.
+
+  Si une erreur (400) vient d'un bloc, la page revient avec les valeurs saisies et le message placé dans ce bloc. Le serveur reconnaît le
+  mode aux champs reçus : `mois` et `annee`, sinon `jour`, `de` et `a`, sinon `raccourci`, sinon `start` et `end`. Le mode mois et
+  la plage libre fonctionnent comme avant, et les politiques de sécurité ne changent pas.
+- **Un mois complet (ancien « Relevé mensuel »).** Pour un comptable : sur la page des filtres, le bloc « Un mois complet » a une liste du
+  mois (en français) et une liste de l'année (l'année courante et les deux précédentes), préremplies avec le mois précédent, et le
+  bouton « Voir le mois » (un POST avec jeton CSRF : une lecture ne se déclenche jamais par un simple lien). Le mois va du 1er à 00:00 au dernier jour à 23:59, heure de Paris (même convention que
+  « Hier » ; Cyclos reçoit la dernière milliseconde de cette minute). Un mois qui n'a pas commencé est refusé avec un message ; le mois
+  en cours est accepté, sa fin est ramenée à maintenant et le ticket l'écrit (« mois en cours »). Mois et année sont vérifiés
+  strictement (nombre de 1 à 12, année de la liste) : toute autre valeur donne une erreur 400. Le ticket et le PDF s'intitulent
+  « Relevé du mois de novembre 2026 » (« d'octobre », « d'avril », « d'août ») avec la période exacte ; le PDF se nomme
+  `releve-AAAA-MM.pdf` (par exemple `releve-2026-11.pdf`). Les plages libres gardent leur nom `ticket-…pdf`.
+- **Limite de durée.** Elle est comptée en jours de calendrier (31 au plus, avec Luxon en `Europe/Paris`), pas en heures écoulées : un
+  mois entier passe toujours, y compris octobre 2026 (745 h, le 25 octobre l'heure recule) et mars 2027 (743 h). La plage libre garde
+  sa limite de 31 jours.
+- **Plafond de lignes du mois.** Le mode mois lit jusqu'à `HISTORY_MAX_ROWS_MONTH` lignes (10000 par défaut, contre
+  `HISTORY_MAX_ROWS` = 2000 pour la plage libre, qui ne change pas). La règle au plafond est la même que pour la plage libre : la
+  liste est coupée aux transactions les plus récentes avec un avertissement, les totaux de Cyclos sont repris s'il y en a, sinon
+  « Non disponible » : jamais un total inventé. Le temps de lecture d'un mois est de 60 secondes plus 2 secondes par page que le
+  plafond permet de lire (160 s pour 10000 lignes à 200 par page), les appels se suivant sur le même jeton Cyclos.
+- Les pages du relevé n'ont **aucun script**, sauf le ticket : leur politique de sécurité n'a ni `script-src` ni `connect-src` (celle de
+  l'outil d'origine), alors que le reste du site garde celle qui laisse tourner le script de `/caisse`. Pas de bouton de déconnexion :
+  un lien « Retour à l'espace » (la déconnexion se fait depuis l'espace).
+- Le bouton **Imprimer** : le ticket (du jour ou du mois, c'est la même page) charge `/print-ticket.js` par une balise `script` avec
+  `src`, à la fin du corps. Ce petit module (`web/js/print-ticket.js`) crée lui-même le bouton, à côté du téléchargement du PDF, et appelle
+  `window.print()` au clic ; sans JavaScript, ou script bloqué, il n'y a pas de bouton (le HTML du serveur n'en contient aucun). Il est servi
+  par la même liste blanche que les scripts de la caisse (`BROWSER_MODULES` dans `server.js`, et `tools/build-sea.js` pour l'exécutable).
+  La réponse **200 du ticket seulement** ajoute `script-src 'self'` à la politique du relevé, rien d'autre (ni `unsafe-inline`, ni
+  `connect-src`) ; les filtres, les refus du ticket (400, 403, redirection), le PDF, la caisse et l'espace gardent leur politique exacte.
+- L'impression : le ticket d'une plage reste le ticket de 80 mm de la feuille de style commune (même bloc `@media print` que l'outil
+  d'origine). Le ticket du mois reçoit la classe `page-mois` sur `<html>` (posée par le serveur) et s'imprime sur une page A4 nommée
+  (`@page mois`, marges de 15 mm) : le détail devient un tableau dont la ligne de titres (Date, Numéro, Contrepartie, Description,
+  Montant, cachée à l'écran) est répétée sur chaque page imprimée, et une ligne n'est jamais coupée entre deux pages. Le bouton n'est
+  jamais imprimé. Les pages nommées demandent un navigateur récent ; sinon le mois garde la page du ticket de 80 mm, avec le contenu
+  qui en suit la largeur.
 - Le détail : dates saisies et lues en heure de Paris, au plus 31 jours, début jamais dans le futur, fin future ramenée à maintenant ;
   une heure qui n'existe pas (passage à l'heure d'été) est refusée ; une heure double (passage à l'heure d'hiver) prend la seconde
   occurrence, sans avertissement. Les montants sont calculés en entiers exacts. Cyclos répond le plus récent d'abord, le ticket
@@ -362,6 +420,14 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
 - Totaux : ceux de Cyclos sont repris tels quels ; sur l'instance réelle Cyclos n'en donne pas, ils sont alors calculés à partir des
   transactions lues, **seulement si la liste est complète**. Liste coupée au plafond, ou montant illisible : « Non disponible » trois
   fois, avec un avertissement (page et PDF), jamais un total inventé.
+- **Nom de la contrepartie.** La colonne de la contrepartie (page et PDF, plage libre et mois) s'écrit comme le payeur de la caisse :
+  « Tom B. » pour « Benameur - Tom », avec les mêmes réglages `CAISSE_NAME_ORDER` et `CAISSE_HIDE_PAYER_NAME` (aucune variable de plus ;
+  `true` donne « Client »). C'est la même fonction que la caisse, appliquée seulement quand le texte ressemble à une personne :
+  un seul séparateur « - » (le format de Cyclos), ou deux mots sans séparateur, avec un prénom d'un seul mot (trait d'union permis).
+  Tout le reste est affiché tel quel : un seul mot, une structure de plus de deux mots, un prénom écrit avec une espace, un texte qui
+  ne commence pas par des lettres. Un compte système (« Compte système ») n'est jamais modifié, ni masqué. Le nom du commerçant, en haut
+  du ticket, n'est jamais modifié. Une structure à deux mots (« Boulangerie Dupont ») ne se distingue pas d'une personne : comme à la
+  caisse, elle est abrégée.
 - Le PDF n'imprime que les lettres de Windows-1252 (accents français, €, guillemets) ; tout autre caractère devient `?` (la page
   les affiche tous).
 
@@ -369,6 +435,7 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
 | --- | --- | --- |
 | `HISTORY_PAGE_SIZE` | Lignes demandées à Cyclos par page (entier positif ; sinon la valeur par défaut) | 200 |
 | `HISTORY_MAX_ROWS` | Plafond de lignes lues pour un ticket (entier positif ; sinon la valeur par défaut). Au-delà, la liste est coupée aux plus récentes avec un avertissement | 2000 |
+| `HISTORY_MAX_ROWS_MONTH` | Même plafond, pour le mode « Relevé mensuel » seulement (la plage libre garde `HISTORY_MAX_ROWS`). Entier positif ; sinon la valeur par défaut | 10000 |
 
 **Compte lu quand il y en a plusieurs.** Le relevé et la caisse lisent le même compte, choisi dans la liste de Cyclos
 (`GET /self/accounts`) par une règle unique : le compte de type `MonComptePro`, sinon celui de type `monCompte`, sinon le premier de
@@ -663,7 +730,9 @@ identifiant (ceux des tests sont fictifs).
 - Relevé : `test/releve-calcul.test.js` (plages de dates, changement d'heure, montants exacts, totaux, ticket : fonctions pures, portés
   de l'outil d'origine avec les mêmes attentes), `test/cyclos-statement.test.js` (lecture Cyclos : pagination, crédits et débits,
   plafond, « Non disponible », erreurs), `test/releve.test.js` (pages, session et jeton de l'espace, origine, CSRF, une lecture à la fois,
-  politique de sécurité sans script, impression, 404 hors mode multi), `test/releve-pdf.test.js` (PDF, texte du PDF, mêmes contrôles).
+  politique de sécurité sans script, impression, 404 hors mode multi), `test/releve-pdf.test.js` (PDF, texte du PDF, mêmes contrôles),
+  `test/releve-mois.test.js` (mode mois : bornes de février à décembre, changements d'heure, valeurs refusées, mois en cours et futur,
+  plafond propre au mois, PDF de 1500 lignes), `test/releve-contrepartie.test.js` (nom de la contrepartie).
 - Un test lancé seul : `node --test test/caisse.test.js`.
 
 ## Sécurité en bref
