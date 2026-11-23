@@ -156,7 +156,9 @@ export function createReleveRoutes(deps) {
             return true;
           }
           const preset = new URL(req.url, "http://x").searchParams.get("preset");
-          send(res, 200, "text/html", renderReleveFilters({ csrfToken: found.session.csrfToken, values: rangeValues(presetRange(preset)) }, helpers));
+          // The shortcuts fill the two dates of the folded menu: it is shown open so that they have a visible effect.
+          const openRange = ["aujourdhui", "hier", "6h"].includes(preset);
+          send(res, 200, "text/html", renderReleveFilters({ csrfToken: found.session.csrfToken, values: rangeValues(presetRange(preset)), openRange }, helpers));
           return true;
         }
         case `POST ${RELEVE_PATH}/ticket`: {

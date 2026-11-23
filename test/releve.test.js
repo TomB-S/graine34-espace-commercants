@@ -54,7 +54,7 @@ appTest("relevé : filtres, préréglages, jeton CSRF de la session, lien de ret
     assert.equal(res.status, 200);
     assert.match(res.headers.get("content-type"), /^text\/html; charset=utf-8$/);
     const html = await res.text();
-    assert.match(html, /<h1>Choisir la plage horaire<\/h1>/);
+    assert.match(html, /<h1>Choisir la période<\/h1>/); // updated: the page title was "Choisir la plage horaire" before the filters redesign
     assert.match(html, /<form method="post" action="\/espace\/releve\/ticket">/);
     assert.match(html, /id="start" name="start" value="\d{4}-\d\d-\d\dT\d\d:\d\d"/);
     assert.match(html, /id="end" name="end" value="\d{4}-\d\d-\d\dT\d\d:\d\d"/);
@@ -228,7 +228,7 @@ appTest("relevé : dates invalides -> 400 sur la page des filtres, valeurs saisi
     assert.match(res.headers.get("content-type"), /^text\/html/);
     const html = await res.text();
     assert.match(html, message);
-    assert.match(html, /<h1>Choisir la plage horaire<\/h1>/);
+    assert.match(html, /<h1>Choisir la période<\/h1>/); // updated: the page title was "Choisir la plage horaire" before the filters redesign
     assert.ok(!html.includes('"><b>'), "saisie échappée");
   }
   assert.equal(app.cyclos.calls("GET", "/self/accounts").length, 1);

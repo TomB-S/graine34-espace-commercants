@@ -1,11 +1,11 @@
-// HTML of the statement of transactions (/espace/releve): pure functions, state in, text out. A filter page (two dates and three
+// HTML of the statement of transactions (/espace/releve): pure functions, state in, text out. A filter page (three ways to choose the period and three
 // shortcuts) and the end-of-service ticket. Under /espace, so the pages link back to the area ("Retour à l'espace"), there is no
 // logout button here (the area has its own).
 //
 // Same rules as the other pages: no inline script, no inline style (the CSP of these pages forbids both), every value that is not a
 // constant goes through escapeHtml. The only script is the one of the ticket (the Print button, loaded by src at the end of the body). The helpers of server.js are given by the caller (importing it from here would be circular).
 
-import { MONTH_NAMES, allowedYears, previousMonth } from "./releve-calcul.js";
+import { MONTH_NAMES, allowedYears, previousMonth, dayDefaults } from "./releve-calcul.js";
 
 export const TOOL_NAME = "Relevés de service";
 const FILTERS_HREF = "/espace/releve";
@@ -19,11 +19,16 @@ const backToArea = `<p><a href="${AREA_HREF}">Retour à l'espace</a></p>`;
 
 const capitalized = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 
-// The filter page. `values`: the start/end strings to put in the fields (computed by the server, or, after a validation error,
-// exactly what the user typed). `error`: plain text, or null. `month` and `years`: what the monthly block shows as selected (the
-// previous month by default) and the years it offers; both are constants of the server, never taken from the browser as they are.
+// The filter page: the period is chosen in three ways, from the top down: one day between two hours, a whole month, and (in a
+// folded menu, native details/summary, no script) any range of several days with two full dates.
+// `values`: the start/end strings of the free range (computed by the server, or, after a validation error, exactly what the user
+// typed). `day`: the three values of the day block ({ jour, de, a }, today from 00:00 to 23:59 by default, or what the user typed).
+// `error`: plain text, or null; `errorFor` ("day", "month" or "range") says which block it belongs to, and the message is placed in
+// that block; for "range" the folded menu is opened by the server (attribute open). `openRange`: also open it (the shortcuts fill
+// its fields, so they are worth seeing). `month` and `years`: what the monthly block shows as selected (the previous month by
+// default) and the years it offers; all constants of the server, never taken from the browser as they are.
 export function renderReleveFilters(
-  { csrfToken, values, error = null, month = previousMonth(), years = allowedYears() },
+  { csrfToken, values, day = dayDefaults(), error = null, errorFor = null, openRange = false, month = previousMonth(), years = allowedYears() },
   { htmlPage, errorMessage, escapeHtml },
 ) {
   const csrf = `<input type="hidden" name="csrf" value="${escapeHtml(csrfToken)}">`;
@@ -33,27 +38,38 @@ export function renderReleveFilters(
   const yearOptions = years
     .map((year) => `<option value="${year}"${year === month.year ? " selected" : ""}>${year}</option>`)
     .join("\n        ");
+  const message = error ? errorMessage(escapeHtml(error)) : "";
+  const at = (block) => (errorFor === block ? message : "");
+  const top = ["day", "month", "range"].includes(errorFor) ? "" : message;
   return htmlPage(
-    "Choisir la plage horaire",
-    `<h1>Choisir la plage horaire</h1>
-  ${error ? errorMessage(escapeHtml(error)) : ""}
+    "Choisir la période",
+    `<h1>Choisir la période</h1>
+  ${top}
   <p class="raccourcis">Raccourcis :
     <a href="${FILTERS_HREF}?preset=aujourdhui">Aujourd'hui</a>
     <a href="${FILTERS_HREF}?preset=hier">Hier</a>
     <a href="${FILTERS_HREF}?preset=6h">6 dernières heures</a>
   </p>
-  <form method="post" action="${FILTERS_HREF}/ticket">
+  <form method="post" action="${FILTERS_HREF}/ticket" class="bloc-periode releve-jour" aria-labelledby="titre-jour">
     ${csrf}
-    <p><label for="start">Début</label>
-      <input type="datetime-local" id="start" name="start" value="${escapeHtml(values.start)}" required></p>
-    <p><label for="end">Fin</label>
-      <input type="datetime-local" id="end" name="end" value="${escapeHtml(values.end)}" required></p>
+    <h2 id="titre-jour">Un jour, à certaines heures</h2>
+    ${at("day")}
+    <p><label for="jour">Jour</label>
+      <input type="date" id="jour" name="jour" value="${escapeHtml(day.jour)}" required></p>
+    <div class="heures">
+      <p><label for="de">De</label>
+        <input type="time" id="de" name="de" value="${escapeHtml(day.de)}" aria-describedby="aide-heures" required></p>
+      <p><label for="a">À</label>
+        <input type="time" id="a" name="a" value="${escapeHtml(day.a)}" aria-describedby="aide-heures" required></p>
+    </div>
+    <p class="aide" id="aide-heures">Si « À » est avant « De », le relevé va jusqu'au lendemain.</p>
     <p><button type="submit">Voir le relevé</button></p>
   </form>
-  <form method="post" action="${FILTERS_HREF}/ticket" class="releve-mensuel" aria-labelledby="titre-mensuel">
+  <form method="post" action="${FILTERS_HREF}/ticket" class="bloc-periode releve-mensuel" aria-labelledby="titre-mensuel">
     ${csrf}
-    <h2 id="titre-mensuel">Relevé mensuel</h2>
-    <p>Un mois complet, du 1er au dernier jour.</p>
+    <h2 id="titre-mensuel">Un mois complet</h2>
+    <p>Du 1er au dernier jour du mois.</p>
+    ${at("month")}
     <p><label for="mois">Mois</label>
       <select id="mois" name="mois" required>
         ${monthOptions}
@@ -64,6 +80,18 @@ export function renderReleveFilters(
       </select></p>
     <p><button type="submit">Voir le mois</button></p>
   </form>
+  <details class="bloc-periode autre-periode"${errorFor === "range" || openRange ? " open" : ""}>
+    <summary>Autre période (plusieurs jours)</summary>
+    ${at("range")}
+    <form method="post" action="${FILTERS_HREF}/ticket">
+      ${csrf}
+      <p><label for="start">Début</label>
+        <input type="datetime-local" id="start" name="start" value="${escapeHtml(values.start)}" required></p>
+      <p><label for="end">Fin</label>
+        <input type="datetime-local" id="end" name="end" value="${escapeHtml(values.end)}" required></p>
+      <p><button type="submit">Voir la période</button></p>
+    </form>
+  </details>
   ${backToArea}`,
     { toolName: TOOL_NAME },
   );

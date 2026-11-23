@@ -241,7 +241,7 @@ appTest("mois : mois futur refusé (400), rien n'est lu chez Cyclos", options(),
   const res = await b.ticket(monthForm(csrf, future));
   assert.equal(res.status, 400);
   const html = await res.text();
-  assert.match(html, /<h1>Choisir la plage horaire<\/h1>/);
+  assert.match(html, /<h1>Choisir la période<\/h1>/); // updated: the page title was "Choisir la plage horaire" before the filters redesign
   assert.match(html, today.month < 12 ? /Ce mois n&#39;a pas encore commencé|Ce mois n'a pas encore commencé/ : /Année invalide/);
   assert.equal(historyCalls(app).length, 0);
 });
@@ -259,7 +259,7 @@ appTest("mois : valeurs invalides refusées (400)", options(), async (app) => {
   for (const form of bad) {
     const res = await b.ticket({ csrf, ...form });
     assert.equal(res.status, 400, JSON.stringify(form));
-    assert.match(await res.text(), /<h1>Choisir la plage horaire<\/h1>/);
+    assert.match(await res.text(), /<h1>Choisir la période<\/h1>/); // updated: the page title was "Choisir la plage horaire" before the filters redesign
   }
   assert.equal(historyCalls(app).length, 0);
   assert.equal((await b.ticket({ csrf, ...good })).status, 200, "the same form with valid values works");
@@ -327,7 +327,7 @@ appTest("mois : page des filtres (listes, libellés, préremplissage, raccourci,
   const html = await res.text();
   assert.ok(!res.headers.get("content-security-policy").includes("script-src"));
   assert.ok(!/<script/i.test(html));
-  assert.match(html, /<h2 id="titre-mensuel">Relevé mensuel<\/h2>/);
+  assert.match(html, /<h2 id="titre-mensuel">Un mois complet<\/h2>/); // updated: the block was titled "Relevé mensuel" before the filters redesign
   assert.match(html, /<label for="mois">Mois<\/label>\s*<select id="mois" name="mois" required>/);
   assert.match(html, /<label for="annee">Année<\/label>\s*<select id="annee" name="annee" required>/);
   const monthOptions = [...html.split('id="mois"')[1].split("</select>")[0].matchAll(/<option value="(\d+)"( selected)?>(.*?)<\/option>/g)];
@@ -338,7 +338,7 @@ appTest("mois : page des filtres (listes, libellés, préremplissage, raccourci,
   assert.deepEqual(yearOptions.filter((o) => o[2]).map((o) => o[1]), [String(m.year)]);
   assert.match(html, /<button type="submit">Voir le mois<\/button>/);
   assert.ok(!html.includes("Mois dernier"), "no \"Mois dernier\" shortcut any more");
-  assert.equal([...html.matchAll(/name="csrf" value="([0-9a-f]+)"/g)].filter((x) => x[1] === csrf).length, 2, "two forms, the session's token each time");
+  assert.equal([...html.matchAll(/name="csrf" value="([0-9a-f]+)"/g)].filter((x) => x[1] === csrf).length, 3, "three forms (day, month, free range), the session's token each time"); // updated: 2 before the day block was added
   assert.match(html, /<a href="\/espace\/releve\?preset=6h">/, "the other shortcuts are still there");
 });
 
