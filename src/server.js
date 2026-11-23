@@ -95,6 +95,9 @@ const pageLogin = { inFlight: false, refusals: 0, lockedUntil: 0 };
 // Host header accepted when the login is typed on the page (null = not checked): only this machine's own names.
 let ALLOWED_HOSTS = null;
 const CSP_WITH_SCRIPT = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+// The statement pages have no script, except the ticket (and only its 200 answer): the policy without script plus script-src 'self'
+// for the print button, nothing else (no inline script, no connect-src).
+const CSP_TICKET = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 const CSP_NO_SCRIPT = "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 // Statement (/espace/releve): lines read per page and in all, and the time allowed for one reading. Set by startServer().
 let HISTORY = readHistoryLimits({});
@@ -304,7 +307,8 @@ function serveStatic(req, res, asset) {
   res.end(asset.body);
 }
 
-function htmlPage(title, body, { toolName = "Notification de paiement" } = {}) {
+// `scripts`: addresses of external scripts, loaded at the end of the body.
+function htmlPage(title, body, { toolName = "Notification de paiement", scripts = [] } = {}) {
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -321,7 +325,7 @@ function htmlPage(title, body, { toolName = "Notification de paiement" } = {}) {
   </header>
   <div class="page">
   ${body}
-  </div>
+  </div>${scripts.map((src) => `\n  <script type="module" src="${escapeHtml(src)}"></script>`).join("")}
 </body>
 </html>`;
 }
@@ -1010,6 +1014,7 @@ const ESPACE_HELPERS = { escapeHtml, htmlPage, errorMessage };
 // The statement of /espace/releve: its routes live in releve-routes.js, they only need these pieces of this file.
 const RELEVE = createReleveRoutes({
   helpers: ESPACE_HELPERS,
+  ticketPolicy: CSP_TICKET,
   send,
   redirect,
   readBody,
@@ -1171,7 +1176,7 @@ const server = http.createServer(async (req, res) => {
   // Security headers, on every response. writeHead() later merges its own
   // headers with these.
   // The cash register page runs scripts from this address; the pages of the statement have none, so they allow none (no script-src,
-  // no connect-src: the policy of the original statement tool).
+  // no connect-src: the policy of the original statement tool), except the ticket itself (see releve-routes.js).
   const statementPage = pathname === RELEVE_PATH || pathname.startsWith(`${RELEVE_PATH}/`);
   res.setHeader("Content-Security-Policy", statementPage ? CSP_NO_SCRIPT : CSP_WITH_SCRIPT);
   res.setHeader("X-Content-Type-Options", "nosniff");

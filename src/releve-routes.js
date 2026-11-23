@@ -24,7 +24,7 @@ export const DEFAULT_READ_TIMEOUT_MS = 60_000;
 export const MONTH_PAGE_ALLOWANCE_MS = 2_000;
 
 // deps: {
-//   helpers { escapeHtml, htmlPage, errorMessage }, send, redirect, readBody, isSameOrigin, isValidCsrf,
+//   helpers { escapeHtml, htmlPage, errorMessage }, ticketPolicy (the policy of the ticket page, the only one with a script), send, redirect, readBody, isSameOrigin, isValidCsrf,
 //   findSession(req)        -> { id, session } of the area, or null
 //   endSession(found, res)  -> closes the session of the area (local record + Cyclos token) and sends the redirect to /espace
 //   push()                  -> the Cyclos client (getStatement)
@@ -137,7 +137,10 @@ export function createReleveRoutes(deps) {
           if (!loaded) return true;
           try {
             const model = ticketModel(loaded.statement);
-            send(res, 200, "text/html", renderReleveTicket({ model, csrfToken: loaded.found.session.csrfToken, pdf: Boolean(deps.pdf) }, helpers));
+            // The only answer of the statement that carries a script (the print button): its policy adds script-src 'self' and nothing else.
+            send(res, 200, "text/html", renderReleveTicket({ model, csrfToken: loaded.found.session.csrfToken, pdf: Boolean(deps.pdf) }, helpers), {
+              "Content-Security-Policy": deps.ticketPolicy,
+            });
           } finally {
             loaded.release();
           }

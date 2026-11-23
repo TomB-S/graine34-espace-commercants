@@ -2,8 +2,8 @@
 // shortcuts) and the end-of-service ticket. Under /espace, so the pages link back to the area ("Retour à l'espace"), there is no
 // logout button here (the area has its own).
 //
-// Same rules as the other pages: no script, no inline style (the CSP of these pages forbids both), every value that is not a
-// constant goes through escapeHtml. The helpers of server.js are given by the caller (importing it from here would be circular).
+// Same rules as the other pages: no inline script, no inline style (the CSP of these pages forbids both), every value that is not a
+// constant goes through escapeHtml. The only script is the one of the ticket (the Print button, loaded by src at the end of the body). The helpers of server.js are given by the caller (importing it from here would be circular).
 
 import { MONTH_NAMES, allowedYears, previousMonth } from "./releve-calcul.js";
 
@@ -11,6 +11,7 @@ export const TOOL_NAME = "Relevés de service";
 const FILTERS_HREF = "/espace/releve";
 const AREA_HREF = "/espace";
 
+const PRINT_SCRIPT = "/print-ticket.js";
 const backToArea = `<p><a href="${AREA_HREF}">Retour à l'espace</a></p>`;
 
 const capitalized = (text) => text.charAt(0).toUpperCase() + text.slice(1);
@@ -128,7 +129,7 @@ export function renderReleveTicket({ model: m, csrfToken, pdf = false }, { htmlP
     ${backToArea}
   </div>
 </main>`,
-    { toolName: TOOL_NAME },
+    { toolName: TOOL_NAME, scripts: [PRINT_SCRIPT] },
   );
 }
 
