@@ -386,7 +386,7 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
   remplace le lien du bas). Le ticket s'ouvre, en haut de la carte et avant le titre, sur une ligne de deux boutons : « Retour à l'espace »
   (vers `/espace`) et « Changer de période » (vers `/espace/releve`). En bas du ticket il ne reste que les boutons Imprimer et
   Télécharger le PDF, côte à côte sur écran large et empilés sur téléphone. Ce sont des liens natifs dessinés en pastille, avec une flèche
-  faite en CSS, d'au moins 44 px de haut, accessibles au clavier, masqués à l'impression**
+  faite en CSS, d'au moins 44 px de haut, accessibles au clavier, **masqués à l'impression**
   (le ticket de 80 mm et l'A4 du mois ne changent pas). En mode multi-commerçants, **le logo de l'en-tête est un lien vers `/espace`**
   (nom accessible « Accueil de l'espace commerçants », texte alternatif de l'image conservé) sur toutes les pages : espace, caisse,
   relevé. Dans le mode simple et dans l'exécutable il reste une simple image. Imprimé, l'en-tête est identique. La page de caisse
