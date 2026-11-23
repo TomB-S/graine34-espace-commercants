@@ -107,8 +107,9 @@ appTest("relevé : ticket cohérent avec les totaux sur plusieurs pages (450 lig
   assert.match(html, /<p class="commercant">Boutique de Marie<\/p>/);
   assert.match(html, /<p class="periode">Du 10\/01\/2026 00:00 au 10\/01\/2026 23:59<\/p>/);
   assert.match(html, /Montants en Graines/);
-  assert.match(html, /<a href="\/espace\/releve">Changer de période<\/a>/); // updated: the wording of the title ("période"), as at the top of the ticket
-  assert.match(html, /<a href="\/espace">Retour à l'espace<\/a>/);
+  // updated: both links are buttons in the navigation line at the top of the card, not links at the bottom.
+  assert.match(html, /<a class="lien-retour" href="\/espace\/releve">Changer de période<\/a>/);
+  assert.match(html, /<a class="lien-retour" href="\/espace">Retour à l'espace<\/a>/);
   assert.ok(!html.includes("Se déconnecter"));
 });
 
@@ -454,5 +455,5 @@ test("impression : le bloc @media print de la feuille de style est le ticket de 
     assert.ok(block.includes(selector), selector);
   }
   // Nothing clickable on paper: the links, buttons and forms of the page (back links, PDF form) are hidden.
-  assert.match(block, /a,\s*button,\s*form,\s*\.actions,\s*\.retour,\s*\.raccourcis \{\s*display: none !important;/); // updated: the top back button (.retour) is hidden on paper too
+  assert.match(block, /a,\s*button,\s*form,\s*\.actions,\s*\.navigation-ticket,\s*\.retour,\s*\.raccourcis \{\s*display: none !important;/); // updated: the top back button (.retour) is hidden on paper too
 });

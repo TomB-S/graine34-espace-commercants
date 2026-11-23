@@ -143,8 +143,11 @@ export function renderReleveTicket({ model: m, csrfToken, pdf = false }, { htmlP
 
   return htmlPage(
     m.title,
-    `${backButton(FILTERS_HREF, "Changer de période")}
-<main class="ticket">
+    `<main class="ticket">
+  <nav class="navigation-ticket" aria-label="Navigation">
+    ${backButton(AREA_HREF, "Retour à l'espace")}
+    ${backButton(FILTERS_HREF, "Changer de période")}
+  </nav>
   <h1>${escapeHtml(m.title)}</h1>
   ${m.merchantName ? `<p class="commercant">${escapeHtml(m.merchantName)}</p>` : ""}
   <p class="periode">${escapeHtml(m.period)}</p>
@@ -167,8 +170,7 @@ export function renderReleveTicket({ model: m, csrfToken, pdf = false }, { htmlP
   }
 
   <div class="actions">
-    ${download}<p><a href="${FILTERS_HREF}">Changer de période</a></p>
-    ${backToArea}
+    ${download}
   </div>
 </main>`,
     // The month ticket prints on A4 (the page-mois rules of style.css); the ticket of a period keeps the 80 mm ticket.

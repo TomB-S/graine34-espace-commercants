@@ -1,6 +1,6 @@
 // === WHAT THIS FILE CHECKS ===
-// Navigation of the statement and of the cash register: the "Retour à l'espace" button at the top of the filters page, the "Changer de période" button at the top
-// of the ticket (day, month and shortcut), the logo of the header that leads to the merchants' area in the multi-merchant mode (pages of
+// Navigation of the statement and of the cash register: the "Retour à l'espace" button at the top of the filters page, the two buttons ("Retour à l'espace", "Changer de période") at the top
+// of the ticket card (day, month, shortcut and dates), none at the bottom, the logo of the header that leads to the merchants' area in the multi-merchant mode (pages of
 // the area, of the cash register and of the statement) and stays a plain image in the single-merchant mode and in the executable, the
 // links hidden on paper, nothing inline, and the security policies unchanged. All names and secrets are fictitious.
 import "./support/env-propre.js";
@@ -56,9 +56,10 @@ appTest("navigation : bouton « Retour à l'espace » en haut des filtres", opti
   nothingInline(html, "filters");
 });
 
-// Intention: every ticket (a day, a month, a shortcut, two dates) has a "Changer de période" button at the top, to the filters, before the
-// ticket itself; the link at the bottom is still there for a long ticket.
-appTest("navigation : bouton « Changer de période » en haut du ticket (jour, mois, raccourci, dates)", options(), async (app) => {
+// Intention: every ticket (a day, a month, a shortcut, two dates) has, at the top of the card and before the title, a navigation line with
+// the two back buttons ("Retour à l'espace" then "Changer de période"); neither link is in the bottom zone any more, which keeps only
+// the PDF form (the Print button is added there by the script); nothing inline.
+appTest("navigation : deux boutons en haut du ticket, avant le titre, plus aucun lien en bas (jour, mois, raccourci, dates)", options(), async (app) => {
   const { b, csrf } = await connected(app, []);
   const year = DateTime.now().setZone("Europe/Paris").year - 1;
   const forms = {
@@ -67,15 +68,23 @@ appTest("navigation : bouton « Changer de période » en haut du ticket (jour, 
     raccourci: { raccourci: "hier" },
     dates: { start: "2026-01-10T00:00", end: "2026-01-10T23:59" },
   };
-  const button = '<p class="retour"><a class="lien-retour" href="/espace/releve">Changer de période</a></p>';
+  const area = '<p class="retour"><a class="lien-retour" href="/espace">Retour à l\'espace</a></p>';
+  const period = '<p class="retour"><a class="lien-retour" href="/espace/releve">Changer de période</a></p>';
   for (const [mode, form] of Object.entries(forms)) {
     const res = await b.ticket({ csrf, ...form });
     assert.equal(res.status, 200, mode);
     assert.equal(res.headers.get("content-security-policy"), CSP_TICKET, mode);
     const html = await res.text();
-    assert.ok(html.includes(button), mode);
-    assert.ok(html.indexOf(button) < html.indexOf('<main class="ticket">'), `${mode}: before the ticket`);
-    assert.equal([...html.matchAll(/>Changer de période</g)].length, 2, `${mode}: top and bottom`);
+    const nav = html.match(/<nav class="navigation-ticket" aria-label="Navigation">([\s\S]*?)<\/nav>/);
+    assert.ok(nav, `${mode}: navigation line`);
+    assert.ok(nav[1].indexOf(area) >= 0 && nav[1].indexOf(area) < nav[1].indexOf(period), `${mode}: both buttons, the area first`);
+    assert.ok(html.indexOf('<main class="ticket">') < html.indexOf("<nav "), `${mode}: inside the card`);
+    assert.ok(html.indexOf("<nav ") < html.indexOf("<h1>"), `${mode}: before the title`);
+    const bottom = html.split('<div class="actions">')[1].split("</main>")[0];
+    assert.ok(!bottom.includes("<a "), `${mode}: no link in the bottom zone`);
+    assert.match(bottom, /<form method="post" action="\/espace\/releve\/ticket\.pdf" class="telechargement">/, mode);
+    assert.equal([...html.matchAll(/>Changer de période</g)].length, 1, `${mode}: once`);
+    assert.equal([...html.matchAll(/>Retour à l'espace</g)].length, 1, `${mode}: once`);
     nothingInline(html, mode);
   }
 });
@@ -142,11 +151,13 @@ appTest("navigation : mode simple, le logo reste l'image seule d'avant", CAISSE_
 appTest("navigation : style — boutons masqués à l'impression, logo imprimé comme avant, focus visible", options(), async () => {
   const css = await readFile(new URL("../web/style.css", import.meta.url), "utf8");
   const printBlocks = css.split("@media print").slice(1).join("\n");
-  assert.match(printBlocks, /a,\s*button,\s*form,\s*\.actions,\s*\.retour,\s*\.raccourcis \{\s*display: none !important;/);
+  assert.match(printBlocks, /a,\s*button,\s*form,\s*\.actions,\s*\.navigation-ticket,\s*\.retour,\s*\.raccourcis \{\s*display: none !important;/);
   assert.match(printBlocks, /a\.lien-logo \{\s*display: block !important;/, "the logo link is not hidden on paper");
   const screen = css.split("@media print")[0];
   assert.match(screen, /\.logo a \{[^}]*text-decoration:\s*none/);
   assert.match(screen, /\.logo a:focus-visible \{[^}]*outline:\s*3px solid var\(--blanc\)/);
+  assert.match(screen, /\.actions \{[^}]*flex-direction:\s*column/, "bottom buttons stacked on a phone");
+  assert.match(screen, /@media \(min-width: 40rem\)\s*\{\s*\.actions \{[^}]*flex-direction:\s*row/, "side by side on a wide screen");
   assert.match(screen, /a\.lien-retour \{[^}]*min-height:\s*var\(--tactile\)/);
   assert.match(screen, /a\.lien-retour::before \{[^}]*content:\s*""/, "decorative arrow, nothing to read");
   assert.ok(!/url\(/.test(screen.match(/a\.lien-retour::before \{[^}]*\}/)[0]), "no image");
