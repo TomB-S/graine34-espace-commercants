@@ -382,6 +382,13 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
   fait plus tard couvre la même période que l'écran, au lieu de relire « maintenant ». Les anciens liens `?preset=…` ne préremplissent
   plus rien : ils affichent la page avec ses valeurs par défaut.
 
+  **Navigation.** La page des filtres s'ouvre sur un bouton « Retour à l'espace » (vers `/espace`, sous l'en-tête, avant le titre ; il
+  remplace le lien du bas) et le ticket sur un bouton « Changer de période » (vers `/espace/releve`, le lien du bas reste pour un long
+  ticket). Ce sont des liens natifs dessinés en pastille, avec une flèche faite en CSS, accessibles au clavier, **masqués à l'impression**
+  (le ticket de 80 mm et l'A4 du mois ne changent pas). En mode multi-commerçants, **le logo de l'en-tête est un lien vers `/espace`**
+  (nom accessible « Accueil de l'espace commerçants », texte alternatif de l'image conservé) sur toutes les pages : espace, caisse,
+  relevé. Dans le mode simple et dans l'exécutable il reste une simple image. Imprimé, l'en-tête est identique.
+
   Si une erreur (400) vient d'un bloc, la page revient avec les valeurs saisies et le message placé dans ce bloc. Le serveur reconnaît le
   mode aux champs reçus : `mois` et `annee`, sinon `jour`, `de` et `a`, sinon `raccourci`, sinon `start` et `end`. Le mode mois et
   la plage libre fonctionnent comme avant, et les politiques de sécurité ne changent pas.
