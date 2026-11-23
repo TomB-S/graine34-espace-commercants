@@ -230,7 +230,8 @@ appTest("espace : « Relevé de transactions » est un lien interne vers /espace
   assert.match(page, /<a class="espace-lien" href="\/espace\/releve">Relevé de transactions<\/a>/);
   assert.doesNotMatch(page, /Bientôt disponible|propre connexion/);
   const links = [...page.matchAll(/<a [^>]*href="([^"]*)"/g)].map((m) => m[1]).filter((href) => !href.startsWith("/style.css"));
-  assert.deepEqual(links, ["/espace/releve"], "the only link of the page stays inside the site");
+  // updated: the logo of the header is now a link to the area itself (multi-merchant mode); the other link is still only the statement.
+  assert.deepEqual(links, ["/espace", "/espace/releve"], "the only links of the page stay inside the site");
   assert.match(page, /action="\/espace\/caisse"/);
   assert.equal((await b.request("/espace/releve")).status, 200, "the link opens the statement with the same session, no second login");
   assert.equal(app.cyclos.calls("POST", "/auth/session").length, 1);

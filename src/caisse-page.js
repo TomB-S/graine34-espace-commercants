@@ -11,6 +11,7 @@ import { ticketDisplay, ticketsOfDay } from "./ticket-store.js";
 import { TEXTS } from "../web/js/caisse-texts.js";
 import { pollFooterText } from "../web/js/refresh-logic.js";
 import { LIST_SIZE, bannerOf, payerText, amountText, recapOf } from "./caisse-data.js";
+import { logoMarkup } from "./format.js";
 
 const TITLE = "Caisse : paiements reçus";
 
@@ -34,7 +35,7 @@ function liveBadge(status) {
 // The page of the merchant. `view`: { status, tickets } from the listener manager. `options`:
 // { refreshSeconds (reload without script), pollSeconds (script), hidePayerName, nameOrder, hiddenDescriptions, now }. `helpers`: see the top of the file.
 export function renderCaissePage(view, { refreshSeconds, pollSeconds = 3, hidePayerName, nameOrder, hiddenDescriptions, now, csrfToken }, helpers) {
-  const { escapeHtml, formatAmount, logoutForm, stylesheetHref = "/style.css", loginHref = () => "/" } = helpers;
+  const { escapeHtml, formatAmount, logoutForm, stylesheetHref = "/style.css", loginHref = () => "/", areaHref = () => null } = helpers;
   const e = escapeHtml;
   const show = (ticket) => ticketDisplay(ticket, { now, formatAmount, hiddenDescriptions });
   const payerOf = (d) => payerText(d, hidePayerName, nameOrder);
@@ -94,7 +95,7 @@ export function renderCaissePage(view, { refreshSeconds, pollSeconds = 3, hidePa
 </head>
 <body>
   <header class="entete caisse-entete">
-    <span class="logo"><img src="/logo.png" width="104" height="40" alt="La Graine 34, monnaie locale"></span>
+    ${logoMarkup(areaHref())}
     <h1 class="nom-outil">${e(TITLE)}</h1>
     <span class="caisse-zone" id="caisse-zone-direct">${liveBadge(view.status)}</span>
     ${logoutForm(csrfToken)}
