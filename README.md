@@ -340,11 +340,11 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
 
 | Adresse | Rôle |
 | --- | --- |
-| `GET /espace/releve` | Les filtres : début et fin, trois raccourcis `?preset=aujourdhui`, `hier`, `6h` et le bloc « Relevé mensuel » |
-| `POST /espace/releve/ticket` | Le ticket à l'écran, relu chez Cyclos pour les deux dates saisies, ou pour le mois choisi (champs `mois` et `annee`) |
+| `GET /espace/releve` | Les filtres « Choisir la période » : trois raccourcis `?preset=aujourdhui`, `hier`, `6h`, puis un jour à certaines heures, un mois complet et, dans un menu replié, une autre période de plusieurs jours |
+| `POST /espace/releve/ticket` | Le ticket à l'écran, relu chez Cyclos pour un jour et deux heures (champs `jour`, `de`, `a`), pour le mois choisi (champs `mois` et `annee`) ou pour les deux dates saisies (`start`, `end`) |
 | `POST /espace/releve/ticket.pdf` | Le même ticket en PDF (téléchargement), relu chez Cyclos |
 
-- Chaque POST exige l'origine du site, une session d'espace valide et son jeton CSRF. Seules les deux dates viennent du navigateur.
+- Chaque POST exige l'origine du site, une session d'espace valide et son jeton CSRF. Seule la période (le jour et les heures, le mois, ou les deux dates) vient du navigateur.
   Un GET sur `/espace/releve/ticket` ou `ticket.pdf` renvoie aux filtres ; sans session, tout renvoie à `/espace`.
 - **Une lecture à la fois par session** : la lecture fait jusqu'à une douzaine d'appels Cyclos de suite, et le PDF relit tout. Une
   seconde demande de la même session pendant une lecture reçoit 429 (page, `Retry-After: 5`) sans rien lire. Une lecture entière est
@@ -352,7 +352,24 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
 - Un 401 de Cyclos pendant la lecture ferme la session de l'espace (retour à `/espace`), comme pour la caisse. Un 403 sur la liste des
   comptes (ou une liste vide) affiche « Accès aux comptes refusé », un autre 403 « Accès refusé » : la session reste ouverte. Une panne
   ou un réseau coupé donne 502 avec une page de retour (jamais un PDF à moitié envoyé).
-- **Relevé mensuel (mode « Mois complet »).** Pour un comptable : sur la page des filtres, le bloc « Relevé mensuel » a une liste du
+- **Trois façons de choisir la période**, de haut en bas de la page des filtres, sans aucun JavaScript :
+  1. **Un jour, à certaines heures** : un jour (sélecteur de date), une heure « De » et une heure « À » (sélecteurs d'heure), préremplis
+     par le serveur en heure de Paris (aujourd'hui, 00:00 et 23:59). **Si « À » est avant « De », le relevé va jusqu'au lendemain** (un
+     service qui passe minuit : du 22/11 à 18:00 jusqu'au 23/11 à 02:00). Deux heures égales sont refusées. La dernière minute indiquée
+     est incluse, comme pour les autres plages (23:59 va jusqu'à 23:59:59). Le calcul passe par Luxon en `Europe/Paris` puis par les
+     mêmes règles que la plage libre (début futur refusé, fin future ramenée à maintenant, heure inexistante au passage à l'heure
+     d'été refusée) : aucun décalage en dur. Le ticket écrit toujours les dates et heures exactes (« Du 22/11/2026 18:00 au 23/11/2026
+     02:00 ») ; le bouton PDF redemande le jour et les deux heures, et le fichier se nomme comme celui d'une plage libre
+     (`ticket-2026-11-22_1800_2026-11-23_0200.pdf`).
+  2. **Un mois complet** : voir ci-dessous.
+  3. **Autre période (plusieurs jours)** : un menu replié (éléments natifs `details` et `summary`) qui contient les deux dates avec
+     heure (Début, Fin), limitées à 31 jours calendaires. Le serveur l'ouvre après un raccourci (qui remplit ces deux champs) et après
+     une erreur de cette plage.
+
+  Si une erreur (400) vient d'un bloc, la page revient avec les valeurs saisies et le message placé dans ce bloc. Le serveur reconnaît le
+  mode aux champs reçus : `mois` et `annee`, sinon `jour`, `de` et `a`, sinon `start` et `end`. Les anciens raccourcis, le mode mois et
+  la plage libre fonctionnent comme avant, et les politiques de sécurité ne changent pas.
+- **Un mois complet (ancien « Relevé mensuel »).** Pour un comptable : sur la page des filtres, le bloc « Un mois complet » a une liste du
   mois (en français) et une liste de l'année (l'année courante et les deux précédentes), préremplies avec le mois précédent, et le
   bouton « Voir le mois » (un POST avec jeton CSRF : une lecture ne se déclenche jamais par un simple lien). Le mois va du 1er à 00:00 au dernier jour à 23:59, heure de Paris (même convention que
   « Hier » ; Cyclos reçoit la dernière milliseconde de cette minute). Un mois qui n'a pas commencé est refusé avec un message ; le mois
