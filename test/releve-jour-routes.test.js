@@ -1,6 +1,6 @@
 // === WHAT THIS FILE CHECKS ===
 // The "one day, between two hours" mode on the real server (fields jour, de, a) against the fake Cyclos: the bounds sent to Cyclos, the
-// ticket (exact dates in the period, never only hours), a service going past midnight, refused values (400, Cyclos not called), the
+// ticket (exact dates in the period, never only hours), a range going past midnight (end hour before start hour), refused values (400, Cyclos not called), the
 // PDF that asks for the day and the two hours again, and the protections every POST keeps. All names and secrets are fictitious.
 import "./support/env-propre.js";
 import assert from "node:assert/strict";
@@ -38,7 +38,7 @@ appTest("jour : même jour, bornes envoyées à Cyclos, période exacte, formula
   assert.ok(!/name="start"|name="end"|name="mois"/.test(form));
 });
 
-// Intention: "À" before "De": the service goes past midnight, the end is the next day, and the period says both dates.
+// Intention: "À" before "De": the range goes past midnight with no box, the end is the next day, and the period says both full dates.
 appTest("jour : passage de minuit, la fin est le lendemain", options(), async (app) => {
   const { b, csrf } = await connected(app, [
     atUtc(4, "2026-01-11T01:30:00Z"), // 02:30 Paris on the 11th: out
@@ -46,7 +46,7 @@ appTest("jour : passage de minuit, la fin est le lendemain", options(), async (a
     atUtc(2, "2026-01-10T22:30:00Z"), // 23:30 Paris: in
     atUtc(1, "2026-01-10T20:59:00Z"), // 21:59 Paris: out
   ]);
-  const html = await (await b.ticket({ csrf, jour: "2026-01-10", de: "22:00", a: "02:00", lendemain: "1" })).text();
+  const html = await (await b.ticket({ csrf, jour: "2026-01-10", de: "22:00", a: "02:00" })).text();
   assert.deepEqual(numbersOf(html).sort(), ["T00002", "T00003"]);
   assert.match(html, /<p class="periode">Du 10\/01\/2026 22:00 au 11\/01\/2026 02:00<\/p>/);
   assert.deepEqual(historyCalls(app)[0].query.getAll("datePeriod"), ["2026-01-10T21:00:00.000Z", "2026-01-11T01:00:59.999Z"]);
@@ -72,9 +72,6 @@ appTest("jour : aujourd'hui, fin ramenée à maintenant", options(), async (app)
 appTest("jour : valeurs refusées (400), rien n'est lu chez Cyclos", options(), async (app) => {
   const { b, csrf } = await connected(app, [atUtc(1, "2026-01-10T12:00:00Z")]);
   const bad = [
-    [{ ...DAY, a: "11:00" }, /L'heure de fin doit être après l'heure de début\. Si le service finit après minuit, cochez la case\./], // updated: the message of the box
-    [{ ...DAY, a: "09:00" }, /cochez la case/], // the old rule (end before start = next day) is gone
-    [{ ...DAY, de: "05:00", a: "23:59", lendemain: "1" }, /24 heures au plus/],
     [{ ...DAY, jour: "2026-02-30" }, /n'existe pas dans le calendrier/],
     [{ ...DAY, jour: "10/01/2026" }, /Jour invalide/],
     [{ ...DAY, de: "25:00" }, /n'existe pas/],
@@ -112,7 +109,7 @@ appTest("jour : les autres modes restent reconnus comme avant", options(), async
 // same period as the page, and refuses the same values as the page.
 appTest("jour : PDF qui redemande jour et heures, nom cohérent, mêmes refus", options(), async (app) => {
   const { b, csrf } = await connected(app, [atUtc(1, "2026-01-10T22:30:00Z")]);
-  const res = await pdf(b, { csrf, jour: "2026-01-10", de: "22:00", a: "02:00", lendemain: "1" });
+  const res = await pdf(b, { csrf, jour: "2026-01-10", de: "22:00", a: "02:00" });
   assert.equal(res.status, 200);
   assert.equal(res.headers.get("content-type"), "application/pdf");
   assert.equal(res.headers.get("content-disposition"), 'attachment; filename="ticket-2026-01-10_2200_2026-01-11_0200.pdf"');
@@ -121,7 +118,7 @@ appTest("jour : PDF qui redemande jour et heures, nom cohérent, mêmes refus", 
   assert.ok(lines.includes("Du 10/01/2026 22:00 au 11/01/2026 02:00"));
   assert.deepEqual(historyCalls(app)[0].query.getAll("datePeriod"), ["2026-01-10T21:00:00.000Z", "2026-01-11T01:00:59.999Z"]);
   const before = historyCalls(app).length;
-  for (const form of [{ ...DAY, a: "11:00" }, { ...DAY, jour: "2026-02-30" }, { jour: DAY.jour }]) {
+  for (const form of [{ ...DAY, jour: "2026-02-30" }, { jour: DAY.jour }]) {
     assert.equal((await pdf(b, { csrf, ...form })).status, 400, JSON.stringify(form));
   }
   assert.equal(historyCalls(app).length, before);
@@ -137,41 +134,36 @@ appTest("jour : jeton CSRF, origine et session toujours exigés", options(), asy
   assert.equal(rowsOf(await (await b.ticket({ csrf, ...DAY })).text()).length, 0);
 });
 
-// Intention: the box travels from the page to the ticket and to the PDF: the PDF form of an overnight ticket asks for the box again
-// (and the one of a same-day ticket does not carry it); the PDF built from it is the same as the page's; without the box the same
-// hours are refused.
-appTest("jour : la case « lendemain » est transmise au ticket et au PDF", options(), async (app) => {
+// Intention: no box any more: the PDF form of an overnight ticket carries only the day and the two hours, and the hidden fields sent
+// back as they are give the same PDF; an old form or bookmark that still sends "lendemain" (any value) is ignored without error.
+appTest("jour : formulaire du PDF sans case, ancien champ « lendemain » ignoré", options(), async (app) => {
   const { b, csrf } = await connected(app, [atUtc(1, "2026-01-10T22:30:00Z")]);
   const night = { jour: "2026-01-10", de: "22:00", a: "02:00" };
-  const html = await (await b.ticket({ csrf, ...night, lendemain: "1" })).text();
+  const html = await (await b.ticket({ csrf, ...night })).text();
   const form = html.split('class="telechargement"')[1].split("</form>")[0];
   assert.match(form, /name="jour" value="2026-01-10"/);
   assert.match(form, /name="de" value="22:00"/);
   assert.match(form, /name="a" value="02:00"/);
-  assert.match(form, /name="lendemain" value="1"/);
+  assert.ok(!form.includes("lendemain"));
   assert.match(html, /<p class="periode">Du 10\/01\/2026 22:00 au 11\/01\/2026 02:00<\/p>/);
-  const same = await (await b.ticket({ csrf, ...DAY })).text();
-  assert.ok(!same.split('class="telechargement"')[1].split("</form>")[0].includes("lendemain"));
-  // The hidden fields of the page, sent back as they are, give the PDF; the same fields without the box are refused.
   const fields = Object.fromEntries([...form.matchAll(/name="(\w+)" value="([^"]*)"/g)].map((m) => [m[1], m[2]]));
   assert.equal((await pdf(b, fields)).status, 200);
-  const { lendemain, ...without } = fields;
-  assert.equal((await pdf(b, without)).status, 400);
-  assert.equal((await b.ticket({ csrf, ...night })).status, 400);
-  // Only "1" ticks the box.
-  assert.equal((await b.ticket({ csrf, ...night, lendemain: "oui" })).status, 400);
+  for (const old of ["1", "oui", "", "0"]) {
+    const res = await b.ticket({ csrf, ...night, lendemain: old });
+    assert.equal(res.status, 200, `lendemain=${old}`);
+    assert.match(await res.text(), /Du 10\/01\/2026 22:00 au 11\/01\/2026 02:00/);
+    assert.equal((await pdf(b, { csrf, ...night, lendemain: old })).status, 200);
+  }
+  // Same-day hours with the old field checked stay on the same day.
+  const same = await (await b.ticket({ csrf, ...DAY, lendemain: "1" })).text();
+  assert.match(same, /<p class="periode">Du 10\/01\/2026 11:00 au 10\/01\/2026 14:00<\/p>/);
 });
 
-// Intention: 18:00 to 18:00 the next day (24 hours) is accepted end to end and 05:00 to 23:59 the next day is refused with the
-// message about "Autre période"; Cyclos is read only for the first.
-appTest("jour : 24 heures acceptées, davantage refusé (400, Cyclos non appelé)", options(), async (app) => {
+// Intention: end equal to start is 24 full hours up to the same hour the next day, end to end (Cyclos read once, both dates shown).
+appTest("jour : heure de fin égale à l'heure de début = 24 heures complètes", options(), async (app) => {
   const { b, csrf } = await connected(app, []);
-  const ok = await b.ticket({ csrf, jour: "2026-01-10", de: "18:00", a: "18:00", lendemain: "1" });
+  const ok = await b.ticket({ csrf, jour: "2026-01-10", de: "18:00", a: "18:00" });
   assert.equal(ok.status, 200);
   assert.match(await ok.text(), /Du 10\/01\/2026 18:00 au 11\/01\/2026 18:00/);
-  const reads = historyCalls(app).length;
-  const refused = await b.ticket({ csrf, jour: "2026-01-10", de: "05:00", a: "23:59", lendemain: "1" });
-  assert.equal(refused.status, 400);
-  assert.match(await refused.text(), /Un relevé de service dure 24 heures au plus\. Pour une période plus longue, utilisez « Autre période »\./);
-  assert.equal(historyCalls(app).length, reads);
+  assert.deepEqual(historyCalls(app)[0].query.getAll("datePeriod"), ["2026-01-10T17:00:00.000Z", "2026-01-11T17:00:59.999Z"]);
 });
