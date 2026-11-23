@@ -122,6 +122,53 @@ export function parseRange(startText, endText, now = DateTime.now().setZone(ZONE
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// One day, between two hours ("Un jour, à certaines heures" mode)
+
+const DAY_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_SHAPE = /^\d{2}:\d{2}$/;
+const TIME_VALUE = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+const DAY_FORMAT = "yyyy-MM-dd";
+const TIME_FORMAT = "HH:mm";
+
+// Default values of the day block, in ZONE wall-clock time: today, the whole day.
+export function dayDefaults(now = DateTime.now().setZone(ZONE)) {
+  return { jour: now.toFormat(DAY_FORMAT), de: "00:00", a: "23:59" };
+}
+
+// Range of one day between two hours, Paris time. `dayText` is YYYY-MM-DD, `fromText` and `toText` are HH:mm (strict shapes, like the
+// <input type="date"> and <input type="time"> values). When the end hour is before the start hour the service goes past midnight: the
+// end is on the next day (one calendar day added on the wall clock of ZONE, so clock-change days come out right). Equal hours are refused.
+// The two instants are then handed to parseRange, which keeps every other rule (start in the future refused, future end brought back
+// to now, hours that do not exist, whole last minute included, 31-day limit): nothing is repeated here.
+// Returns { error } or what parseRange returns, plus `day: { jour, de, a }` (the three submitted values, to ask for the same range again).
+export function dayRange(dayText, fromText, toText, now = DateTime.now().setZone(ZONE)) {
+  if (!DAY_SHAPE.test(dayText ?? "")) {
+    return { error: "Jour invalide : le format attendu est AAAA-MM-JJ (par exemple 2026-11-05)." };
+  }
+  const day = DateTime.fromFormat(dayText, DAY_FORMAT, { zone: ZONE });
+  if (!day.isValid) {
+    return { error: "Le jour choisi n'existe pas dans le calendrier." };
+  }
+  const time = (text, label) => {
+    if (!TIME_SHAPE.test(text ?? "")) return { error: `Heure de ${label} invalide : le format attendu est HH:mm (par exemple 18:30).` };
+    // Checked on its own, apart from any date: 00:00 to 23:59 only (Luxon would accept 24:00), so no clock change can touch it.
+    return TIME_VALUE.test(text) ? { value: text } : { error: `L'heure de ${label} n'existe pas : choisissez une heure entre 00:00 et 23:59.` };
+  };
+  const from = time(fromText, "début");
+  if (from.error) return from;
+  const to = time(toText, "fin");
+  if (to.error) return to;
+  if (from.value === to.value) {
+    return { error: "L'heure de fin doit être différente de l'heure de début." };
+  }
+
+  const endDay = to.value < from.value ? day.plus({ days: 1 }) : day;
+  const range = parseRange(`${dayText}T${from.value}`, `${endDay.toFormat(DAY_FORMAT)}T${to.value}`, now);
+  if (range.error) return range;
+  return { ...range, day: { jour: dayText, de: from.value, a: to.value } };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // Whole months ("Mois complet" mode)
 
 export const MONTH_NAMES = [
@@ -275,7 +322,7 @@ function counterparty(entry, payerNames) {
 // `payerNames`: { hidePayerName, nameOrder }, the cash register's settings, for the counterparty column (the merchant's own name,
 // at the top, is never changed).
 export function ticketModel(
-  { from, to, totals, entries, truncated, merchantName, currency, maxRows = DEFAULT_MAX_ROWS, month = null, payerNames = {} },
+  { from, to, totals, entries, truncated, merchantName, currency, maxRows = DEFAULT_MAX_ROWS, month = null, day = null, payerNames = {} },
   now = DateTime.now().setZone(ZONE),
 ) {
   const digits = currency?.decimalDigits ?? 2;
@@ -335,5 +382,7 @@ export function ticketModel(
     start: from.toFormat(INPUT_FORMAT),
     end: to.toFormat(INPUT_FORMAT),
     month: month ? { year: month.year, month: month.month } : null,
+    // A day with hours is asked for again as a day and two hours ({ jour, de, a }), not as two full dates.
+    day: day ? { ...day } : null,
   };
 }
