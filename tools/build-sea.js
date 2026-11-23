@@ -54,7 +54,7 @@ if (leaked.length > 0) {
 // Names relative to web/: the same ones the server asks for (see src/assets.js).
 const browserScripts = [
   "caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound",
-  "sound-logic", "notification", "notification-logic", "controls-logic", "refresh-logic",
+  "sound-logic", "notification", "notification-logic", "controls-logic", "refresh-logic", "print-ticket",
 ].map((name) => `js/${name}.js`);
 const output = platform() === "win32" ? "build/graine34-notif-caisse.exe" : "build/graine34-notif-caisse";
 const assets = Object.fromEntries(
