@@ -12,6 +12,9 @@ const FILTERS_HREF = "/espace/releve";
 const AREA_HREF = "/espace";
 
 const PRINT_SCRIPT = "/print-ticket.js";
+// Column titles of the month ticket: hidden on screen, printed at the top of the table and repeated on every printed page (A4 only).
+const columnHeader = `<li class="entete-colonnes"><span>Date</span><span>Numéro</span><span>Contrepartie</span><span>Description</span><span>Montant</span></li>
+      `;
 const backToArea = `<p><a href="${AREA_HREF}">Retour à l'espace</a></p>`;
 
 const capitalized = (text) => text.charAt(0).toUpperCase() + text.slice(1);
@@ -119,7 +122,7 @@ export function renderReleveTicket({ model: m, csrfToken, pdf = false }, { htmlP
   ${
     rows
       ? `<ol class="detail">
-      ${rows}
+      ${m.month ? columnHeader : ""}${rows}
   </ol>`
       : `<p class="vide">${escapeHtml(m.emptyText)}</p>`
   }
@@ -129,7 +132,8 @@ export function renderReleveTicket({ model: m, csrfToken, pdf = false }, { htmlP
     ${backToArea}
   </div>
 </main>`,
-    { toolName: TOOL_NAME, scripts: [PRINT_SCRIPT] },
+    // The month ticket prints on A4 (the page-mois rules of style.css); the ticket of a period keeps the 80 mm ticket.
+    { toolName: TOOL_NAME, scripts: [PRINT_SCRIPT], htmlClass: m.month ? "page-mois" : "" },
   );
 }
 

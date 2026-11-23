@@ -409,6 +409,11 @@ form[action="/espace/deconnexion"] {
   font-size: 0.85rem;
 }
 
+/* Column titles of the month ticket: only for the A4 printing (see the page-mois rules). */
+.entete-colonnes {
+  display: none;
+}
+
 .vide {
   padding: 1rem 0;
   color: var(--texte-secondaire);
@@ -894,6 +899,83 @@ form[action="/espace/deconnexion"] {
   .avertissement {
     border: 1px solid var(--noir);
     border-left-width: 4px;
+  }
+}
+
+/* ---------- Printing: month ticket on A4 ----------
+   The server puts page-mois on <html> for the whole-month ticket only; the ticket of a period keeps the 80 mm rules above.
+   Where named pages are not supported, the page stays the one of the 80 mm ticket and the content simply follows its width. */
+
+@page mois {
+  size: A4;
+  margin: 15mm;
+}
+
+@media print {
+  /* The Print button never goes on paper (the button rule of the ticket already hides every button; this one names it). */
+  .imprimer {
+    display: none !important;
+  }
+
+  html.page-mois {
+    page: mois;
+  }
+
+  html.page-mois,
+  html.page-mois body,
+  html.page-mois .page {
+    width: auto;
+    max-width: none;
+  }
+
+  html.page-mois body {
+    font-size: 9.5pt;
+  }
+
+  /* The detail becomes a table: the header group is repeated on each printed page, a row is never cut between two pages. */
+  html.page-mois .detail {
+    display: table;
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  html.page-mois .entete-colonnes {
+    display: table-header-group;
+    font-weight: 700;
+  }
+
+  html.page-mois .ligne {
+    display: table-row;
+  }
+
+  html.page-mois .entete-colonnes > *,
+  html.page-mois .ligne > * {
+    display: table-cell;
+    padding: 1.2mm 1.5mm;
+    border-bottom: 1px dotted var(--noir);
+    vertical-align: top;
+  }
+
+  html.page-mois .entete-colonnes > * {
+    border-bottom: 1px solid var(--noir);
+  }
+
+  html.page-mois .ligne > .date,
+  html.page-mois .ligne > .montant {
+    white-space: nowrap;
+  }
+
+  html.page-mois .ligne > .montant,
+  html.page-mois .entete-colonnes > :last-child {
+    text-align: right;
+  }
+
+  html.page-mois .ligne > .numero {
+    overflow-wrap: anywhere;
+  }
+
+  html.page-mois .resume {
+    max-width: 90mm;
   }
 }
 

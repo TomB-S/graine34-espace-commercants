@@ -307,10 +307,11 @@ function serveStatic(req, res, asset) {
   res.end(asset.body);
 }
 
-// `scripts`: addresses of external scripts, loaded at the end of the body.
-function htmlPage(title, body, { toolName = "Notification de paiement", scripts = [] } = {}) {
+// `scripts`: addresses of external scripts, loaded at the end of the body. `htmlClass`: class of the <html> element (a constant of
+// the caller: the print layout of a page).
+function htmlPage(title, body, { toolName = "Notification de paiement", scripts = [], htmlClass = "" } = {}) {
   return `<!DOCTYPE html>
-<html lang="fr">
+<html lang="fr"${htmlClass ? ` class="${htmlClass}"` : ""}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
