@@ -220,6 +220,7 @@ web/                 tout ce que le navigateur reçoit
     sound.js             le son : Web Audio, bip généré, aucun fichier audio
     notification-logic.js  quoi notifier et que dire de l'état (regroupement, tag, texte : fonctions pures)
     notification.js      notifications du navigateur : le seul fichier qui touche à l'API Notification
+    print-ticket.js      le bouton « Imprimer » du ticket du relevé (créé par le script, seul script de ces pages)
 test/                tests (node:test), un fichier par sujet : *.test.js
   support/             faux Cyclos, harnais de test, options communes (pas des tests)
 tools/               outils hors serveur
@@ -367,10 +368,21 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
   liste est coupée aux transactions les plus récentes avec un avertissement, les totaux de Cyclos sont repris s'il y en a, sinon
   « Non disponible » : jamais un total inventé. Le temps de lecture d'un mois est de 60 secondes plus 2 secondes par page que le
   plafond permet de lire (160 s pour 10000 lignes à 200 par page), les appels se suivant sur le même jeton Cyclos.
-- Les pages du relevé n'ont **aucun script** : leur politique de sécurité n'a ni `script-src` ni `connect-src` (celle de l'outil
-  d'origine), alors que le reste du site garde celle qui laisse tourner le script de `/caisse`. Pas de bouton de déconnexion : un lien
-  « Retour à l'espace » (la déconnexion se fait depuis l'espace).
-- L'impression à l'écran est le ticket de 80 mm de la feuille de style commune (même bloc `@media print` que l'outil d'origine).
+- Les pages du relevé n'ont **aucun script**, sauf le ticket : leur politique de sécurité n'a ni `script-src` ni `connect-src` (celle de
+  l'outil d'origine), alors que le reste du site garde celle qui laisse tourner le script de `/caisse`. Pas de bouton de déconnexion :
+  un lien « Retour à l'espace » (la déconnexion se fait depuis l'espace).
+- Le bouton **Imprimer** : le ticket (du jour ou du mois, c'est la même page) charge `/print-ticket.js` par une balise `script` avec
+  `src`, à la fin du corps. Ce petit module (`web/js/print-ticket.js`) crée lui-même le bouton, à côté du téléchargement du PDF, et appelle
+  `window.print()` au clic ; sans JavaScript, ou script bloqué, il n'y a pas de bouton (le HTML du serveur n'en contient aucun). Il est servi
+  par la même liste blanche que les scripts de la caisse (`BROWSER_MODULES` dans `server.js`, et `tools/build-sea.js` pour l'exécutable).
+  La réponse **200 du ticket seulement** ajoute `script-src 'self'` à la politique du relevé, rien d'autre (ni `unsafe-inline`, ni
+  `connect-src`) ; les filtres, les refus du ticket (400, 403, redirection), le PDF, la caisse et l'espace gardent leur politique exacte.
+- L'impression : le ticket d'une plage reste le ticket de 80 mm de la feuille de style commune (même bloc `@media print` que l'outil
+  d'origine). Le ticket du mois reçoit la classe `page-mois` sur `<html>` (posée par le serveur) et s'imprime sur une page A4 nommée
+  (`@page mois`, marges de 15 mm) : le détail devient un tableau dont la ligne de titres (Date, Numéro, Contrepartie, Description,
+  Montant, cachée à l'écran) est répétée sur chaque page imprimée, et une ligne n'est jamais coupée entre deux pages. Le bouton n'est
+  jamais imprimé. Les pages nommées demandent un navigateur récent ; sinon le mois garde la page du ticket de 80 mm, avec le contenu
+  qui en suit la largeur.
 - Le détail : dates saisies et lues en heure de Paris, au plus 31 jours, début jamais dans le futur, fin future ramenée à maintenant ;
   une heure qui n'existe pas (passage à l'heure d'été) est refusée ; une heure double (passage à l'heure d'hiver) prend la seconde
   occurrence, sans avertissement. Les montants sont calculés en entiers exacts. Cyclos répond le plus récent d'abord, le ticket
