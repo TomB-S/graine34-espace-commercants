@@ -10,7 +10,13 @@ export const ZONE = "Europe/Paris";
 export const INPUT_FORMAT = "yyyy-MM-dd'T'HH:mm";
 const INPUT_SHAPE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
 
+// Longest range, counted in CALENDAR days (Luxon adds days on the wall clock of ZONE), not in elapsed hours: a range of 31 days has
+// 744 hours, 745 across the October clock change and 743 across the March one. A whole month (28 to 31 days) therefore always fits.
 export const MAX_RANGE_DAYS = 31;
+
+export function exceedsMaxRange(from, to) {
+  return to > from.plus({ days: MAX_RANGE_DAYS });
+}
 // The transaction list is read page by page, up to maxRows lines in total.
 export const DEFAULT_PAGE_SIZE = 200;
 export const DEFAULT_MAX_ROWS = 2000;
@@ -98,7 +104,7 @@ export function parseRange(startText, endText, now = DateTime.now().setZone(ZONE
   if (clamped ? until <= from : to <= from) {
     return { error: "La fin doit être après le début." };
   }
-  if (to > from.plus({ days: MAX_RANGE_DAYS })) {
+  if (exceedsMaxRange(from, to)) {
     return {
       error: `La plage ne peut pas dépasser ${MAX_RANGE_DAYS} jours.`,
     };
@@ -157,6 +163,11 @@ export function monthRange(yearText, monthText, now = DateTime.now().setZone(ZON
   if (current) {
     to = now.startOf("minute");
     until = now;
+  }
+
+  // Same limit as the free range; a month never exceeds it (at most 31 calendar days).
+  if (exceedsMaxRange(from, to)) {
+    return { error: `La plage ne peut pas dépasser ${MAX_RANGE_DAYS} jours.` };
   }
 
   const name = `${MONTH_NAMES[month - 1]} ${year}`;
