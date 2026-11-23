@@ -5,6 +5,7 @@
 // Same rules as the other pages: no inline script, no inline style (the CSP of these pages forbids both), every value that is not a
 // constant goes through escapeHtml. The only script is the one of the ticket (the Print button, loaded by src at the end of the body). The helpers of server.js are given by the caller (importing it from here would be circular).
 
+import { backButton } from "./format.js";
 import { MONTH_NAMES, allowedYears, previousMonth, dayDefaults } from "./releve-calcul.js";
 
 export const TOOL_NAME = "Relevés de service";
@@ -15,8 +16,6 @@ const PRINT_SCRIPT = "/print-ticket.js";
 // Column titles of the month ticket: hidden on screen, printed at the top of the table and repeated on every printed page (A4 only).
 const columnHeader = `<li class="entete-colonnes"><span>Date</span><span>Numéro</span><span>Contrepartie</span><span>Description</span><span>Montant</span></li>
       `;
-// A link drawn as a button at the top of a page (the style sheet draws the arrow); hidden on paper.
-const backButton = (href, label) => `<p class="retour"><a class="lien-retour" href="${href}">${label}</a></p>`;
 const backToArea = `<p><a href="${AREA_HREF}">Retour à l'espace</a></p>`;
 
 const capitalized = (text) => text.charAt(0).toUpperCase() + text.slice(1);

@@ -25,6 +25,12 @@ export function logoMarkup(areaHref = null) {
     : `<span class="logo">${image}</span>`;
 }
 
+// A link drawn as a button at the top of a page (the style sheet draws the pill and the arrow; hidden on paper). One component for the
+// statement pages and the cash register page. `href` and `label` are constants of the caller.
+export function backButton(href, label) {
+  return `<p class="retour"><a class="lien-retour" href="${escapeHtml(href)}">${label}</a></p>`;
+}
+
 // Formats a Cyclos amount string ("1234.5") the French way ("1 234,50", with a narrow no-break space between thousands). String
 // based: no float rounding.
 // `signed` adds "+" to positive amounts; negative ones always keep their "-".

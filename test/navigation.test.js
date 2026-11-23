@@ -1,5 +1,5 @@
 // === WHAT THIS FILE CHECKS ===
-// Navigation of the statement: the "Retour à l'espace" button at the top of the filters page, the "Changer de période" button at the top
+// Navigation of the statement and of the cash register: the "Retour à l'espace" button at the top of the filters page, the "Changer de période" button at the top
 // of the ticket (day, month and shortcut), the logo of the header that leads to the merchants' area in the multi-merchant mode (pages of
 // the area, of the cash register and of the statement) and stays a plain image in the single-merchant mode and in the executable, the
 // links hidden on paper, nothing inline, and the security policies unchanged. All names and secrets are fictitious.
@@ -10,7 +10,8 @@ import { DateTime } from "luxon";
 import { appTest, EXPECTED_CSP } from "./support/harness.js";
 import { CAISSE_OPTIONS } from "./support/options.js";
 import { options, connected, browser } from "./support/releve-support.js";
-import { logoMarkup } from "../src/format.js";
+import { logoMarkup, escapeHtml, formatAmount } from "../src/format.js";
+import { renderCaissePage } from "../src/caisse-page.js";
 import { readCaisseConfig } from "../src/caisse-config.js";
 import { readFile } from "node:fs/promises";
 
@@ -149,4 +150,77 @@ appTest("navigation : style — boutons masqués à l'impression, logo imprimé 
   assert.match(screen, /a\.lien-retour \{[^}]*min-height:\s*var\(--tactile\)/);
   assert.match(screen, /a\.lien-retour::before \{[^}]*content:\s*""/, "decorative arrow, nothing to read");
   assert.ok(!/url\(/.test(screen.match(/a\.lien-retour::before \{[^}]*\}/)[0]), "no image");
+});
+
+// ---------------------------------------------------------------- the button on the cash register page
+
+const caisseHelpers = {
+  escapeHtml,
+  formatAmount,
+  htmlPage: (title, body) => body,
+  errorMessage: (text) => text,
+  logoutForm: () => '<form method="post" action="/deconnexion"></form>',
+};
+const caisseView = { status: "live", tickets: [], loaded: true, recap: null };
+const renderCaisse = (helpers) => renderCaissePage(caisseView, { refreshSeconds: 5, hidePayerName: false, now: Date.parse("2026-01-10T12:00:00Z"), csrfToken: "x" }, { ...caisseHelpers, ...helpers });
+const BACK = '<p class="retour"><a class="lien-retour" href="/espace">Retour à l\'espace</a></p>';
+
+// Intention: with an address for the area, the cash register page opens with the same button as the statement (same component, same
+// classes), under the header and before every zone of the page; without it the page is byte for byte what it was; with it the page is
+// that same page plus the button, nothing else (the zones, the data attributes and the logout form are untouched).
+test("caisse : le bouton « Retour à l'espace » est la seule différence, et seulement avec une adresse de l'espace", () => {
+  const simple = renderCaisse({});
+  const multi = renderCaisse({ areaHref: () => "/espace" });
+  assert.ok(!simple.includes("retour") && !simple.includes("lien-retour"));
+  assert.equal(renderCaisse({ areaHref: () => null }), simple);
+  assert.ok(multi.includes(`data-login-url="/">\n  ${BACK}\n  <div class="caisse-zone" id="caisse-zone-son">`), "right after the opening of the page, before the sound line");
+  assert.equal([...multi.matchAll(/lien-retour/g)].length, 1);
+  assert.equal(multi.replace(`${BACK}\n  `, "").replace(LINKED_LOGO, PLAIN_LOGO), simple, "nothing else changes");
+  assert.ok(multi.includes('<form method="post" action="/deconnexion"></form>'), "the logout button of the header stays");
+  assert.ok(multi.indexOf("</header>") < multi.indexOf(BACK));
+});
+
+// Intention: on the real server, the button is on /caisse in the multi-merchant mode, leads to /espace and appears once; the page
+// keeps its one script, its policy and its data; the page of the single-merchant mode has no such button.
+appTest("caisse : bouton de retour en mode multi, absent en mode simple, page et politique inchangées", options(), async (app) => {
+  const { b, csrf } = await connected(app, []);
+  assert.equal((await b.request("/espace/caisse", { method: "POST", form: { csrf }, headers: { Origin: app.base } })).status, 303);
+  const res = await b.request("/caisse");
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("content-security-policy"), EXPECTED_CSP);
+  const html = await res.text();
+  assert.equal([...html.matchAll(/<a class="lien-retour" href="\/espace">Retour à l'espace<\/a>/g)].length, 1);
+  assert.ok(html.indexOf("</header>") < html.indexOf('class="lien-retour"') && html.indexOf('class="lien-retour"') < html.indexOf('id="caisse-zone-son"'));
+  assert.deepEqual(html.match(/<script[^>]*>/gi), ['<script type="module" src="/caisse.js">'], "no script added");
+  assert.ok(!/\sstyle=/i.test(html) && !/<style/i.test(html));
+  assert.match(html, /<form method="post" action="\/deconnexion">/);
+  assert.match(html, /<noscript><meta http-equiv="refresh" content="\d+"><\/noscript>/, "the update without script is still there");
+  // The update still works: the JSON of the script, live.
+  let data;
+  for (let i = 0; i < 100; i += 1) {
+    data = await (await b.request("/caisse/data")).json();
+    if (data.status === "live") break;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  assert.equal(data.status, "live");
+  const caisseCsrf = html.match(/name="csrf" value="([0-9a-f]+)"/)?.[1];
+  assert.equal((await b.request("/deconnexion", { method: "POST", form: { csrf: caisseCsrf }, headers: { Origin: app.base } })).status, 303);
+});
+
+appTest("caisse : mode simple, aucun bouton de retour sur la page", CAISSE_OPTIONS, async (app) => {
+  assert.equal((await app.login()).status, 303);
+  const res = await app.request("/caisse");
+  assert.equal(res.headers.get("content-security-policy"), EXPECTED_CSP);
+  const html = await res.text();
+  assert.ok(!html.includes("lien-retour") && !html.includes('class="retour"') && !html.includes("/espace"));
+  assert.ok(html.includes(PLAIN_LOGO));
+});
+
+// Intention: the script of the page does not depend on the links or buttons around it: it finds its zones by identifier, and its
+// own links (reconnection banner) are made by the script itself.
+test("caisse : le script ne dépend ni du nombre ni de la position des liens et boutons", async () => {
+  for (const file of ["caisse.js", "caisse-view.js", "controls-logic.js", "notification.js", "sound.js"]) {
+    const source = await readFile(new URL(`../web/js/${file}`, import.meta.url), "utf8");
+    assert.ok(!/querySelectorAll|children\[|firstElementChild|nextElementSibling|previousElementSibling|\.closest\(|getElementsByTagName|querySelector\(["'`](?:a|button|p|\.page)/.test(source), file);
+  }
 });
