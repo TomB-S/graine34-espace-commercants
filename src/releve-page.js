@@ -95,7 +95,11 @@ export function renderReleveTicket({ model: m, csrfToken, pdf = false }, { htmlP
         m.month
           ? `<input type="hidden" name="mois" value="${escapeHtml(m.month.month)}">
       <input type="hidden" name="annee" value="${escapeHtml(m.month.year)}">`
-          : `<input type="hidden" name="start" value="${escapeHtml(m.start)}">
+          : m.day
+            ? `<input type="hidden" name="jour" value="${escapeHtml(m.day.jour)}">
+      <input type="hidden" name="de" value="${escapeHtml(m.day.de)}">
+      <input type="hidden" name="a" value="${escapeHtml(m.day.a)}">`
+            : `<input type="hidden" name="start" value="${escapeHtml(m.start)}">
       <input type="hidden" name="end" value="${escapeHtml(m.end)}">`
       }
       <button type="submit">Télécharger le PDF</button>

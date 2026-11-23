@@ -1,12 +1,13 @@
 // The routes of the statement (/espace/releve), multi-merchant mode only. server.js gives what it owns (the sessions of the area,
 // the checks, the answers); everything the statement needs is here, so that server.js only forwards the paths:
 //   GET  /espace/releve         the filters (shortcuts ?preset=aujourdhui|hier|6h)
-//   POST /espace/releve/ticket  the ticket, read again from Cyclos for the two dates typed, or for the month (fields mois and annee)
+//   POST /espace/releve/ticket  the ticket, read again from Cyclos for the two dates typed, for a day between two hours (fields jour, de, a)
+//                               or for a whole month (fields mois and annee)
 //   POST /espace/releve/ticket.pdf  the same ticket as a PDF download (same checks, the data is read again)
 // Each POST: origin check, session of the area (its Cyclos token), CSRF token of that session, then ONE reading at a time per
 // session. Nothing but the two dates is taken from the browser. A Cyclos 401 ends the session of the area, as for the cash register.
 import { PushAuthError, PushForbiddenError, PushUnavailableError } from "./cyclos-push.js";
-import { rangeValues, presetRange, parseRange, monthRange, ticketModel } from "./releve-calcul.js";
+import { rangeValues, presetRange, parseRange, monthRange, dayRange, dayDefaults, previousMonth, allowedYears, ticketModel } from "./releve-calcul.js";
 import {
   renderReleveFilters,
   renderReleveTicket,
@@ -34,6 +35,18 @@ export const MONTH_PAGE_ALLOWANCE_MS = 2_000;
 //   readTimeoutMs()         -> milliseconds
 //   pdf(model, statement)   -> { bytes, filename }: the PDF of a ticket (loaded on demand, see server.js)
 // }
+// The month and the year typed in the monthly block, when they are values the lists offer; otherwise the usual default (the
+// previous month). Only used to select the same options again after an error.
+function submittedMonth(form) {
+  const month = Number(form.get("mois"));
+  const year = Number(form.get("annee"));
+  const fallback = previousMonth();
+  return {
+    month: Number.isInteger(month) && month >= 1 && month <= 12 ? month : fallback.month,
+    year: allowedYears().includes(year) ? year : fallback.year,
+  };
+}
+
 export function createReleveRoutes(deps) {
   const { helpers, send, redirect, readBody, isSameOrigin, isValidCsrf, findSession, endSession } = deps;
   // Sessions of the area with a reading in progress: a second request of the same session is refused, not queued.
@@ -61,14 +74,28 @@ export function createReleveRoutes(deps) {
       forbidden(res, "Jeton de sécurité absent ou invalide. Retournez aux filtres et recommencez.", true);
       return null;
     }
-    // Whole-month mode: the form sends a month and a year (and no dates). Otherwise the two dates typed.
+    // Three ways to choose the period, told apart by the fields the form sends: a month and a year (whole month), a day and two hours
+    // (jour, de, a), otherwise the two full dates typed. If a request carried fields of several, the month wins, then the day.
     const monthly = form.has("mois") || form.has("annee");
+    const daily = !monthly && (form.has("jour") || form.has("de") || form.has("a"));
     const values = { start: form.get("start") ?? "", end: form.get("end") ?? "" };
-    const range = monthly ? monthRange(form.get("annee") ?? "", form.get("mois") ?? "") : parseRange(values.start, values.end);
+    const dayValues = { jour: form.get("jour") ?? "", de: form.get("de") ?? "", a: form.get("a") ?? "" };
+    const range = monthly
+      ? monthRange(form.get("annee") ?? "", form.get("mois") ?? "")
+      : daily
+        ? dayRange(dayValues.jour, dayValues.de, dayValues.a)
+        : parseRange(values.start, values.end);
     if (range.error) {
-      const filters = monthly
-        ? { csrfToken, values: rangeValues(presetRange()), error: range.error }
-        : { csrfToken, values, error: range.error };
+      // The page is shown again with what was typed in the block that was used (the other blocks have their usual values), and the
+      // message is placed by that block (`errorFor`).
+      const filters = { csrfToken, values: rangeValues(presetRange()), day: dayDefaults(), error: range.error, errorFor: "range" };
+      if (monthly) {
+        Object.assign(filters, { errorFor: "month", month: submittedMonth(form) });
+      } else if (daily) {
+        Object.assign(filters, { errorFor: "day", day: dayValues });
+      } else {
+        Object.assign(filters, { values });
+      }
       send(res, 400, "text/html", renderReleveFilters(filters, helpers));
       return null;
     }
@@ -91,7 +118,7 @@ export function createReleveRoutes(deps) {
         AbortSignal.timeout(timeoutMs),
       );
       return {
-        statement: { ...statement, from: range.from, to: range.to, maxRows: limits.maxRows, month: monthly ? range : null, payerNames: deps.payerNames() },
+        statement: { ...statement, from: range.from, to: range.to, maxRows: limits.maxRows, month: monthly ? range : null, day: daily ? range.day : null, payerNames: deps.payerNames() },
         found,
         release: () => busy.delete(found.id),
       };
