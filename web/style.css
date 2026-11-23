@@ -99,6 +99,18 @@ body {
   line-height: 0;
 }
 
+/* In the multi-merchant mode the logo is a link to the merchants' area: no underline, a white focus ring that shows on the green banner. */
+.logo a {
+  display: block;
+  border-radius: 0.375rem;
+  text-decoration: none;
+}
+
+.logo a:focus-visible {
+  outline: 3px solid var(--blanc);
+  outline-offset: 2px;
+}
+
 .logo img {
   display: block;
   max-width: 100%;
@@ -1004,7 +1016,7 @@ details[open].autre-periode > summary::before {
     color: var(--noir);
   }
 
-  /* Nothing clickable on paper */
+  /* Nothing clickable on paper (the logo link, which holds the logo, stays a plain block: the printed header does not change) */
   a,
   button,
   form,
@@ -1012,6 +1024,10 @@ details[open].autre-periode > summary::before {
   .retour,
   .raccourcis {
     display: none !important;
+  }
+
+  a.lien-logo {
+    display: block !important;
   }
 
   .ticket {
