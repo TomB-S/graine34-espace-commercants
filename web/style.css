@@ -281,6 +281,42 @@ form[action="/espace/deconnexion"] {
   margin: 0 0 0.5rem;
 }
 
+/* Back button at the top of the filters page and of the ticket: a link drawn as an outlined pill (like the shortcuts), with an arrow
+   drawn in CSS (empty ::before, nothing for a screen reader). Same keyboard focus as the buttons (the :focus-visible rule above). */
+.retour {
+  margin: 0 0 1rem;
+}
+
+a.lien-retour {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tactile);
+  padding: 0 1rem;
+  border: 1px solid var(--vert-principal);
+  border-radius: 999px;
+  background: var(--blanc);
+  color: var(--vert-principal);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+a.lien-retour::before {
+  content: "";
+  flex: none;
+  box-sizing: border-box;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin: 0 0.6rem 0 0.15rem;
+  border-left: 3px solid currentColor;
+  border-bottom: 3px solid currentColor;
+  transform: rotate(45deg);
+}
+
+a.lien-retour:hover {
+  background: var(--vert-principal-survol);
+  color: var(--blanc);
+}
+
 /* Shortcuts of the filters page: buttons of a POST form, drawn as green outlined pills. */
 .raccourcis {
   margin: 1rem 0;
@@ -973,6 +1009,7 @@ details[open].autre-periode > summary::before {
   button,
   form,
   .actions,
+  .retour,
   .raccourcis {
     display: none !important;
   }

@@ -15,6 +15,8 @@ const PRINT_SCRIPT = "/print-ticket.js";
 // Column titles of the month ticket: hidden on screen, printed at the top of the table and repeated on every printed page (A4 only).
 const columnHeader = `<li class="entete-colonnes"><span>Date</span><span>Numéro</span><span>Contrepartie</span><span>Description</span><span>Montant</span></li>
       `;
+// A link drawn as a button at the top of a page (the style sheet draws the arrow); hidden on paper.
+const backButton = (href, label) => `<p class="retour"><a class="lien-retour" href="${href}">${label}</a></p>`;
 const backToArea = `<p><a href="${AREA_HREF}">Retour à l'espace</a></p>`;
 
 const capitalized = (text) => text.charAt(0).toUpperCase() + text.slice(1);
@@ -43,7 +45,8 @@ export function renderReleveFilters(
   const top = ["day", "month", "range"].includes(errorFor) ? "" : message;
   return htmlPage(
     "Choisir la période",
-    `<h1>Choisir la période</h1>
+    `${backButton(AREA_HREF, "Retour à l'espace")}
+  <h1>Choisir la période</h1>
   ${top}
   <div class="raccourcis">
     <form method="post" action="${FILTERS_HREF}/ticket" aria-label="Raccourcis">
@@ -96,8 +99,7 @@ export function renderReleveFilters(
         <input type="datetime-local" id="end" name="end" value="${escapeHtml(values.end)}" required></p>
       <p><button type="submit">Voir la période</button></p>
     </form>
-  </details>
-  ${backToArea}`,
+  </details>`,
     { toolName: TOOL_NAME },
   );
 }
@@ -142,7 +144,8 @@ export function renderReleveTicket({ model: m, csrfToken, pdf = false }, { htmlP
 
   return htmlPage(
     m.title,
-    `<main class="ticket">
+    `${backButton(FILTERS_HREF, "Changer de période")}
+<main class="ticket">
   <h1>${escapeHtml(m.title)}</h1>
   ${m.merchantName ? `<p class="commercant">${escapeHtml(m.merchantName)}</p>` : ""}
   <p class="periode">${escapeHtml(m.period)}</p>
@@ -165,7 +168,7 @@ export function renderReleveTicket({ model: m, csrfToken, pdf = false }, { htmlP
   }
 
   <div class="actions">
-    ${download}<p><a href="${FILTERS_HREF}">Changer la plage horaire</a></p>
+    ${download}<p><a href="${FILTERS_HREF}">Changer de période</a></p>
     ${backToArea}
   </div>
 </main>`,
