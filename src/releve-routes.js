@@ -29,6 +29,7 @@ export const MONTH_PAGE_ALLOWANCE_MS = 2_000;
 //   endSession(found, res)  -> closes the session of the area (local record + Cyclos token) and sends the redirect to /espace
 //   push()                  -> the Cyclos client (getStatement)
 //   limits()                -> { pageSize, maxRows }
+//   payerNames()            -> { hidePayerName, nameOrder }: how the counterparty is written (the cash register's settings)
 //   monthMaxRows()          -> the cap of lines of the whole-month mode
 //   readTimeoutMs()         -> milliseconds
 //   pdf(model, statement)   -> { bytes, filename }: the PDF of a ticket (loaded on demand, see server.js)
@@ -90,7 +91,7 @@ export function createReleveRoutes(deps) {
         AbortSignal.timeout(timeoutMs),
       );
       return {
-        statement: { ...statement, from: range.from, to: range.to, maxRows: limits.maxRows, month: monthly ? range : null },
+        statement: { ...statement, from: range.from, to: range.to, maxRows: limits.maxRows, month: monthly ? range : null, payerNames: deps.payerNames() },
         found,
         release: () => busy.delete(found.id),
       };

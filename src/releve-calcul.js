@@ -3,6 +3,7 @@
 // ticket as plain strings, shared by the HTML page and the PDF so that both always show the same thing.
 import { DateTime } from "luxon";
 import { formatAmount } from "./format.js";
+import { statementCounterparty } from "./caisse-data.js";
 
 export const ZONE = "Europe/Paris";
 
@@ -260,16 +261,21 @@ function plural(count, one, many) {
   return `${count} ${count > 1 ? many : one}`;
 }
 
-// Who is on the other side of a transaction (a member, or a system account).
-function counterparty(entry) {
+// Who is on the other side of a transaction: a member (written like the cash register writes a payer) or a system account, whose
+// name is the name of an account type, not a person: it is shown as Cyclos gives it.
+function counterparty(entry, payerNames) {
   const related = entry.relatedAccount;
-  return related?.user?.display ?? related?.type?.name ?? "";
+  const member = related?.user?.display;
+  if (member !== undefined && member !== null) return statementCounterparty(member, payerNames);
+  return related?.type?.name ?? "";
 }
 
 // The content of the ticket as plain strings (not escaped). `maxRows`: the limit the list was read with (for the warning text).
 // `month`: the result of monthRange() when the ticket is a whole-month statement (it gives the title and the period note).
+// `payerNames`: { hidePayerName, nameOrder }, the cash register's settings, for the counterparty column (the merchant's own name,
+// at the top, is never changed).
 export function ticketModel(
-  { from, to, totals, entries, truncated, merchantName, currency, maxRows = DEFAULT_MAX_ROWS, month = null },
+  { from, to, totals, entries, truncated, merchantName, currency, maxRows = DEFAULT_MAX_ROWS, month = null, payerNames = {} },
   now = DateTime.now().setZone(ZONE),
 ) {
   const digits = currency?.decimalDigits ?? 2;
@@ -313,7 +319,7 @@ export function ticketModel(
       // Each stored instant is rendered back into Paris wall-clock time.
       when: DateTime.fromISO(entry.date).setZone(ZONE).toFormat("dd/MM HH:mm"),
       number: entry.transactionNumber ?? "",
-      counterparty: counterparty(entry),
+      counterparty: counterparty(entry, payerNames),
       description: entry.description ?? "",
       amount: formatAmount(entry.amount, digits, { signed: true }),
     })),

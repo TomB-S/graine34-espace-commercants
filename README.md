@@ -378,6 +378,14 @@ conservé). Le relevé n'est **pas dans l'exécutable** (mode multi-commerçants
 - Totaux : ceux de Cyclos sont repris tels quels ; sur l'instance réelle Cyclos n'en donne pas, ils sont alors calculés à partir des
   transactions lues, **seulement si la liste est complète**. Liste coupée au plafond, ou montant illisible : « Non disponible » trois
   fois, avec un avertissement (page et PDF), jamais un total inventé.
+- **Nom de la contrepartie.** La colonne de la contrepartie (page et PDF, plage libre et mois) s'écrit comme le payeur de la caisse :
+  « Tom B. » pour « Benameur - Tom », avec les mêmes réglages `CAISSE_NAME_ORDER` et `CAISSE_HIDE_PAYER_NAME` (aucune variable de plus ;
+  `true` donne « Client »). C'est la même fonction que la caisse, appliquée seulement quand le texte ressemble à une personne :
+  un seul séparateur « - » (le format de Cyclos), ou deux mots sans séparateur, avec un prénom d'un seul mot (trait d'union permis).
+  Tout le reste est affiché tel quel : un seul mot, une structure de plus de deux mots, un prénom écrit avec une espace, un texte qui
+  ne commence pas par des lettres. Un compte système (« Compte système ») n'est jamais modifié, ni masqué. Le nom du commerçant, en haut
+  du ticket, n'est jamais modifié. Une structure à deux mots (« Boulangerie Dupont ») ne se distingue pas d'une personne : comme à la
+  caisse, elle est abrégée.
 - Le PDF n'imprime que les lettres de Windows-1252 (accents français, €, guillemets) ; tout autre caractère devient `?` (la page
   les affiche tous).
 
@@ -682,7 +690,7 @@ identifiant (ceux des tests sont fictifs).
   plafond, « Non disponible », erreurs), `test/releve.test.js` (pages, session et jeton de l'espace, origine, CSRF, une lecture à la fois,
   politique de sécurité sans script, impression, 404 hors mode multi), `test/releve-pdf.test.js` (PDF, texte du PDF, mêmes contrôles),
   `test/releve-mois.test.js` (mode mois : bornes de février à décembre, changements d'heure, valeurs refusées, mois en cours et futur,
-  plafond propre au mois, PDF de 1500 lignes).
+  plafond propre au mois, PDF de 1500 lignes), `test/releve-contrepartie.test.js` (nom de la contrepartie).
 - Un test lancé seul : `node --test test/caisse.test.js`.
 
 ## Sécurité en bref
