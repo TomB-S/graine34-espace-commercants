@@ -179,6 +179,59 @@ select {
   font: inherit; /* 16 px: avoids automatic zoom on iOS */
 }
 
+/* The eye button of the login pages: made by the script, inside the password field (on its right). The field makes room for it. */
+.champ-secret {
+  position: relative; /* the button is placed against this box, which is as wide as the field (see the cap of wide screens below) */
+  display: block;
+}
+
+/* The text typed never goes under the eye. */
+.champ-secret input {
+  padding-right: var(--tactile);
+}
+
+/* The eye of some browsers (Edge, old Internet Explorer) must not come on top of ours. */
+.champ-secret input::-ms-reveal,
+.champ-secret input::-ms-clear {
+  display: none;
+}
+
+.voir-mot-de-passe {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--tactile); /* 44 px: a finger target */
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0 0.375rem 0.375rem 0;
+  background: transparent;
+  color: var(--vert-principal);
+  cursor: pointer;
+}
+
+.voir-mot-de-passe:hover {
+  background: transparent;
+  color: var(--vert-principal-survol);
+}
+
+/* The focus ring is drawn inside the field: on its right edge there is no room outside. */
+.voir-mot-de-passe:focus-visible {
+  outline-offset: -3px;
+}
+
+.voir-mot-de-passe svg {
+  display: block;
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
 button {
   min-height: var(--tactile);
   padding: 0.5rem 1.25rem;
@@ -845,8 +898,9 @@ details[open].autre-periode > summary::before {
   input[type="password"],
   input[type="datetime-local"],
   input[type="date"],
-  input[type="time"] {
-    max-width: 22rem;
+  input[type="time"],
+  .champ-secret {
+    max-width: 22rem; /* the container of the eye button is exactly as wide as the field: the button stays inside it */
   }
 }
 

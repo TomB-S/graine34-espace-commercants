@@ -15,7 +15,7 @@ import { createListenerManager } from "./listener-manager.js";
 import { refusedNoProAccountLine } from "./allowed-users.js";
 import { createLoginGuard } from "./login-guard.js";
 import { renderCaissePage, renderCaisseRefused } from "./caisse-page.js";
-import { renderEspaceLogin, renderEspaceHome, REFUSED_TEXT } from "./espace-page.js";
+import { renderEspaceLogin, renderEspaceHome, REFUSED_TEXT, PASSWORD_SCRIPT } from "./espace-page.js";
 import { renderCaisseData } from "./caisse-data.js";
 import { inExecutable, readAsset } from "./assets.js";
 import { escapeHtml, errorMessage, formatAmount } from "./format.js";
@@ -269,9 +269,10 @@ function staticAsset(file, contentType, cacheControl = "public, max-age=3600") {
   return { body, contentType, etag, cacheControl };
 }
 
-// Scripts of the browser: the cash register page and the pure modules it imports (each one is also tested by Node), and the
-// print button of the statement ticket (print-ticket). The only scripts the CSP lets run are these, served from our own address.
-const BROWSER_MODULES = ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic", "notification", "notification-logic", "controls-logic", "refresh-logic", "print-ticket"];
+// Scripts of the browser: the cash register page and the pure modules it imports (each one is also tested by Node), the print button
+// of the statement ticket (print-ticket) and the eye button of the login pages (password-toggle). The only scripts the CSP lets run are
+// these, served from our own address.
+const BROWSER_MODULES = ["caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound", "sound-logic", "notification", "notification-logic", "controls-logic", "refresh-logic", "print-ticket", "password-toggle"];
 
 const STATIC_ASSETS = new Map([
   ["GET /style.css", staticAsset("style.css", "text/css; charset=utf-8")],
@@ -307,8 +308,9 @@ function serveStatic(req, res, asset) {
   res.end(asset.body);
 }
 
-// `scripts`: addresses of external scripts, loaded at the end of the body. `htmlClass`: class of the <html> element (a constant of
-// the caller: the print layout of a page).
+// `scripts`: addresses of external scripts, loaded at the end of the body (the statement ticket loads its print button, the login pages
+// the eye button; no page has an inline script). `htmlClass`: class of the <html> element (a constant of the caller: the print layout of
+// a page).
 function htmlPage(title, body, { toolName = "Notification de paiement", scripts = [], htmlClass = "" } = {}) {
   return `<!DOCTYPE html>
 <html lang="fr"${htmlClass ? ` class="${htmlClass}"` : ""}>
@@ -337,9 +339,11 @@ function renderLoginForm() {
     `<h1>Connexion</h1>
   <form method="post" action="/connexion">
     <p><label>Identifiant : <input type="text" name="login" required autofocus></label></p>
-    <p><label>Mot de passe : <input type="password" name="password" required></label></p>
+    <p><label for="password">Mot de passe :</label>
+      <input type="password" id="password" name="password" required></p>
     <p><button type="submit">Se connecter</button></p>
   </form>`,
+    { scripts: [PASSWORD_SCRIPT] },
   );
 }
 
