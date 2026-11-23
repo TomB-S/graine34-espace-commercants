@@ -217,6 +217,7 @@ web/                 tout ce que le navigateur reçoit
     sound-logic.js       quand sonner et que dire de l'état du son, son voulu par défaut (fonctions pures)
     controls-logic.js    le bouton unique du son et des notifications : libellé et action (fonctions pures)
     refresh-logic.js     le bouton « Actualiser » : libellé et état désactivé (fonctions pures, aussi utilisées par le serveur)
+    password-toggle.js   le bouton en forme d'œil des pages de connexion (voir le mot de passe saisi)
     sound.js             le son : Web Audio, bip généré, aucun fichier audio
     notification-logic.js  quoi notifier et que dire de l'état (regroupement, tag, texte : fonctions pures)
     notification.js      notifications du navigateur : le seul fichier qui touche à l'API Notification
@@ -683,6 +684,14 @@ identifiant (ceux des tests sont fictifs).
   style en ligne, pas d'`eval`, rien d'externe), `X-Content-Type-Options`,
   `X-Frame-Options: DENY`, `Referrer-Policy`, `Cache-Control: no-store` sur les
   pages, HSTS avec `COOKIE_SECURE=true`.
+- **Voir le mot de passe** : sur les pages de connexion (espace, caisse, et la page de l'exécutable, qui est la même), un petit
+  bouton en forme d'œil, **créé par JavaScript** (`web/js/password-toggle.js`, servi comme les autres modules et embarqué dans
+  l'exécutable) : sans JavaScript, aucun bouton mort n'apparaît et la connexion marche comme avant. Un clic bascule le champ entre
+  `type="password"` et `type="text"` ; la valeur n'est jamais lue, copiée, stockée ni journalisée, et les attributs `autocomplete`
+  ne changent pas (les gestionnaires de mots de passe continuent de marcher). Le champ redevient masqué à l'envoi, quand l'onglet est
+  caché et au retour par l'historique du navigateur. Le bouton se nomme « Afficher le mot de passe » / « Masquer le mot de passe »
+  (`aria-pressed`), fait 44 px et se commande au clavier. Ces pages avaient déjà `script-src 'self'` : la politique de sécurité ne
+  change pour aucune page, et le module n'est chargé que par les pages de connexion.
 - **Limites** : 5 échecs de connexion par adresse IP et par 15 minutes (puis 429) ;
   corps des requêtes limité à 10 ko ; toutes les valeurs venant de Cyclos sont échappées.
 - **Page caisse** : le mot de passe du compte d'écoute vient uniquement de

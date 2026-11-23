@@ -7,7 +7,9 @@ import "./support/env-propre.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { appTest, EXPECTED_CSP } from "./support/harness.js";
+import { appTest, EXPECTED_CSP, USER } from "./support/harness.js";
+import { CAISSE_OPTIONS } from "./support/options.js";
+import { options, browser, connected } from "./support/releve-support.js";
 import { enablePasswordToggles, LABEL_SHOW, LABEL_HIDE } from "../web/js/password-toggle.js";
 
 const MODULE = new URL("../web/js/password-toggle.js", import.meta.url);
@@ -222,4 +224,137 @@ appTest("module : /password-toggle.js servi comme les autres modules ; hors list
     assert.equal((await app.request(path)).status, 404, path);
   }
   assert.equal(app.cyclos.state.requests.length, 0, "no call to Cyclos");
+});
+
+// ---------------------------------------------------------------- the login pages
+
+const SCRIPT_TAG = '<script type="module" src="/password-toggle.js"></script>';
+const CSP_SANS_SCRIPT = "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+const scriptsOf = (html) => html.match(/<script[^>]*>[\s\S]*?<\/script>/gi) ?? [];
+
+// Intention: each login page (the cash register's, the area's, the area's after a refused login) loads the module by src, once, at the
+// end of the body; the HTML of the server holds no button for the eye and no icon (so that without JavaScript nothing dead appears and
+// the login works as before); the password field is empty, never prefilled, with its label tied to it; nothing inline.
+appTest("pages de connexion : le module est chargé, aucun bouton ni icône dans le HTML, mot de passe jamais prérempli", options(), async (app) => {
+  app.cyclos.addUser("marie", "mdp-marie-fictif", { id: "u-marie", email: "marie@exemple.test", entries: [] });
+  const stranger = browser(app);
+  const refused = await stranger.request("/espace/connexion", { method: "POST", form: { login: "marie", password: "mdp-faux-fictif" }, headers: { Origin: app.base } });
+  assert.equal(refused.status, 401);
+  const pages = {
+    "/espace": await stranger.request("/espace"),
+    "/espace après refus": refused,
+    "/connexion": await stranger.request("/connexion"),
+  };
+  for (const [name, res] of Object.entries(pages)) {
+    const html = await res.text();
+    assert.equal(res.headers.get("content-security-policy"), EXPECTED_CSP, name);
+    assert.deepEqual(scriptsOf(html), [SCRIPT_TAG], name);
+    assert.match(html, /<\/div>\n  <script type="module" src="\/password-toggle\.js"><\/script>\n<\/body>/, `${name}: at the end of the body`);
+    assert.ok(!/voir-mot-de-passe|champ-secret|<svg|<img[^>]*oeil/.test(html), `${name}: the eye is not in the HTML of the server`);
+    assert.equal([...html.matchAll(/<button/g)].length, 1, `${name}: only the submit button`);
+    assert.match(html, /<button type="submit">Se connecter<\/button>/, name);
+    assert.match(html, /<label for="password">Mot de passe :<\/label>\s*<input type="password" id="password" name="password" required/, name);
+    assert.ok(!/<input[^>]*type="password"[^>]*value=/.test(html) && !/<input[^>]*value=[^>]*type="password"/.test(html), `${name}: never prefilled`);
+    assert.ok(!html.includes("mdp-faux-fictif") && !html.includes("mdp-marie-fictif"), `${name}: no password in the page`);
+    assert.ok(!/\sstyle\s*=|<style|\son[a-z]+\s*=/i.test(html), `${name}: nothing inline`);
+  }
+  // The attribute that password managers read is unchanged on the area's login (and the field of the login is untouched).
+  const espace = await (await stranger.request("/espace")).text();
+  assert.match(espace, /name="password" required autocomplete="current-password"/);
+  assert.match(espace, /name="login" required autofocus autocomplete="username"/);
+});
+
+// Intention: the login page of the single-merchant mode (the one of the executable too) loads the module and keeps its form as before.
+appTest("pages de connexion : mode simple (et exécutable), même page, module chargé", CAISSE_OPTIONS, async (app) => {
+  const res = await app.request("/");
+  const html = await res.text();
+  assert.equal(res.headers.get("content-security-policy"), EXPECTED_CSP);
+  assert.deepEqual(scriptsOf(html), [SCRIPT_TAG]);
+  assert.match(html, /<form method="post" action="\/connexion">/);
+  assert.match(html, /<input type="text" name="login" required autofocus>/);
+  assert.ok(!/voir-mot-de-passe|<svg/.test(html));
+  const wrong = await (await app.login({ password: "mdp-faux-fictif" })).text();
+  assert.deepEqual(scriptsOf(wrong), [], "the refusal page has no password field and no script");
+});
+
+// Intention: no other page loads the module (only the login pages have a password field), and the other pages keep exactly their policy.
+appTest("pages de connexion : aucune autre page ne charge le module, les politiques des autres pages sont inchangées", options(), async (app) => {
+  const { b, csrf } = await connected(app, []);
+  const others = {
+    "/espace (accueil)": await b.request("/espace"),
+    "/espace/releve": await b.request("/espace/releve"),
+    "ticket": await b.ticket({ csrf, jour: "2026-01-10", de: "11:00", a: "14:00" }),
+    "inconnue": await b.request("/page-inconnue"),
+  };
+  assert.equal((await b.request("/espace/caisse", { method: "POST", form: { csrf }, headers: { Origin: app.base } })).status, 303);
+  others["/caisse"] = await b.request("/caisse");
+  for (const [name, res] of Object.entries(others)) {
+    const html = await res.text();
+    assert.ok(!html.includes("password-toggle"), name);
+    assert.ok(!html.includes('type="password"'), name);
+    const expected = name.startsWith("/espace/releve") || name === "ticket" ? CSP_SANS_SCRIPT : EXPECTED_CSP;
+    assert.equal(res.headers.get("content-security-policy"), expected, name);
+  }
+  assert.deepEqual(scriptsOf(await (await b.request("/caisse")).text()), ['<script type="module" src="/caisse.js"></script>']);
+  // Close the cash register once it is listening (see the other tests: closing one that is still starting waits a long time).
+  for (let i = 0; i < 100 && (await (await b.request("/caisse/data")).json()).status !== "live"; i += 1) await new Promise((r) => setTimeout(r, 20));
+  const caisseCsrf = (await (await b.request("/caisse")).text()).match(/name="csrf" value="([0-9a-f]+)"/)?.[1];
+  await b.request("/deconnexion", { method: "POST", form: { csrf: caisseCsrf }, headers: { Origin: app.base } });
+});
+
+// ---------------------------------------------------------------- the source of the module, the logs, the build, the style
+
+// Intention: the module never builds HTML from text, evaluates text, writes into the document, touches the browser storage, talks to the
+// network, logs, or reads the value of a field. (Comments are not code: they are taken out first.)
+test("module : ni innerHTML, eval, document.write, ni stockage, réseau, journal, ni lecture de la valeur", async () => {
+  const source = (await readFile(MODULE, "utf8")).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const forbidden = [
+    /innerHTML|outerHTML|insertAdjacentHTML/, /\beval\b|new Function|Function\(/, /document\.write/, /setTimeout\s*\(\s*["'`]/,
+    /localStorage|sessionStorage|indexedDB|document\.cookie|caches\b/, /\bfetch\b|XMLHttpRequest|sendBeacon|WebSocket|EventSource/,
+    /console\./, /\.value\b|\bvalue\s*:/, /clipboard|execCommand|getSelection|\.select\(\)/, /autocomplete/, /\.style\b|style\./,
+  ];
+  for (const pattern of forbidden) assert.ok(!pattern.test(source), String(pattern));
+  assert.ok(source.includes("createElementNS"));
+  assert.ok(!/<[a-z]/.test(source.replace(/"[^"\n]*"|`[^`]*`/g, "")), "no markup in the code");
+});
+
+// Intention: a login scenario (wrong then right password, in the single-merchant mode) leaves no password in the logs.
+appTest("journaux : une connexion refusée puis réussie ne laisse aucun mot de passe", CAISSE_OPTIONS, async (app) => {
+  await app.request("/");
+  assert.equal((await app.login({ password: "mdp-faux-fictif" })).status, 401);
+  assert.equal((await app.login()).status, 303);
+  await app.request("/password-toggle.js");
+  const everything = app.logs.join("\n");
+  assert.ok(!everything.includes("mdp-faux-fictif") && !everything.includes(USER.password));
+});
+
+// Intention: the executable embeds the module like the others (its login page is this page), so the two lists are the same list.
+test("exécutable : le module est dans la liste du build, la même que celle du serveur", async () => {
+  const names = (text) => [...text.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]);
+  const server = await readFile(new URL("../src/server.js", import.meta.url), "utf8");
+  const build = await readFile(new URL("../tools/build-sea.js", import.meta.url), "utf8");
+  const served = names(server.match(/const BROWSER_MODULES = \[([^\]]*)\]/)[1]);
+  const embedded = names(build.match(/const browserScripts = \[([^\]]*)\]/)[1]);
+  assert.ok(served.includes("password-toggle"));
+  assert.deepEqual(embedded, served);
+});
+
+// Intention: the style of the button is in the style sheet: green of the charter, on the right inside the field, a finger target of at
+// least 44 px, a focus ring drawn inside the field; and the field makes room for it.
+test("style : le bouton oeil est dans la feuille de style (charte verte, 44 px, focus visible)", async () => {
+  const css = await readFile(new URL("../web/style.css", import.meta.url), "utf8");
+  const rule = (selector) => css.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
+  assert.match(css, /--tactile:\s*2\.75rem/, "44 px");
+  const button = rule(".voir-mot-de-passe");
+  assert.match(button, /position:\s*absolute/);
+  assert.match(button, /right:\s*0/);
+  assert.match(button, /width:\s*var\(--tactile\)/);
+  assert.match(button, /min-height:\s*2\.75rem/);
+  assert.match(button, /color:\s*var\(--vert-principal\)/);
+  assert.match(button, /background:\s*transparent/);
+  assert.match(rule(".voir-mot-de-passe:focus-visible"), /outline-offset:\s*-3px/);
+  assert.match(rule(".champ-secret"), /position:\s*relative/);
+  assert.match(rule(".champ-secret input"), /padding-right:\s*var\(--tactile\)/);
+  assert.match(css, /:focus-visible\s*\{[^}]*outline:\s*3px solid/, "the shared focus ring");
+  assert.ok(!/url\(/.test(button));
 });
