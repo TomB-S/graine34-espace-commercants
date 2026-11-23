@@ -45,12 +45,15 @@ appTest("filtres : bloc « Un jour, à certaines heures » (champs natifs, libel
   const html = await getHtml(b);
   const after = parisToday();
   const block = html.split('class="bloc-periode releve-jour"')[1].split("</form>")[0];
-  const today = block.match(/<label for="jour">Jour<\/label>\s*<input type="date" id="jour" name="jour" value="(\d{4}-\d\d-\d\d)" required>/);
+  const today = block.match(/<label for="jour">Jour<\/label>\s*<input type="date" id="jour" name="jour" value="(\d{4}-\d\d-\d\d)" autocomplete="off" required>/); // updated: autocomplete off
   assert.ok(today, "label + date field");
   assert.ok([before, after].includes(today[1]), `today in Paris: ${today[1]}`);
-  assert.match(block, /<label for="de">De<\/label>\s*<input type="time" id="de" name="de" value="00:00" aria-describedby="aide-heures" required>/);
-  assert.match(block, /<label for="a">À<\/label>\s*<input type="time" id="a" name="a" value="23:59" aria-describedby="aide-heures" required>/);
-  assert.match(block, /<p class="aide" id="aide-heures">Si « À » est avant « De », le relevé va jusqu'au lendemain\.<\/p>/);
+  assert.match(block, /<label for="de">De<\/label>\s*<input type="time" id="de" name="de" value="00:00" autocomplete="off" required>/); // updated: autocomplete off, no help text any more
+  assert.match(block, /<label for="a">À<\/label>\s*<input type="time" id="a" name="a" value="23:59" autocomplete="off" required>/); // updated: autocomplete off, no help text any more
+  // updated: the rule "end before start = next day" and its help text are gone, replaced by an explicit box (unchecked by default).
+  assert.ok(!block.includes("aide") && !block.includes("Si « À »") && !block.includes("jusqu'au lendemain"));
+  assert.match(block, /<input type="checkbox" id="lendemain" name="lendemain" value="1" autocomplete="off">\s*<label for="lendemain">Le service se termine le lendemain \(après minuit\)<\/label>/);
+  assert.ok(!/<input type="checkbox"[^>]*checked/.test(block));
   assert.match(block, /<button type="submit">Voir le relevé<\/button>/);
   assert.match(block, /name="csrf" value="[0-9a-f]{64}"/);
   assert.match(html, /<form method="post" action="\/espace\/releve\/ticket" class="bloc-periode releve-jour" aria-labelledby="titre-jour">/);
@@ -101,7 +104,7 @@ appTest("filtres : sans script, sans style en ligne, chaque champ a son libellé
   assert.ok(!/\sstyle=/i.test(html));
   assert.ok(!/\son[a-z]+=/i.test(html), "no inline event handler");
   const fields = [...html.matchAll(/<(?:input|select)\b(?![^>]*type="hidden")[^>]*\bid="([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(fields, ["jour", "de", "a", "mois", "annee", "start", "end"]);
+  assert.deepEqual(fields, ["jour", "de", "a", "lendemain", "mois", "annee", "start", "end"]); // updated: the next-day box is a field with a label
   for (const id of fields) assert.match(html, new RegExp(`<label for="${id}">`), id);
 });
 
