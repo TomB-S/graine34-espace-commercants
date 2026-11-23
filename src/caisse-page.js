@@ -11,7 +11,7 @@ import { ticketDisplay, ticketsOfDay } from "./ticket-store.js";
 import { TEXTS } from "../web/js/caisse-texts.js";
 import { pollFooterText } from "../web/js/refresh-logic.js";
 import { LIST_SIZE, bannerOf, payerText, amountText, recapOf } from "./caisse-data.js";
-import { logoMarkup } from "./format.js";
+import { logoMarkup, backButton } from "./format.js";
 
 const TITLE = "Caisse : paiements reçus";
 
@@ -101,7 +101,7 @@ export function renderCaissePage(view, { refreshSeconds, pollSeconds = 3, hidePa
     ${logoutForm(csrfToken)}
   </header>
   <div class="page" id="caisse" data-poll-seconds="${e(pollSeconds)}" data-data-url="/caisse/data" data-login-url="${e(loginHref())}">
-  <div class="caisse-zone" id="caisse-zone-son"></div>
+  ${areaHref() ? `${backButton(areaHref(), "Retour à l'espace")}\n  ` : ""}<div class="caisse-zone" id="caisse-zone-son"></div>
   <div class="caisse-zone" id="caisse-zone-actualiser"></div>
   <div class="caisse-zone" id="caisse-zone-notif"></div>
   <div class="caisse-zone" id="caisse-zone-etat">${stateBlock(view.status, e, loginHref())}</div>
