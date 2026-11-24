@@ -3,7 +3,7 @@
 // give the path of a suitable one in SEA_NODE.
 // 1. esbuild (development tool only) gathers src/main.js, the server modules and luxon into build/server.cjs;
 // 2. the static files are listed as assets of the executable;
-// 3. "node --build-sea" writes build/graine34-notif-caisse (build/graine34-notif-caisse.exe on Windows);
+// 3. "node --build-sea" writes build/graine34-espace-commercants (build/graine34-espace-commercants.exe on Windows);
 // 4. on macOS, the result gets an ad hoc signature, without which the system kills it at launch.
 import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
@@ -56,7 +56,7 @@ const browserScripts = [
   "caisse", "caisse-view", "caisse-texts", "new-payments", "date-line", "age", "sound",
   "sound-logic", "notification", "notification-logic", "controls-logic", "refresh-logic", "print-ticket", "password-toggle",
 ].map((name) => `js/${name}.js`);
-const output = platform() === "win32" ? "build/graine34-notif-caisse.exe" : "build/graine34-notif-caisse";
+const output = platform() === "win32" ? "build/graine34-espace-commercants.exe" : "build/graine34-espace-commercants";
 const assets = Object.fromEntries(
   [
     "style.css",

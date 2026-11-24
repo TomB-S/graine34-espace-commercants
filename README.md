@@ -76,7 +76,7 @@ SEA_NODE=/chemin/vers/node-v26/bin/node npm run build:exe
 
 Avec un Node 25.5 ou plus récent dans le terminal, `npm run build:exe` suffit. Le
 script refuse de continuer si ce Node est trop ancien. Résultat :
-`build/graine34-notif-caisse` (`.exe` sous Windows), environ 146 Mo. Sur macOS, le
+`build/graine34-espace-commercants` (`.exe` sous Windows), environ 146 Mo. Sur macOS, le
 script y ajoute la signature locale (ad hoc) sans laquelle le système tue le
 programme au lancement ; elle ne remplace pas une vraie signature de diffusion.
 `esbuild`, l'outil qui regroupe le code, n'est qu'une dépendance de fabrication : il
@@ -84,7 +84,7 @@ n'est pas dans l'exécutable. Le relevé de transactions (`/espace/releve`, mode
 laisse `releve-pdf.js` et `pdfkit` hors du fichier et **s'arrête avec une erreur s'ils y entrent quand même**, et le contrôle de
 démarrage (`tools/smoke-exe.js`) vérifie que `/espace` et `/espace/releve` y répondent 404.
 
-**Lancement.** Un double clic (ou la commande `./build/graine34-notif-caisse`) ouvre une fenêtre de terminal.
+**Lancement.** Un double clic (ou la commande `./build/graine34-espace-commercants`) ouvre une fenêtre de terminal.
 Le programme :
 
 1. applique des réglages intégrés, tous modifiables par variables d'environnement : adresse de La Graine 34
@@ -158,24 +158,24 @@ fait environ 140 Mo.
 
 | Fichier | Système |
 | --- | --- |
-| `graine34-notif-caisse-linux-x64.tar.gz` | Linux, processeur Intel/AMD 64 bits |
-| `graine34-notif-caisse-windows-x64.exe` | Windows 64 bits |
-| `graine34-notif-caisse-macos-arm64.tar.gz` | Mac Apple Silicon (M1 et suivants) |
-| `graine34-notif-caisse-macos-x64.tar.gz` | Mac à processeur Intel |
+| `graine34-espace-commercants-linux-x64.tar.gz` | Linux, processeur Intel/AMD 64 bits |
+| `graine34-espace-commercants-windows-x64.exe` | Windows 64 bits |
+| `graine34-espace-commercants-macos-arm64.tar.gz` | Mac Apple Silicon (M1 et suivants) |
+| `graine34-espace-commercants-macos-x64.tar.gz` | Mac à processeur Intel |
 
 Sous Linux et macOS, le fichier est une archive `.tar.gz` : un zip d'artefact ferait perdre le droit d'exécution. Après
-l'extraction (`tar -xzf graine34-notif-caisse-<système>.tar.gz`), le droit est normalement conservé. S'il manque quand même :
-`chmod +x graine34-notif-caisse`.
+l'extraction (`tar -xzf graine34-espace-commercants-<système>.tar.gz`), le droit est normalement conservé. S'il manque quand même :
+`chmod +x graine34-espace-commercants`.
 
 **Les exécutables ne sont pas signés.** Aucune signature de code n'est faite à ce stade, des alertes de sécurité sont donc
 attendues :
 
 - **macOS** : le fichier téléchargé reçoit une quarantaine et le système refuse de l'ouvrir. Après extraction, dans le terminal :
-  `xattr -d com.apple.quarantine graine34-notif-caisse`, puis `./graine34-notif-caisse`. La signature ad hoc ajoutée à la
+  `xattr -d com.apple.quarantine graine34-espace-commercants`, puis `./graine34-espace-commercants`. La signature ad hoc ajoutée à la
   fabrication évite seulement que le système tue le programme au lancement, elle ne remplace pas une signature de diffusion.
 - **Windows** : SmartScreen peut afficher « Windows a protégé votre ordinateur » ; **Informations complémentaires**, puis **Exécuter
   quand même**.
-- **Linux** : si le droit d'exécution manque, `chmod +x graine34-notif-caisse`.
+- **Linux** : si le droit d'exécution manque, `chmod +x graine34-espace-commercants`.
 
 Le workflow n'utilise aucun secret et demande seulement la permission de lire le dépôt (`contents: read`).
 
