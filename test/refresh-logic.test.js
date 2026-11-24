@@ -20,8 +20,8 @@ test("rythme : « 0 » = mode manuel ; sinon au moins 1 seconde, 3 par défaut s
   for (const raw of [undefined, "", "abc", null]) assert.deepEqual(pollSettings(raw), { manual: false, pollMs: 3000 }, String(raw));
 });
 
-test("pied de page : manuel, une seconde, N secondes", () => {
+test("pied de page : phrase en mode manuel seulement, rien en mode automatique", () => {
   assert.equal(pollFooterText(0), "Mise à jour manuelle : cliquer sur Actualiser pour relire les paiements.");
-  assert.equal(pollFooterText(1), "Mise à jour automatique toutes les secondes.");
-  assert.equal(pollFooterText(5), "Mise à jour automatique toutes les 5 secondes.");
+  assert.equal(pollFooterText(1), "");
+  assert.equal(pollFooterText(5), "");
 });

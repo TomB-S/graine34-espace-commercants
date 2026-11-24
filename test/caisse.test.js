@@ -108,7 +108,7 @@ appTest("caisse : CAISSE_REFRESH_SECONDS (repli sans script) et CAISSE_POLL_SECO
   assert.equal(res.headers.get("refresh"), null);
   assert.match(html, /<noscript><meta http-equiv="refresh" content="7"><\/noscript>/);
   assert.match(html, /data-poll-seconds="4"/);
-  assert.match(html, /Mise à jour automatique toutes les 7 secondes\./);
+  assert.ok(!html.includes("Mise à jour automatique"));
 });
 
 // Intention: manual mode (CAISSE_POLL_SECONDS=0): the page tells the script not to read by itself and says so in words.

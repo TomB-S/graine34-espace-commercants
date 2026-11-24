@@ -904,6 +904,10 @@ details[open].autre-periode > summary::before {
   color: var(--texte-secondaire);
 }
 
+.caisse-actualisation:empty {
+  display: none;
+}
+
 /* ---------- Wider: tablet and computer ---------- */
 
 @media (min-width: 40rem) {

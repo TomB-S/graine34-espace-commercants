@@ -166,13 +166,13 @@ test("vue : liste rebuilt seulement si elle change, 'Paiements précédents' abs
   assert.equal(first(content, "caisse-ligne"), row, "same list, same elements");
 });
 
-test("vue : phrase de mise à jour au pluriel, et « toutes les secondes » pour 1", () => {
+test("vue : mode automatique = aucune phrase de mise à jour en bas de page", () => {
   const { view, document } = setup();
   view.update(data([ticket(1)]));
-  assert.equal(document.byId.get("caisse-actualisation").textContent, "Mise à jour automatique toutes les 3 secondes.");
+  assert.equal(document.byId.get("caisse-actualisation").textContent, "");
   const one = fakeDocument();
   createCaisseView(one, { pollSeconds: 1, nowMs: () => NOW }).update(data([ticket(1)]));
-  assert.equal(one.byId.get("caisse-actualisation").textContent, "Mise à jour automatique toutes les secondes.");
+  assert.equal(one.byId.get("caisse-actualisation").textContent, "");
 });
 
 test("vue : mode manuel (0 seconde) = phrase « Mise à jour manuelle », jamais « toutes les 0 secondes »", () => {

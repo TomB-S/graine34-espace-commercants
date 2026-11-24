@@ -19,9 +19,7 @@ export function pollSettings(raw) {
   return { manual: false, pollMs: Math.max(1, Number(raw) || 3) * 1000 };
 }
 
-// The line at the bottom of the page. `seconds` 0 = manual mode.
+// The line at the bottom of the page. `seconds` 0 = manual mode (an instruction is shown); automatic mode shows nothing.
 export function pollFooterText(seconds) {
-  if (seconds === 0) return TEXTS.manualMode;
-  if (seconds === 1) return "Mise à jour automatique toutes les secondes.";
-  return `Mise à jour automatique toutes les ${seconds} secondes.`;
+  return seconds === 0 ? TEXTS.manualMode : "";
 }
