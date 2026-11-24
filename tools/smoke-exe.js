@@ -12,7 +12,7 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const START_TIMEOUT_MS = 30_000;
 const STOP_TIMEOUT_MS = 5_000;
 
-const defaultPath = platform() === "win32" ? "build/graine34-notif-caisse.exe" : "build/graine34-notif-caisse";
+const defaultPath = platform() === "win32" ? "build/graine34-espace-commercants.exe" : "build/graine34-espace-commercants";
 const exe = process.argv[2] || defaultPath;
 
 if (!existsSync(exe)) {

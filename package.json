@@ -1,5 +1,5 @@
 {
-  "name": "graine34-notif-caisse",
+  "name": "graine34-espace-commercants",
   "version": "1.0.0",
   "description": "Mission 2B : notification de paiement pour le caissier (La Graine 34)",
   "main": "src/server.js",

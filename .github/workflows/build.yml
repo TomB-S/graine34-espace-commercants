@@ -59,11 +59,11 @@ jobs:
           LABEL: ${{ matrix.label }}
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
-            cp build/graine34-notif-caisse.exe "build/graine34-notif-caisse-${LABEL}.exe"
-            echo "FILE=build/graine34-notif-caisse-${LABEL}.exe" >> "$GITHUB_ENV"
+            cp build/graine34-espace-commercants.exe "build/graine34-espace-commercants-${LABEL}.exe"
+            echo "FILE=build/graine34-espace-commercants-${LABEL}.exe" >> "$GITHUB_ENV"
           else
-            COPYFILE_DISABLE=1 tar -czf "build/graine34-notif-caisse-${LABEL}.tar.gz" -C build graine34-notif-caisse
-            echo "FILE=build/graine34-notif-caisse-${LABEL}.tar.gz" >> "$GITHUB_ENV"
+            COPYFILE_DISABLE=1 tar -czf "build/graine34-espace-commercants-${LABEL}.tar.gz" -C build graine34-espace-commercants
+            echo "FILE=build/graine34-espace-commercants-${LABEL}.tar.gz" >> "$GITHUB_ENV"
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
