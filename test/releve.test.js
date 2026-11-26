@@ -196,7 +196,7 @@ appTest("relevé : nom indisponible (500) -> ticket sans nom ; 401 -> session de
   assert.equal(res.headers.get("location"), "/espace");
   assert.match(res.headers.get("set-cookie"), /^espace_session=;.*Max-Age=0/);
   assert.equal((await b.request("/espace")).status, 200);
-  assert.match(await (await b.request("/espace")).text(), /Connectez-vous avec votre compte Cyclos/, "la session est fermée");
+  assert.match(await (await b.request("/espace")).text(), /Connectez-vous avec votre compte\./, "la session est fermée");
 });
 
 // Intention (security): names and descriptions come from Cyclos, hence from any user: displayed as text, never interpreted.
