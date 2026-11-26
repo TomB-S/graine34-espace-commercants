@@ -18,7 +18,7 @@ export function renderEspaceLogin({ message = null } = {}, { htmlPage, errorMess
   return htmlPage(
     TITLE,
     `<h1>${TITLE}</h1>
-  <p>Connectez-vous avec votre compte Cyclos.</p>
+  <p>Connectez-vous avec votre compte.</p>
   ${message ? errorMessage(escapeHtml(message)) : ""}
   <form method="post" action="/espace/connexion">
     <p><label>Identifiant : <input type="text" name="login" required autofocus autocomplete="username"></label></p>
