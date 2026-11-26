@@ -191,6 +191,23 @@ select {
   font: inherit; /* 16 px: avoids automatic zoom on iOS */
 }
 
+/* Safari on iOS gives its native date and time fields a width of their own, which can go past width: 100%. Without the native look
+   they follow the box asked for; the fixed height keeps an empty field from collapsing. */
+input[type="datetime-local"],
+input[type="date"],
+input[type="time"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  height: var(--tactile);
+}
+
+/* iOS centres the value of these fields once the native look is removed: back on the left, like the other fields. */
+input::-webkit-date-and-time-value {
+  margin: 0;
+  text-align: left;
+}
+
 /* The eye button of the login pages: made by the script, inside the password field (on its right). The field makes room for it. */
 .champ-secret {
   position: relative; /* the button is placed against this box, which is as wide as the field (see the cap of wide screens below) */
@@ -367,7 +384,8 @@ a.lien-retour:hover {
   border-top: 1px solid var(--texte-secondaire);
 }
 
-/* "From" and "to" hours side by side (they wrap under each other on a very narrow screen). */
+/* "From" and "to" hours side by side, 1 rem apart; they wrap under each other on a screen narrower than 20 rem
+   (two times 8.5 rem plus the gap = the 18 rem left inside the page margins). */
 .heures {
   display: flex;
   flex-wrap: wrap;
@@ -375,7 +393,8 @@ a.lien-retour:hover {
 }
 
 .heures p {
-  flex: 1 1 8rem;
+  flex: 1 1 8.5rem;
+  min-width: 0; /* a flex item may shrink below the width of its content */
   max-width: 11rem;
 }
 
